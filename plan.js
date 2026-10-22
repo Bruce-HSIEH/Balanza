@@ -101,12 +101,16 @@ const Plan = (() => {
           if (k < 0 || k >= horizon) return;
           months[k].items[d.id] = idx < paid ? { ...r, paid: true } : r;   // 本月已扣款的仍算在本月
         });
-        const g = Math.round(n0(d.grace)), a = Loan.graceOffset(d), gEnd = Math.min(rows.length, a + g);
-        if (g > 0) {
-          const startYM = ymAdd(d.startYM, a + 1), endYM = ymAdd(d.startYM, gEnd + 1);  // 第一個寬限期繳款月、第一個恢復還本月
-          if (ymDiff(cur, startYM) > 0) ev(d, startYM, 'graceStart', { from: rows[a - 1]?.pay || 0, to: rows[a]?.pay || 0 });
-          if (ymDiff(cur, endYM) >= 0 && rows[gEnd]) ev(d, endYM, 'graceEnd', { from: rows[gEnd - 1].pay, to: rows[gEnd].pay });
+        for (const g of Loan.graceRuns(rows)) {
+          const sYM = rows[g.from].ym, after = rows[g.to + 1];   // 第一個寬限期繳款月、第一個恢復還本月
+          if (ymDiff(cur, sYM) > 0) ev(d, sYM, 'graceStart', { from: g.from ? rows[g.from - 1].pay : 0, to: rows[g.from].pay });
+          if (after && ymDiff(cur, after.ym) >= 0) ev(d, after.ym, 'graceEnd', { from: rows[g.to].pay, to: after.pay });
         }
+        rows.forEach((x, k) => {
+          if (!x.changes || ymDiff(cur, x.ym) <= 0) return;
+          const rc = x.changes.find(c => c.type === 'rate');
+          if (rc && k) ev(d, x.ym, 'rateChange', { from: rows[k - 1].pay, to: x.pay, rate: n0(rc.rate) });
+        });
         const last = rows.at(-1);
         if (ymDiff(cur, last.ym) >= 0) {
           const regular = rows.length > 1 ? rows[rows.length - 2].pay : last.pay;   // 平常的月付（不含最後一期一次還本）

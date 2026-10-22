@@ -11,32 +11,78 @@ const Loan = (() => {
   const ymSlash = ym => ym ? ym.replace('-', '/') : '';
   const nowYM = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
-  // 寬限期在第幾期之後開始（0 = 撥款就開始）
+  // 寬限期在第幾期之後開始（0 = 撥款就開始）— 舊資料相容
   const graceOffset = d => (d.graceYM && d.startYM ? Math.max(0, ymDiff(d.startYM, d.graceYM)) : 0);
+
+  // 變更紀錄：撥款後發生的事，ym = 從哪個月的扣款開始生效
+  //   grace   {months}  申請寬限期（期間只繳息）
+  //   rate    {rate}    利率調整
+  //   term    {months}  延長（負數 = 縮短）貸款年限，到期日跟著移動
+  //   prepay  {amount}  提前還本（年限不變、月付重算）
+  //   balance {amount}  以銀行顯示的剩餘本金為準
+  const CHANGE_TYPES = ['grace', 'rate', 'term', 'prepay', 'balance'];
+  function changesOf(d) {
+    const list = (Array.isArray(d.changes) ? d.changes : []).filter(c => c && c.ym && CHANGE_TYPES.includes(c.type));
+    // 舊欄位：graceYM＋grace 視為一筆「申請寬限期」
+    if (d.graceYM && n0(d.grace) > 0) list.push({ ym: d.graceYM, type: 'grace', months: n0(d.grace), legacy: true });
+    return list.slice().sort((x, y) => ymDiff(y.ym, x.ym));
+  }
 
   // 第 i 期（1 起算）在 startYM + i 月繳款
   function schedule(d) {
-    const P = n0(d.principal), r = n0(d.rate) / 100 / 12, n = Math.round(n0(d.years) * 12);
-    const g = Math.max(0, Math.round(n0(d.grace))), a = Math.min(graceOffset(d), n), gEnd = Math.min(n, a + g);
+    const P = n0(d.principal);
+    let r = n0(d.rate) / 100 / 12, n = Math.round(n0(d.years) * 12);
     const method = d.method || 'annuity';
     const rows = [];
-    if (P <= 0 || n <= 0) return rows;
+    if (P <= 0 || n <= 0 || !d.startYM) return rows;
+    // 撥款就開始的寬限期
+    const windows = [];
+    const g0 = d.graceYM ? 0 : Math.max(0, Math.round(n0(d.grace)));
+    if (g0) windows.push([1, g0]);
+    // 依生效期數分組
+    const byPeriod = new Map();
+    for (const c of changesOf(d)) {
+      const i = Math.max(1, ymDiff(d.startYM, c.ym));
+      if (!byPeriod.has(i)) byPeriod.set(i, []);
+      byPeriod.get(i).push(c);
+    }
     let bal = P;
-    for (let i = 1; i <= n; i++) {
+    for (let i = 1; i <= n && i <= 1200; i++) {
+      const applied = [];
+      for (const c of byPeriod.get(i) || []) {
+        if (c.type === 'rate') r = n0(c.rate) / 100 / 12;
+        else if (c.type === 'term') n = Math.max(i, n + Math.round(n0(c.months)));
+        else if (c.type === 'prepay') bal = Math.max(0, bal - n0(c.amount));
+        else if (c.type === 'balance') bal = Math.max(0, n0(c.amount));
+        else if (c.type === 'grace') { const m = Math.round(n0(c.months)); if (m > 0) windows.push([i, i + m - 1]); }
+        applied.push(c);
+      }
+      if (bal <= 0.5 && !applied.length) break;
       const interest = bal * r;
-      const inGrace = i > a && i <= gEnd;
+      const inGrace = windows.some(([a, b]) => i >= a && i <= b);
       let prin = 0;
       if (method === 'interest') prin = i === n ? bal : 0;
       else if (!inGrace) {
-        const rem = n - i + 1;   // 剩下的期數（寬限期前不預扣、寬限期後重新攤還）
+        const rem = n - i + 1;   // 到期前剩下的期數（寬限期結束後重新攤還）
         if (method === 'principal') prin = bal / rem;
         else prin = (r === 0 ? bal / rem : bal * r / (1 - Math.pow(1 + r, -rem))) - interest;
       }
       prin = Math.min(Math.max(prin, 0), bal);
       bal -= prin;
-      rows.push({ i, ym: d.startYM ? ymAdd(d.startYM, i) : null, interest, principal: prin, pay: interest + prin, balance: Math.max(0, bal), grace: inGrace });
+      rows.push({ i, ym: ymAdd(d.startYM, i), interest, principal: prin, pay: interest + prin, balance: Math.max(0, bal), grace: inGrace, rate: r * 1200, changes: applied.length ? applied : null });
+      if (bal <= 0.5 && i < n && method !== 'interest') break;
     }
     return rows;
+  }
+
+  // 寬限期區段：[{from, to}]（rows 的索引）
+  function graceRuns(rows) {
+    const out = [];
+    rows.forEach((x, k) => {
+      if (!x.grace) return;
+      if (k && rows[k - 1].grace) out[out.length - 1].to = k; else out.push({ from: k, to: k });
+    });
+    return out;
   }
 
   // 從 'YYYY-MM' 起算到今天已繳幾期（未到扣款日則本月尚未扣）
@@ -54,23 +100,26 @@ const Loan = (() => {
     const k = Math.min(paidPeriods(d.startYM, n0(d.payDay), today), n);
     const balance = k === 0 ? n0(d.principal) : rows[k - 1].balance;
     const next = rows[k] || null;
-    const g = Math.round(n0(d.grace)), a = graceOffset(d), gEnd = Math.min(n, a + g);
-    const inGrace = !!(next && next.grace);
-    const graceUpcoming = g > 0 && k < a;
+    const runs = graceRuns(rows);
+    const cur = runs.find(g => g.from <= k && g.to >= k);           // 正在寬限期
+    const up = runs.find(g => g.from > k);                           // 之後的寬限期
+    const g = cur || up;
     const remaining = rows.slice(k);
+    const rateNow = next ? next.rate : n0(d.rate);
     return {
       balance,
       monthly: next ? next.pay : 0,
-      inGrace, graceUpcoming,
-      graceLeft: inGrace ? gEnd - k : 0,
-      graceStartYM: g ? ymSlash(ymAdd(d.startYM, a)) : null,
-      graceEndYM: g ? ymSlash(ymAdd(d.startYM, gEnd)) : null,
-      afterGracePay: rows[gEnd] ? rows[gEnd].pay : 0,
+      inGrace: !!cur, graceUpcoming: !cur && !!up,
+      graceLeft: cur ? cur.to - k + 1 : 0,
+      graceStartYM: g ? ymSlash(rows[g.from].ym) : null,
+      graceEndYM: g ? ymSlash(rows[g.to].ym) : null,
+      afterGracePay: g && rows[g.to + 1] ? rows[g.to + 1].pay : 0,
       monthsLeft: remaining.length,
       interestLeft: remaining.reduce((s, x) => s + x.interest, 0),
-      payoffYM: ymSlash(ymAdd(d.startYM, n)),
+      payoffYM: ymSlash(rows[n - 1].ym),
       paid: k, total: n,
-      monthlyInterest: balance * n0(d.rate) / 100 / 12,
+      rate: rateNow,
+      monthlyInterest: balance * rateNow / 100 / 12,
     };
   }
 
@@ -85,7 +134,7 @@ const Loan = (() => {
     return { ...base, monthsLeft: months, interestLeft: Math.max(0, n * P - B), payoffYM: ymSlash(ymAdd(cur, months)) };
   }
 
-  return { schedule, autoStatus, manualStatus, paidPeriods, graceOffset, ymAdd, ymDiff, ymNum, ymStr, ymSlash, nowYM };
+  return { schedule, graceRuns, changesOf, CHANGE_TYPES, autoStatus, manualStatus, paidPeriods, graceOffset, ymAdd, ymDiff, ymNum, ymStr, ymSlash, nowYM };
 })();
 
 if (typeof module !== 'undefined') module.exports = Loan;

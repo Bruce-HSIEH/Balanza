@@ -812,3 +812,23 @@ main {
 .bk-nag .ico { width: 34px; height: 34px; background: #fff; }
 .nag-x { border: 0; background: none; color: var(--muted); font-size: 20px; padding: 0 2px; cursor: pointer; }
 @media (prefers-color-scheme: dark) { .bk-nag { background: #2e2616; border-color: #5a4520; } .bk-nag .ico { background: #3a301c; } }
+
+/* ===== v5.10 貸款歷程 ===== */
+.loan-tl { list-style: none; margin: 10px 0 8px; padding: 0; position: relative; }
+.loan-tl::before { content: ''; position: absolute; left: 15px; top: 14px; bottom: 14px; width: 2px; background: var(--line); }
+.loan-tl li { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; position: relative; }
+.loan-tl li[data-cid] { cursor: pointer; }
+.loan-tl li[data-cid]:active { opacity: .7; }
+.tl-dot { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--card); border: 2px solid var(--line); display: grid; place-items: center; position: relative; z-index: 1; }
+.loan-tl li.now .tl-dot { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.loan-tl li.future .tl-body { opacity: .75; }
+.loan-tl li.auto .tl-dot { border-style: dashed; }
+.tl-body { flex: 1; min-width: 0; padding-top: 2px; line-height: 1.5; }
+.tl-head { display: flex; justify-content: space-between; gap: 8px; }
+.tl-head span { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.loan-tl li.now .tl-head b { color: var(--accent); }
+.loan-tl .set-chev { align-self: center; }
+.chg-form { background: var(--soft); border-radius: 14px; padding: 12px; margin-top: 6px; }
+.chg-form .field { margin-top: 10px; }
+.chg-types { flex-wrap: wrap; }
+.chg-types button { flex: 1 0 30%; }

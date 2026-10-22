@@ -11,7 +11,9 @@ const Charts = (() => {
     for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
     return 10 * p;
   };
-  const wanLabel = v => v >= 1e4 ? `${+(v / 1e4).toFixed(v >= 1e5 ? 0 : 1)}萬` : Math.round(v).toLocaleString();
+  let K = 1;   // 縮小顯示倍率
+  const wanLabel = v0 => { const v = v0 / K; return wanLabel0(v); };
+  const wanLabel0 = v => v >= 1e8 ? `${+(v / 1e8).toFixed(v >= 1e9 ? 0 : 1)}億` : v >= 1e4 ? `${+(v / 1e4).toFixed(v >= 1e5 ? 0 : 1)}萬` : Math.round(v).toLocaleString();
 
   // months: [{ym,total,items:{id:{pay}}}]；series: [{id,color}]；markers: {k: color}
   function stacked(months, series, { selected = 0, markers = {}, height = 190, width = 340 } = {}) {
@@ -135,5 +137,5 @@ const Charts = (() => {
     return `<svg class="chart line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="--lc:${color}">${grid}<path d="${area}" class="area"/><path d="${d}" class="ln"/>${marks}${sel}${xl}${hits}</svg>`;
   }
 
-  return { PALETTE, OTHER, stacked, ring, invest, donut, line, wanLabel };
+  return { PALETTE, OTHER, stacked, ring, invest, donut, line, wanLabel, setScale: k => { K = k || 1; } };
 })();

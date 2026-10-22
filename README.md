@@ -65,6 +65,7 @@
 | `lock.js` | Face ID／PIN 加密鎖 |
 | `backup.js` | 恢復金鑰、備份加解密、GitHub Gist 上傳與還原 |
 | `voice.js` | 中文口語解析（語音／文字快速新增） |
+| `sim.js` | 模擬人生（展示用的三種人生資料） |
 | `ai.js` | Claude／Gemini API 整理語句、辨識庫存截圖（使用者自己的金鑰） |
 | `plan.js` | 投資計畫、理財型額度、逐月還款推算與事件 |
 | `charts.js` | 自繪 SVG 圖表 |

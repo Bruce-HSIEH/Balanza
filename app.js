@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.14.0';
+const APP_VERSION = '5.15.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -58,7 +58,9 @@ function load() {
   return migrate({});
 }
 let state = load();
+let sim = null;   // 模擬人生：{ kind, real }，資料只在記憶體
 function store() {
+  if (sim) return;
   if (Vault.enabled()) {
     if (Vault.unlocked()) Vault.store(JSON.stringify(state)).catch(e => alert('加密儲存失敗：' + e.message));
   } else {
@@ -79,6 +81,18 @@ const prefs = (() => { try { return { autoHide: true, ...JSON.parse(localStorage
 prefs.bk = { at: 0, err: '', hash: '', exportAt: 0, snooze: 0, ...(prefs.bk || {}) };
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
 let hidden = !!prefs.autoHide;
+// 縮小顯示：所有金額除以只有自己知道的倍率（比例、正負不變）
+let scaled = !!prefs.scaleStart;
+const SCALE_DEF = 13.25;
+const scaleK = () => scaled ? (+prefs.scaleK > 0 ? +prefs.scaleK : SCALE_DEF) : 1;
+function setScaled(on) {
+  scaled = !!on;
+  Charts.setScale(scaleK());
+  lastLv = null; levelsKey = '';
+  render();
+  if (currentView === 'settings' && setPage === 'privacy') renderPrivacySettings();
+}
+Charts.setScale(scaleK());
 const MASK = '••••••';
 function setHidden(h) {
   hidden = h;
@@ -91,6 +105,7 @@ function setHidden(h) {
 // ---------- 格式 ----------
 function fmt(n, ccy = state.currency) {
   if (hidden) return `$${MASK}`;
+  n = (n || 0) / scaleK();
   const digits = ccy === 'JPY' || ccy === 'TWD' ? 0 : 2;
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: ccy, maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(n || 0);
 }
@@ -100,6 +115,7 @@ function short(n) {
   return shortRaw(n);
 }
 function shortRaw(n) {
+  n = n / scaleK();
   if (state.currency === 'TWD') {
     if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(1).replace(/\.0$/, '')} 億`;
     return wan(n);
@@ -184,7 +200,7 @@ function summary() {
     graceJump: graceItems.reduce((s, x) => s + (x.s.afterGracePay - x.s.monthly), 0),
   };
 }
-const twdK = () => Stocks.fx('TWD', state.currency);  // 1 TWD = ? 顯示幣別
+const twdK = () => Stocks.fx('TWD', state.currency) * scaleK();  // 1 TWD = ? 顯示幣別（縮小顯示時連等級也一起縮小）
 
 function groupSum(items, keyFn, valFn) {
   const m = new Map();
@@ -230,6 +246,7 @@ function render() {
   $('mascotTip').textContent = L.lv === 0 ? '到「資產」「負債」新增資料叫醒牠' : `負債比 ${pct(s.debtRatio)}${stress ? '，負債偏重小秤在冒汗' : ''}`;
 
   $('eyeBtn').innerHTML = hidden ? EYE_OFF : EYE_ON;
+  $('eyeBtn').classList.toggle('scaled', scaled && !hidden);
   $('eyeBtn').setAttribute('aria-label', hidden ? '顯示金額' : '隱藏金額');
   UI.countTo($('netWorth'), s.netWorth, fmt);
   $('netWorth').classList.toggle('neg', s.netWorth < 0);
@@ -294,7 +311,7 @@ function stockDataLine() {
 // --- 資產：依大項分組 ---
 const plCls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
 const plTxt = (v, p) => `${v >= 0 ? '+' : ''}${fmt(v)}${p != null ? `（${p >= 0 ? '+' : ''}${p.toFixed(2)}%）` : ''}`;
-const unitTxt = (mkt, sh) => mkt === 'tw' && sh >= 1000 && sh % 1000 === 0 ? `${sh / 1000} 張` : `${(+sh.toFixed(4)).toLocaleString()} 股`;
+const unitTxt = (mkt, sh) => scaled ? `${(+(sh / scaleK()).toFixed(2)).toLocaleString()} 股` : mkt === 'tw' && sh >= 1000 && sh % 1000 === 0 ? `${sh / 1000} 張` : `${(+sh.toFixed(4)).toLocaleString()} 股`;
 function stockRow(a, i) {
   const si = stockInfo(a);
   const q = si.q;
@@ -567,7 +584,7 @@ function renderLevels(s, L) {
     $('homeProgText').textContent = `距離 Lv.${next.lv} ${next.name} 還差 ${fmt(need)}`;
   }
 
-  const key = `${L.lv}|${state.currency}|${k.toFixed(6)}|${selLv}|${hidden}|${Math.round(nw)}`;
+  const key = `${L.lv}|${state.currency}|${k.toFixed(6)}|${selLv}|${hidden}|${scaled}|${Math.round(nw)}`;
   if (key === levelsKey) return;
   levelsKey = key;
   const gap = X => {
@@ -841,6 +858,7 @@ function fieldHTML(f) {
 }
 
 function openEditor(kind, id, preset) {
+  if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
   const list = state[KEY[kind]];
   const item = id ? list.find(x => x.id === id) : null;
   editing = { kind, id };
@@ -1565,6 +1583,7 @@ function drawPlanPanel() {
 let tradeCtx = null;
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 function openTrade(id, type, lotId) {
+  if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
   const a = state.assets.find(x => x.id === id);
   if (!a) return;
   const si = stockInfo(a);
@@ -1642,6 +1661,7 @@ function bulkRow(v = {}) {
     <button type="button" class="bk-del" aria-label="刪除這列">×</button><small class="bk-name"></small></div>`;
 }
 async function openBulk() {
+  if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
   await Stocks.load();
   setBulkMkt(bulkMkt);
   $('bkRows').innerHTML = [0, 1, 2].map(() => bulkRow()).join('');
@@ -1784,6 +1804,7 @@ const MISS_ZH = { principal: '貸款金額', years: '年限', startYM: '撥款�
 const VC_EXAMPLES = ['玉山活存 50 萬', '0050 三張 均價 95', '國泰房貸 800 萬 利率 2.1% 30 年 寬限期 3 年', '信用卡 欠 3 萬 每月繳 5000', '房子 1800 萬 30 坪', '車子 豐田 RAV4 價值 70 萬'];
 
 function openVoice() {
+  if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
   if (locked) return;
   vcResults = [];
   $('vcText').value = '';
@@ -2081,7 +2102,38 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', e => { if (e.target.id === 'aiOn') { state.ai.on = e.target.checked; save(); } });
 
 // ---------- 設定 ----------
-$('eyeBtn').addEventListener('click', () => setHidden(!hidden));
+// 點：隱藏／顯示；長按：切換縮小顯示（只有自己知道）
+let eyeTimer = null, eyeLong = false;
+$('eyeBtn').addEventListener('pointerdown', () => { eyeLong = false; clearTimeout(eyeTimer); eyeTimer = setTimeout(() => { eyeLong = true; if (hidden) setHidden(false); setScaled(!scaled); toast(scaled ? '已切換顯示方式' : '已恢復'); if (navigator.vibrate) navigator.vibrate(15); }, 650); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(t => $('eyeBtn').addEventListener(t, () => clearTimeout(eyeTimer)));
+$('eyeBtn').addEventListener('contextmenu', e => e.preventDefault());
+$('eyeBtn').addEventListener('click', () => { if (eyeLong) { eyeLong = false; return; } setHidden(!hidden); });
+function renderPrivacySettings() {
+  $('scaleSet').innerHTML = `
+    <h3>${Icon.svg('scale', 22)} 縮小顯示</h3>
+    <p class="muted small">給別人看的時候用：所有金額、圖表、等級都除以一個只有你知道的倍率。資產與負債的比例、正負、報酬率 % 都不變，別人看得出結構，猜不出實際金額。</p>
+    <div class="inrow"><label class="flabel" for="scaleK" style="align-self:center;margin:0 6px 0 0">倍率</label>
+      <input id="scaleK" type="password" inputmode="decimal" autocomplete="off" placeholder="${SCALE_DEF}" value="${esc(String(prefs.scaleK || SCALE_DEF))}">
+      <button type="button" class="btn mini" id="scaleShow">看</button><button type="button" class="btn mini primary" id="scaleSave">儲存</button></div>
+    <div class="btnrow"><button type="button" class="btn ${scaled ? '' : 'primary'}" id="scaleToggle">${scaled ? '恢復正常顯示' : '現在切換成縮小顯示'}</button></div>
+    <label class="switch-row" style="margin-top:12px"><span><b>打開 App 時就用縮小顯示</b><small class="muted">搭配「自動隱藏」時，點眼睛顯示出來的也是縮小後的金額</small></span>
+      <input type="checkbox" class="switch" id="scaleStart" ${prefs.scaleStart ? 'checked' : ''}></label>
+    <p class="muted small">快速切換：<b>長按</b>總覽淨資產旁的眼睛，畫面不會出現任何倍率提示；縮小顯示時眼睛右上角會有一個小點，只有你知道。縮小顯示時不能新增或修改資料。</p>`;
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('#scaleShow, #scaleSave, #scaleToggle');
+  if (!t) return;
+  if (t.id === 'scaleShow') { const i = $('scaleK'); i.type = i.type === 'password' ? 'text' : 'password'; return; }
+  if (t.id === 'scaleSave') {
+    const v = +$('scaleK').value;
+    if (!(v > 1 && v < 1e6)) return toast('倍率要大於 1');
+    prefs.scaleK = v; savePrefs(); if (scaled) setScaled(true); toast('已儲存倍率');
+    return;
+  }
+  if (t.id === 'scaleToggle') { if (hidden) setHidden(false); setScaled(!scaled); renderPrivacySettings(); }
+});
+document.addEventListener('change', e => { if (e.target.id === 'scaleStart') { prefs.scaleStart = e.target.checked; savePrefs(); } });
+
 $('autoHide').checked = !!prefs.autoHide;
 $('autoHide').addEventListener('change', e => { prefs.autoHide = e.target.checked; savePrefs(); });
 // 切到背景再回來時，若設定為自動隱藏就重新遮住
@@ -2433,7 +2485,54 @@ function finishUnlock(plain) {
   scheduleBackup(3000);
   afterUnlock.splice(0).forEach(f => f());
 }
+async function enterSim(kind) {
+  const P = Sim.PERSONAS[kind];
+  if (!P) return;
+  await Stocks.load();
+  if (!sim) sim = { kind, real: state };
+  sim.kind = kind;
+  state = migrate({ ...Sim.build(kind), ai: sim.real.ai, backup: { on: false } });
+  const s0 = summary();
+  state.history = Sim.history(kind, s0.totalAssets, s0.totalDebts);
+  openGroups.clear(); ASSET_CATS.forEach(c => openGroups.add(c.v));
+  lastLv = null; levelsKey = ''; nwSel = -1; dcSel = -1; Object.keys(donutSel).forEach(k => { donutSel[k] = null; });
+  document.body.classList.add('simming');
+  renderSimBar();
+  showView('home');
+  render();
+  UI.burst(kind === 'debt' ? 'heart' : 'coin');
+}
+function exitSim() {
+  if (!sim) return;
+  state = sim.real; sim = null;
+  openGroups.clear();
+  lastLv = null; levelsKey = ''; nwSel = -1; dcSel = -1;
+  document.body.classList.remove('simming');
+  renderSimBar();
+  render();
+  if (currentView === 'settings') openSetPage(setPage);
+  toast('已回到你的資料');
+}
+function renderSimBar() {
+  const el = $('simBar'); if (!el) return;
+  if (!sim) { el.hidden = true; el.innerHTML = ''; return; }
+  const P = Sim.PERSONAS[sim.kind];
+  el.hidden = false;
+  el.innerHTML = `<span class="sim-dot"></span><b>模擬</b><span class="sim-tabs">${Object.entries(Sim.PERSONAS).map(([k, v]) => `<button type="button" data-sim="${k}" class="${k === sim.kind ? 'on' : ''}">${esc(v.name)}</button>`).join('')}</span><button type="button" class="sim-exit" id="simExit">結束</button>`;
+}
+function renderSimSettings() {
+  $('simSet').innerHTML = `<p class="muted small">展示用：切換成三種完全不同的人生，看看 App 在各種情況下的樣子。模擬時的資料只在畫面上，<b>不會儲存、不會備份，也不會動到你的資料</b>；按上方的「結束」或重新打開 App 就回到你的資料。</p>
+    <div class="sim-cards">${Object.entries(Sim.PERSONAS).map(([k, v]) => `<button type="button" class="sim-card ${k}" data-sim="${k}"><span class="sim-face">${UI.mascotSVG(LEVELS.find(L => L.lv === (k === 'rich' ? 30 : k === 'normal' ? 6 : -18)) || LEVELS[0])}</span><span><b>${esc(v.name)}</b><small>${esc(v.who)}</small><small class="muted">${esc(v.desc)}</small></span></button>`).join('')}</div>
+    ${sim ? '<button type="button" class="btn" id="simExit2">結束模擬，回到我的資料</button>' : ''}`;
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-sim], #simExit, #simExit2');
+  if (!t) return;
+  if (t.dataset.sim) enterSim(t.dataset.sim); else exitSim();
+});
+
 function lockNow() {
+  if (sim) { state = sim.real; sim = null; document.body.classList.remove('simming'); renderSimBar(); }
   if (typeof stopListening === 'function') stopListening();
   if (!Vault.enabled()) return;
   Vault.lock();
@@ -2545,7 +2644,7 @@ if (locked) showLock(true); else afterUnlock.splice(0).forEach(f => f());
 const SET_GROUPS = [
   ['安全與隱私', [
     { p: 'lock', ic: 'lock', t: 'Face ID 加密鎖', s: () => Vault.info() ? '已啟用' : '未啟用' },
-    { p: 'privacy', ic: 'eye', t: '隱私', s: () => prefs.autoHide ? '開啟時自動隱藏金額' : '開啟時顯示金額' },
+    { p: 'privacy', ic: 'eye', t: '隱私與縮小顯示', s: () => (prefs.autoHide ? '開啟時自動隱藏金額' : '開啟時顯示金額') + (scaled ? '・縮小顯示中' : '') },
   ]],
   ['一般', [
     { p: 'ai', ic: 'star', t: 'AI 理解', s: () => { const a = state.ai || {}; return !a.on ? '關閉' : AI.keyOf(a) ? (a.provider === 'gemini' ? 'Gemini' : 'Claude') : '尚未設定金鑰（使用內建規則）'; } },
@@ -2555,6 +2654,9 @@ const SET_GROUPS = [
     { p: 'backup', ic: 'export', t: '備份與還原', s: backupSummary },
     { p: 'stocks', ic: 'chart', t: '股價資料', s: () => { const m = Stocks.info(); return m ? `台股 ${m.tw?.date || '—'}・美股 ${m.us?.date || '—'}` : '尚未載入'; } },
     { p: 'lvr', ic: 'townhouse', t: '實價登錄資料', s: () => lvrSummary },
+  ]],
+  ['展示', [
+    { p: 'sim', ic: 'trophy', t: '模擬人生', s: () => sim ? `模擬中：${Sim.PERSONAS[sim.kind].name}` : '超級富豪・普通人・欠債大王' },
   ]],
   ['關於', [
     { p: 'changelog', ic: 'sprout', t: '更新紀錄', s: () => 'v' + APP_VERSION },
@@ -2575,6 +2677,7 @@ function renderSetMenu() {
 }
 function openSetPage(p) {
   if (p === 'currency') { $('currencyBtn').click(); return; }
+  if (sim && ['backup', 'lock'].includes(p)) { toast('模擬中不能使用，先結束模擬'); p = ''; }
   setPage = p;
   const it = SET_GROUPS.flatMap(g => g[1]).find(x => x.p === p);
   document.querySelectorAll('#view-settings .set-page').forEach(el => { el.hidden = el.dataset.page !== p; });
@@ -2582,6 +2685,8 @@ function openSetPage(p) {
   $('setBack').hidden = !p;
   $('setTitle').innerHTML = p ? `<span class="ic-inline">${Icon.svg(typeof it.ic === 'function' ? it.ic() : it.ic, 26)}</span> ${esc(it.t)}` : `<span class="ic-inline">${Icon.svg('gear', 26)}</span> 設定`;
   if (!p) renderSetMenu();
+  if (p === 'privacy') renderPrivacySettings();
+  if (p === 'sim') renderSimSettings();
   if (p === 'backup') { renderBackupSettings(); Backup.persist().then(v => { persisted = v; if (setPage === 'backup') renderBackupSettings(); }); }
   const v = $('view-settings'); v.classList.remove('set-in'); void v.offsetWidth; if (p) v.classList.add('set-in');
   document.querySelector('main').scrollTo(0, 0);

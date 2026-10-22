@@ -1,6 +1,6 @@
 // 網路優先：有網路時永遠拿最新版（GitHub 更新後立即看到），離線時用快取
-const CACHE = 'balanza-v5-14-0';
-const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'ui.js', 'loan.js', 'lvr.js', 'icons.js', 'stocks.js', 'cars.js', 'changelog.js', 'lock.js', 'backup.js', 'voice.js', 'ai.js', 'plan.js', 'charts.js', 'data/catalog.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'balanza-v5-15-0';
+const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'ui.js', 'loan.js', 'lvr.js', 'icons.js', 'stocks.js', 'cars.js', 'changelog.js', 'lock.js', 'backup.js', 'voice.js', 'ai.js', 'sim.js', 'plan.js', 'charts.js', 'data/catalog.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

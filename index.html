@@ -23,6 +23,7 @@
     <button type="button" class="top-btn" data-view="levels" aria-label="等級"><i data-ic="trophy" data-size="28"></i></button>
     <button type="button" class="top-btn" data-view="settings" aria-label="設定"><i data-ic="gear" data-size="28"></i></button>
   </header>
+  <div class="sim-bar" id="simBar" hidden></div>
 
   <main>
     <!-- 總覽 -->
@@ -138,6 +139,7 @@
           <label class="switch-row"><span><b>打開 App 時自動隱藏金額</b><small class="muted">避免一打開就被旁邊的人看到；點總覽淨資產旁的眼睛就能顯示</small></span>
             <input type="checkbox" id="autoHide" class="switch"></label>
         </div>
+        <div class="card" id="scaleSet"></div>
       </div>
       <button type="button" class="pickbtn" id="currencyBtn" style="display:none"></button>
       <div class="set-page" data-page="backup" hidden>
@@ -155,6 +157,9 @@
           <p class="muted" id="lvrStatus">讀取中…</p>
           <p class="muted">資料來源：內政部不動產成交案件實際資訊（開放資料），每週自動更新。估價依路段成交單價中位數計算，僅供參考。</p>
         </div>
+      </div>
+      <div class="set-page" data-page="sim" hidden>
+        <div class="card" id="simSet"></div>
       </div>
       <div class="set-page" data-page="changelog" hidden>
         <div class="card">
@@ -311,6 +316,7 @@
   <script src="stocks.js"></script>
   <script src="voice.js"></script>
   <script src="ai.js"></script>
+  <script src="sim.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.3.0';
+const APP_VERSION = '5.4.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -17,6 +17,19 @@ function migrate(d) {
     if (a.category === 'ETF/基金' && /^00\d{2,4}[A-Z]?$/.test(String(a.name).trim())) category = '台股';
     return { ...a, category };
   });
+  // 股票：一檔一筆，買賣記錄在 lots；舊資料（shares/cost）轉成第一筆買進，同代號合併
+  const merged = [], bySym = new Map();
+  for (const a of d.assets) {
+    const mkt = (ASSET_CATS.find(c => c.v === a.category) || {}).stock;
+    if (!mkt || !a.sym) { merged.push(a); continue; }
+    const key = a.category + '|' + String(a.sym).toUpperCase().replace(/\./g, mkt === 'us' ? '-' : '.');
+    const lots = Array.isArray(a.lots) ? a.lots : (num(a.shares) ? [{ id: uid(), type: 'buy', date: '', shares: num(a.shares), price: num(a.cost) || '' }] : []);
+    if (bySym.has(key)) { const h = bySym.get(key); h.lots.push(...lots); if (!h.manualPrice && a.manualPrice) h.manualPrice = a.manualPrice; continue; }
+    const h = { ...a, lots };
+    delete h.shares; delete h.cost;
+    bySym.set(key, h); merged.push(h);
+  }
+  d.assets = merged;
   d.debts = d.debts.map(x => {
     if (x.mode) return x;
     const b = BANKS.find(b => x.source && (b.name.includes(x.source) || x.source.includes(b.name.replace(/(國際)?商業(儲蓄)?銀行$/, ''))));
@@ -90,6 +103,27 @@ function assetIcon(a) {
 // ---------- 價值計算 ----------
 const debtStatus = d => Plan.status(d, state.plans);
 const debtColor = d => Charts.PALETTE[Math.max(0, state.debts.indexOf(d)) % Charts.PALETTE.length];
+// 平均成本法：依日期處理買進／賣出，得到目前股數、總成本、均價、已實現損益
+function lotsSummary(lots) {
+  const list = [...(lots || [])].map((l, i) => ({ ...l, _i: i })).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || a._i - b._i);
+  let shares = 0, cost = 0, realized = 0, unknown = false;
+  const rows = [];
+  for (const l of list) {
+    const q = num(l.shares), p = num(l.price);
+    if (l.type === 'sell') {
+      const avg = shares ? cost / shares : 0, sq = Math.min(q, shares);
+      const r = p && avg ? (p - avg) * sq : null;
+      if (r != null) realized += r;
+      cost -= avg * sq; shares -= sq;
+      rows.push({ ...l, avg, realized: r });
+    } else {
+      if (!p) unknown = true;
+      shares += q; cost += q * p;
+      rows.push({ ...l });
+    }
+  }
+  return { shares, cost: Math.max(0, cost), avg: shares && !unknown ? cost / shares : 0, realized, unknown, rows };
+}
 function stockInfo(a) {
   const mkt = mktOf(a);
   if (!mkt || !a.sym) return null;
@@ -97,10 +131,12 @@ function stockInfo(a) {
   const ccy = mkt === 'us' ? 'USD' : 'TWD';
   const px = q ? q.price : num(a.manualPrice);
   const k = Stocks.fx(ccy, state.currency);
-  const shares = num(a.shares);
+  const L = a.lots ? lotsSummary(a.lots) : { shares: num(a.shares), cost: num(a.shares) * num(a.cost), avg: num(a.cost), realized: 0, unknown: !num(a.cost), rows: [] };
+  const shares = L.shares;
   const value = px ? shares * px * k : num(a.amount);
-  const costVal = num(a.cost) ? shares * num(a.cost) * k : 0;
-  return { q, mkt, ccy, px, shares, value, costVal, pl: costVal ? value - costVal : null, dayChg: q ? shares * q.chg * k : 0 };
+  const costVal = !L.unknown && L.cost ? L.cost * k : 0;
+  const pl = costVal ? value - costVal : null;
+  return { q, mkt, ccy, px, shares, value, costVal, avg: L.avg, pl, plPct: pl != null ? pl / costVal * 100 : null, realized: L.realized * k, lots: L, dayChg: q ? shares * q.chg * k : 0 };
 }
 function assetValue(a) {
   const s = stockInfo(a);
@@ -228,26 +264,46 @@ function stockDataLine() {
 }
 
 // --- 資產：依大項分組 ---
+const plCls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
+const plTxt = (v, p) => `${v >= 0 ? '+' : ''}${fmt(v)}${p != null ? `（${p >= 0 ? '+' : ''}${p.toFixed(2)}%）` : ''}`;
+const unitTxt = (mkt, sh) => mkt === 'tw' && sh >= 1000 && sh % 1000 === 0 ? `${sh / 1000} 張` : `${(+sh.toFixed(4)).toLocaleString()} 股`;
 function stockRow(a, i) {
   const si = stockInfo(a);
   const q = si.q;
   const open = openStocks.has(a.id);
   const tw = si.mkt === 'tw';
-  const chgCls = q ? (q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : '') : '';
+  const chgCls = q ? plCls(q.chg) : '';
   const chgTxt = q ? `${q.chg > 0 ? '▲' : q.chg < 0 ? '▼' : ''}${Math.abs(q.chgPct).toFixed(2)}%` : '手動價格';
-  const unit = tw && si.shares >= 1000 && si.shares % 1000 === 0 ? `${si.shares / 1000} 張` : `${si.shares.toLocaleString()} 股`;
+  const lots = si.lots.rows.slice().reverse();
   return `<li class="stock ${open ? 'open' : ''} ${tw ? 'tw' : 'us'}" data-expand="${a.id}" style="--i:${i}">
     <div class="row">
       <span class="ticker">${esc(Stocks.norm(si.mkt, a.sym))}</span>
-      <div class="grow"><div class="name">${esc(q ? q.name : a.name || a.sym)}</div><div class="sub">${unit}${si.px ? ` · ${price(si.px, si.ccy)}` : ''}</div></div>
-      <div class="amt">${fmt(si.value)}<div class="sub chg ${chgCls}">${chgTxt}</div></div>
+      <div class="grow"><div class="name">${esc(q ? q.name : a.name || a.sym)}</div>
+        <div class="sub">${unitTxt(si.mkt, si.shares)}${si.avg ? ` · 均價 ${price(si.avg, si.ccy)}` : ''}${si.px ? ` · 現價 ${price(si.px, si.ccy)}` : ''}</div></div>
+      <div class="amt">${fmt(si.value)}
+        ${si.pl != null ? `<div class="sub chg ${plCls(si.pl)}">${si.pl >= 0 ? '+' : ''}${fmt(si.pl)}</div><div class="pl-pct ${plCls(si.pl)}">${si.plPct >= 0 ? '+' : ''}${si.plPct.toFixed(2)}%</div>` : `<div class="sub chg ${chgCls}">${chgTxt}</div>`}</div>
     </div>
     <div class="detail">
       ${q ? `<div class="chart-box">${UI.sparkline(q.series, 280, 64, { tw, dot: true, sw: 2 })}<div class="chart-cap"><span>近 ${q.series.length} 個交易日</span><span>${esc(q.date || '')} 收盤</span></div></div>` : `<div class="hint-row">${Icon('search')}<span>沒有這檔的自動報價，使用手動填的價格</span></div>`}
       <div class="kv"><span>現價</span><span>${si.px ? price(si.px, si.ccy) : '—'}</span></div>
       ${q ? `<div class="kv"><span>今日漲跌</span><span class="chg ${chgCls}">${q.chg >= 0 ? '+' : ''}${q.chg.toFixed(2)}（${chgTxt}）· ${fmt(si.dayChg)}</span></div>` : ''}
-      ${si.pl !== null ? `<div class="kv"><span>損益（成本 ${price(num(a.cost), si.ccy)}）</span><span class="chg ${si.pl > 0 ? 'up' : si.pl < 0 ? 'down' : ''}">${si.pl >= 0 ? '+' : ''}${fmt(si.pl)}（${(si.pl / si.costVal * 100).toFixed(1)}%）</span></div>` : ''}
-      <button type="button" class="btn mini" data-edit="asset" data-id="${a.id}">${Icon.svg('pencil', 18)} 編輯持股</button>
+      <div class="kv"><span>持有</span><span>${unitTxt(si.mkt, si.shares)}${si.avg ? ` · 平均成本 ${price(si.avg, si.ccy)}` : ''}</span></div>
+      ${si.costVal ? `<div class="kv"><span>總成本</span><span>${fmt(si.costVal)}</span></div>` : ''}
+      ${si.pl != null ? `<div class="kv"><span>未實現損益</span><b class="chg ${plCls(si.pl)}">${plTxt(si.pl, si.plPct)}</b></div>` : `<div class="small muted">有買進沒有填價格，無法計算損益</div>`}
+      ${si.realized ? `<div class="kv"><span>已實現損益</span><span class="chg ${plCls(si.realized)}">${plTxt(si.realized)}</span></div>` : ''}
+      <div class="lot-title">交易紀錄（${lots.length} 筆）</div>
+      <ul class="lots">${lots.map(l => {
+        const isSell = l.type === 'sell';
+        const lp = !isSell && num(l.price) && si.px ? (si.px - num(l.price)) * num(l.shares) * Stocks.fx(si.ccy, state.currency) : null;
+        return `<li data-lot="${a.id}|${l.id}"><span class="lot-tag ${isSell ? 'sell' : 'buy'}">${isSell ? '賣' : '買'}</span>
+          <span class="grow">${l.date ? esc(l.date.replace(/-/g, '/')) : '原有持股'}<small>${unitTxt(si.mkt, num(l.shares))}${num(l.price) ? ` @ ${price(num(l.price), si.ccy)}` : ' · 未填價格'}</small></span>
+          <span class="lot-pl">${isSell ? (l.realized != null ? `<span class="chg ${plCls(l.realized)}">實現 ${plTxt(l.realized * Stocks.fx(si.ccy, state.currency))}</span>` : '') : lp != null ? `<span class="chg ${plCls(lp)}">${plTxt(lp, (si.px / num(l.price) - 1) * 100)}</span>` : ''}</span></li>`;
+      }).join('')}</ul>
+      <div class="btnrow">
+        <button type="button" class="btn mini primary" data-trade="buy" data-id="${a.id}">${Icon.svg('plus', 16)} 加碼買進</button>
+        <button type="button" class="btn mini" data-trade="sell" data-id="${a.id}">賣出</button>
+        <button type="button" class="btn mini" data-edit="asset" data-id="${a.id}">${Icon.svg('pencil', 16)} 編輯</button>
+      </div>
     </div></li>`;
 }
 
@@ -264,9 +320,16 @@ function renderAssets(s) {
     const open = openGroups.has(g.c.v);
     const share = s.totalAssets ? g.total / s.totalAssets * 100 : 0;
     let extra = '';
+    let plLine = '';
     if (g.c.stock) {
-      const day = g.items.reduce((t, x) => t + (stockInfo(x.a)?.dayChg || 0), 0);
+      const infos = g.items.map(x => stockInfo(x.a)).filter(Boolean);
+      const day = infos.reduce((t, x) => t + (x.dayChg || 0), 0);
       if (day) extra = `<span class="chg ${day > 0 ? 'up' : 'down'}">今日 ${day > 0 ? '+' : ''}${fmt(day)}</span>`;
+      const withCost = infos.filter(x => x.pl != null);
+      if (withCost.length) {
+        const pl = withCost.reduce((t, x) => t + x.pl, 0), cost = withCost.reduce((t, x) => t + x.costVal, 0);
+        plLine = `<div class="pl-line chg ${plCls(pl)}">損益 ${plTxt(pl, cost ? pl / cost * 100 : null)}</div>`;
+      }
     }
     const rows = g.items.map(({ a, v }) => {
       if (g.c.stock && a.sym) return stockRow(a, i++);
@@ -280,7 +343,7 @@ function renderAssets(s) {
     }).join('');
     return `<div class="group ${open ? 'open' : ''}">
       <button type="button" class="group-head" data-group="${esc(g.c.v)}">${icCat(g.c.v)}
-        <div class="grow"><div class="name">${esc(g.c.v)} <small>${g.items.length} 項</small></div><div class="sub">${share.toFixed(0)}% ${extra}</div></div>
+        <div class="grow"><div class="name">${esc(g.c.v)} <small>${g.items.length} 項</small></div><div class="sub">${share.toFixed(0)}% ${extra}</div>${plLine}</div>
         <div class="amt pos">${fmt(g.total)}</div><i class="chev">›</i></button>
       <ul class="list sub-list">${rows}</ul></div>`;
   }).join('');
@@ -495,10 +558,11 @@ const FIELDS = {
     { k: 'category', label: '類別', type: 'pick', opts: 'assetCat', def: '現金/存款' },
     { k: 'name', label: '名稱', type: 'text', req: true, ph: '例：玉山活存', show: v => !isStock(v) },
     { sec: ['tw', '股票持股'], show: isStock },
-    { k: 'sym', label: '股票代號', type: 'pick', opts: 'stock', show: isStock, req: true },
+    { k: 'sym', label: '股票代號', type: 'pick', opts: 'stock', show: v => isStock(v) && !v.id, req: true },
     { panel: 'stockPanel', show: isStock },
-    { k: 'shares', label: '持有股數', type: 'number', req: true, show: isStock, half: true, hintFn: v => mktOf(v) === 'tw' ? '1 張 = 1,000 股' : '可輸入小數（零股）' },
-    { k: 'cost', label: '平均成本／股（選填）', type: 'number', show: isStock, half: true },
+    { k: 'shares', label: '買進股數', type: 'number', req: true, show: v => isStock(v) && !v.id, half: true, hintFn: v => mktOf(v) === 'tw' ? '1 張 = 1,000 股' : '可輸入小數（零股）' },
+    { k: 'cost', label: '成交價／平均成本', type: 'number', show: v => isStock(v) && !v.id, half: true, hintFn: () => '用來算損益，可不填' },
+    { k: 'buyDate', label: '買進日期（選填）', type: 'date', show: v => isStock(v) && !v.id },
     { k: 'manualPrice', label: '目前股價（找不到報價時填）', type: 'number', show: noQuote },
     { sec: ['property', '實價登錄估價'], show: isRE },
     { k: 'address', label: '地址（只存在手機裡）', type: 'text', ph: '例：臺北市大安區信義路四段1號', show: isRE, action: { id: 'lookupBtn', text: '查實價' } },
@@ -682,11 +746,51 @@ $('editFields').addEventListener('click', async e => {
   }
 });
 
+// --- 股票：新增時同代號自動歸到同一檔 ---
+function findHolding(category, sym) {
+  const mkt = mktOf({ category });
+  const k = Stocks.norm(mkt, sym);
+  return state.assets.find(a => a.category === category && a.sym && Stocks.norm(mkt, a.sym) === k);
+}
+function addLot(category, sym, lot, extra = {}) {
+  const mkt = mktOf({ category });
+  const k = Stocks.norm(mkt, sym);
+  const h = findHolding(category, k);
+  const q = Stocks.quote(mkt, k);
+  if (h) { h.lots = [...(h.lots || []), lot]; if (!h.name || h.name === h.sym) h.name = q ? q.name : h.sym; Object.assign(h, extra, { updatedAt: new Date().toISOString() }); return { h, merged: true }; }
+  const nh = { id: uid(), category, sym: k, name: q ? q.name : k, lots: [lot], ...extra, updatedAt: new Date().toISOString() };
+  state.assets.push(nh);
+  openGroups.add(category);
+  return { h: nh, merged: false };
+}
+function saveStock() {
+  if (editing.id) {
+    state.assets = state.assets.map(a => a.id === editing.id ? { ...a, manualPrice: vals.manualPrice === '' || vals.manualPrice == null ? '' : num(vals.manualPrice), note: String(vals.note || '').trim(), updatedAt: new Date().toISOString() } : a);
+    $('editor').close();
+    return save();
+  }
+  if (!num(vals.shares)) return toast('請填買進股數');
+  const lot = { id: uid(), type: 'buy', date: vals.buyDate || '', shares: num(vals.shares), price: vals.cost === '' || vals.cost == null ? '' : num(vals.cost) };
+  const { h, merged } = addLot(vals.category, vals.sym, lot, vals.manualPrice ? { manualPrice: num(vals.manualPrice) } : {});
+  $('editor').close();
+  UI.burst('coin');
+  save();
+  toast(merged ? `已加入 ${h.sym} ${h.name}（共 ${h.lots.length} 筆交易）` : `已新增 ${h.sym} ${h.name}`);
+}
+
 // --- 股票面板 ---
 function drawStockPanel() {
   const el = $('stockPanel');
   if (!el) return;
   const mkt = mktOf(vals);
+  if (vals.id) {
+    const si = stockInfo(vals);
+    el.innerHTML = `<div class="stock-head"><div><b>${esc(Stocks.norm(mkt, vals.sym))} ${esc(si.q ? si.q.name : vals.name || '')}</b><div class="small muted">${unitTxt(mkt, si.shares)}${si.avg ? ` · 均價 ${price(si.avg, si.ccy)}` : ''}</div></div>
+      <div class="r"><b class="big-px">${fmt(si.value)}</b>${si.pl != null ? `<div class="chg ${plCls(si.pl)}">${plTxt(si.pl, si.plPct)}</div>` : ''}</div></div>
+      <div class="small muted">買進、賣出與每筆交易，請在資產列表點開這檔股票，用「加碼買進」「賣出」或點交易紀錄修改。</div>`;
+    return;
+  }
+  const exist = vals.sym && findHolding(vals.category, vals.sym);
   if (!vals.sym) {
     el.innerHTML = `<div class="hint-row">${Icon(mkt === 'us' ? 'us' : 'tw')}<span>${Stocks.ready() ? '點上面選股票代號，會自動帶出最新收盤價與走勢' : '報價資料讀取中，或尚未產生（GitHub Action 每天收盤後更新）'}</span></div>`;
     return;
@@ -699,14 +803,14 @@ function drawStockPanel() {
   const cost = num(vals.cost);
   const tw = mkt === 'tw';
   const chgCls = q ? (q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : '') : '';
-  el.innerHTML = (q ? `<div class="stock-head"><div><b>${esc(q.sym)} ${esc(q.name)}</b><div class="small muted">${esc(q.date || '')} 收盤 · 每個交易日自動更新</div></div>
+  el.innerHTML = (exist ? `<div class="hint-row merge-row">${Icon('basket')}<span>你已經有 ${esc(exist.sym)} ${esc(exist.name || '')}，這次買進會歸到同一檔，自動重算平均成本</span></div>` : '') + (q ? `<div class="stock-head"><div><b>${esc(q.sym)} ${esc(q.name)}</b><div class="small muted">${esc(q.date || '')} 收盤 · 每個交易日自動更新</div></div>
       <div class="r"><b class="big-px">${price(q.price, ccy)}</b><div class="chg ${chgCls}">${q.chg >= 0 ? '+' : ''}${q.chg.toFixed(2)}（${q.chgPct >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%）</div></div></div>
       <div class="chart-box">${UI.sparkline(q.series, 280, 60, { tw, dot: true, sw: 2 })}</div>`
     : `<div class="hint-row">${Icon('search')}<span>找不到「${esc(vals.sym)}」的自動報價，請在下方手動填目前股價</span></div>`) +
     (tw ? `<div class="quick">${[1000, 100, 1].map(n => `<button type="button" class="btn mini" data-shares="${n}">+${n === 1000 ? '1 張' : n + ' 股'}</button>`).join('')}</div>` : '') +
     (sh && px ? `<div class="kv"><span>市值</span><b class="accent">${fmt(val)}</b></div>` : '') +
     (sh && px && ccy !== state.currency ? `<div class="small muted">以匯率 1 ${ccy} ≈ ${k.toFixed(k < 1 ? 4 : 2)} ${state.currency} 換算</div>` : '') +
-    (sh && px && cost ? (() => { const pl = (px - cost) * sh * k; return `<div class="kv"><span>未實現損益</span><span class="chg ${pl > 0 ? 'up' : pl < 0 ? 'down' : ''}">${pl >= 0 ? '+' : ''}${fmt(pl)}（${((px - cost) / cost * 100).toFixed(1)}%）</span></div>`; })() : '');
+    (sh && px && cost ? (() => { const pl = (px - cost) * sh * k; return `<div class="kv"><span>這筆的損益</span><span class="chg ${pl > 0 ? 'up' : pl < 0 ? 'down' : ''}">${pl >= 0 ? '+' : ''}${fmt(pl)}（${((px - cost) / cost * 100).toFixed(1)}%）</span></div>`; })() : '');
 }
 
 // --- 貸款試算面板 ---
@@ -816,6 +920,11 @@ document.addEventListener('click', e => {
   if (add && add.dataset.add) return openEditor(add.dataset.add);
   const ed = e.target.closest('[data-edit]');
   if (ed) return openEditor(ed.dataset.edit, ed.dataset.id);
+  const tr = e.target.closest('[data-trade]');
+  if (tr) return openTrade(tr.dataset.id, tr.dataset.trade);
+  const lt = e.target.closest('[data-lot]');
+  if (lt) { const [aid, lid] = lt.dataset.lot.split('|'); return openTrade(aid, null, lid); }
+  if (e.target.closest('li.stock .detail')) return;
   const ex = e.target.closest('[data-expand]');
   if (ex) {
     const id = ex.dataset.expand;
@@ -836,6 +945,7 @@ $('editForm').addEventListener('submit', e => {
   readInputs();
   if (editing.kind === 'debt' && !vals.bank) return toast('請選擇負債來源');
   if (editing.kind === 'asset' && isStock(vals) && !vals.sym) return toast('請選擇股票代號');
+  if (editing.kind === 'asset' && isStock(vals)) return saveStock();
   const obj = {};
   for (const f of FIELDS[editing.kind]) {
     if (!f.k) continue;
@@ -1095,6 +1205,130 @@ function drawPlanPanel() {
     ${num(src.limit) && num(src.drawn) + t > num(src.limit) ? `<div class="small neg">超過核准額度 ${fmt(num(src.limit))}</div>` : ''}` : ''}
     ${num(vals.yieldPct) ? `<div class="kv"><span>預估每月收益（全部投入後）</span><span class="pos">${fmt(t * num(vals.yieldPct) / 100 / 12)}</span></div>` : ''}`;
 }
+
+
+// ================= 股票交易（加碼／賣出／修改） =================
+let tradeCtx = null;
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+function openTrade(id, type, lotId) {
+  const a = state.assets.find(x => x.id === id);
+  if (!a) return;
+  const si = stockInfo(a);
+  const lot = lotId ? (a.lots || []).find(l => l.id === lotId) : null;
+  tradeCtx = { a, lotId, type: lot ? lot.type || 'buy' : type };
+  $('tdTitle').innerHTML = `<span class="ticker">${esc(a.sym)}</span> ${esc(si.q ? si.q.name : a.name || '')}`;
+  $('tdDate').value = lot ? lot.date || '' : todayISO();
+  $('tdShares').value = lot ? lot.shares : '';
+  $('tdPrice').value = lot ? (lot.price === '' ? '' : lot.price) : (si.px ? +si.px.toFixed(2) : '');
+  $('tdDelete').hidden = !lot;
+  $('tdQuick').innerHTML = si.mkt === 'tw' ? [1000, 100].map(n => `<button type="button" class="btn mini" data-tq="${n}">+${n === 1000 ? '1 張' : n + ' 股'}</button>`).join('') + (si.shares ? `<button type="button" class="btn mini" data-tq="all">全部 ${unitTxt(si.mkt, si.shares)}</button>` : '') : (si.shares ? `<button type="button" class="btn mini" data-tq="all">全部 ${unitTxt(si.mkt, si.shares)}</button>` : '');
+  setTradeType(tradeCtx.type);
+  $('tradeDialog').showModal();
+}
+function setTradeType(t) {
+  tradeCtx.type = t;
+  $('tdType').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  $('tdSharesLabel').textContent = t === 'sell' ? '賣出股數' : '買進股數';
+  $('tdQuick').querySelectorAll('[data-tq="all"]').forEach(b => { b.hidden = t !== 'sell'; });
+  tradePreview();
+}
+function tradePreview() {
+  const { a, lotId, type } = tradeCtx;
+  const sh = num($('tdShares').value), p = num($('tdPrice').value);
+  const lot = { id: lotId || 'preview', type, date: $('tdDate').value, shares: sh, price: p || '' };
+  const lots = (a.lots || []).filter(l => l.id !== lotId).concat(sh ? [lot] : []);
+  const before = stockInfo(a), after = stockInfo({ ...a, lots });
+  const L = lotsSummary(lots);
+  const row = L.rows.find(r => r.id === lot.id);
+  $('tdPreview').innerHTML = !sh ? `<div class="hint-row">${Icon('calc')}<span>填入股數與價格，會算出交易後的平均成本與損益</span></div>`
+    : `<div class="kv"><span>交易後持有</span><span>${unitTxt(after.mkt, after.shares)}</span></div>
+      ${after.avg ? `<div class="kv"><span>平均成本</span><span>${before.avg ? price(before.avg, after.ccy) + ' → ' : ''}<b>${price(after.avg, after.ccy)}</b></span></div>` : ''}
+      ${type === 'buy' && p ? `<div class="kv"><span>這筆金額</span><span>${fmt(sh * p * Stocks.fx(after.ccy, state.currency))}</span></div>` : ''}
+      ${type === 'sell' && row && row.realized != null ? `<div class="kv"><span>這筆實現損益</span><b class="chg ${plCls(row.realized)}">${plTxt(row.realized * Stocks.fx(after.ccy, state.currency))}</b></div>` : ''}
+      ${type === 'sell' && sh > before.shares + (lotId ? num((a.lots.find(l => l.id === lotId) || {}).shares) : 0) ? '<div class="small neg">賣出股數超過持有</div>' : ''}
+      ${after.pl != null ? `<div class="kv"><span>交易後未實現損益</span><span class="chg ${plCls(after.pl)}">${plTxt(after.pl, after.plPct)}</span></div>` : ''}`;
+}
+$('tdType').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b) setTradeType(b.dataset.t); });
+['tdShares', 'tdPrice', 'tdDate'].forEach(id => $(id).addEventListener('input', tradePreview));
+$('tdQuick').addEventListener('click', e => {
+  const b = e.target.closest('[data-tq]'); if (!b) return;
+  const si = stockInfo(tradeCtx.a);
+  $('tdShares').value = b.dataset.tq === 'all' ? si.shares : num($('tdShares').value) + num(b.dataset.tq);
+  tradePreview();
+});
+$('tdSave').addEventListener('click', () => {
+  const { a, lotId, type } = tradeCtx;
+  const sh = num($('tdShares').value);
+  if (!sh) return toast('請填股數');
+  const lot = { id: lotId || uid(), type, date: $('tdDate').value, shares: sh, price: $('tdPrice').value === '' ? '' : num($('tdPrice').value) };
+  a.lots = lotId ? a.lots.map(l => l.id === lotId ? lot : l) : [...(a.lots || []), lot];
+  a.updatedAt = new Date().toISOString();
+  openStocks.add(a.id);
+  $('tradeDialog').close();
+  UI.burst(type === 'sell' ? 'heart' : 'coin');
+  save();
+  toast(type === 'sell' ? '已記錄賣出' : lotId ? '已更新' : `已加碼 ${a.sym}`);
+});
+$('tdDelete').addEventListener('click', () => {
+  const { a, lotId } = tradeCtx;
+  if (!confirm('刪除這筆交易？')) return;
+  a.lots = a.lots.filter(l => l.id !== lotId);
+  if (!a.lots.length && confirm('這檔已經沒有任何交易，要把整檔刪掉嗎？')) state.assets = state.assets.filter(x => x.id !== a.id);
+  $('tradeDialog').close();
+  save();
+});
+$('tdCancel').addEventListener('click', () => $('tradeDialog').close());
+
+// ================= 一次輸入多檔持股 =================
+let bulkMkt = '台股';
+function bulkRow(v = {}) {
+  return `<div class="bk-row"><input class="bk-sym" list="bkList" placeholder="${bulkMkt === '美股' ? 'AAPL' : '2330'}" value="${esc(v.sym || '')}" autocapitalize="characters">
+    <input class="bk-sh" type="number" inputmode="decimal" step="any" placeholder="${bulkMkt === '美股' ? '10' : '1000'}" value="${esc(v.shares || '')}">
+    <input class="bk-cost" type="number" inputmode="decimal" step="any" placeholder="選填" value="${esc(v.cost || '')}">
+    <button type="button" class="bk-del" aria-label="刪除這列">×</button><small class="bk-name"></small></div>`;
+}
+async function openBulk() {
+  await Stocks.load();
+  setBulkMkt(bulkMkt);
+  $('bkRows').innerHTML = [0, 1, 2].map(() => bulkRow()).join('');
+  $('bulkDialog').showModal();
+}
+function setBulkMkt(m) {
+  bulkMkt = m;
+  $('bkMkt').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  const mkt = m === '美股' ? 'us' : 'tw';
+  $('bkList').innerHTML = Stocks.list(mkt).map(x => `<option value="${esc(x.sym)}">${esc(x.name)}</option>`).join('');
+  $('bkRows').querySelectorAll('.bk-row').forEach(bulkName);
+}
+function bulkName(row) {
+  const mkt = bulkMkt === '美股' ? 'us' : 'tw';
+  const sym = row.querySelector('.bk-sym').value.trim();
+  const el = row.querySelector('.bk-name');
+  if (!sym) { el.textContent = ''; return; }
+  const q = Stocks.quote(mkt, sym);
+  const ex = findHolding(bulkMkt, sym);
+  el.className = 'bk-name ' + (q ? '' : 'neg');
+  el.textContent = q ? `${q.name} · 收盤 ${price(q.price, q.ccy)}${ex ? ' · 已持有，會歸到同一檔' : ''}` : '找不到報價（仍可加入，之後手動填股價）';
+}
+$('bulkOpen').addEventListener('click', openBulk);
+$('bkMkt').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (b) setBulkMkt(b.dataset.m); });
+$('bkAdd').addEventListener('click', () => { $('bkRows').insertAdjacentHTML('beforeend', bulkRow()); $('bkRows').lastElementChild.querySelector('input').focus(); });
+$('bkRows').addEventListener('input', e => { if (e.target.classList.contains('bk-sym')) bulkName(e.target.closest('.bk-row')); });
+$('bkRows').addEventListener('click', e => { if (e.target.closest('.bk-del')) e.target.closest('.bk-row').remove(); });
+$('bkCancel').addEventListener('click', () => $('bulkDialog').close());
+$('bkSave').addEventListener('click', () => {
+  const rows = [...$('bkRows').querySelectorAll('.bk-row')].map(r => ({ sym: r.querySelector('.bk-sym').value.trim(), shares: num(r.querySelector('.bk-sh').value), cost: r.querySelector('.bk-cost').value })).filter(r => r.sym && r.shares);
+  if (!rows.length) return toast('至少填一列代號與股數');
+  let added = 0, merged = 0;
+  for (const r of rows) {
+    const res = addLot(bulkMkt, r.sym, { id: uid(), type: 'buy', date: '', shares: r.shares, price: r.cost === '' ? '' : num(r.cost) });
+    res.merged ? merged++ : added++;
+  }
+  $('bulkDialog').close();
+  UI.burst('coin');
+  save();
+  toast(`新增 ${added} 檔${merged ? `、${merged} 筆歸到原有股票` : ''}`);
+});
 
 // ---------- 小提示 ----------
 let toastT;

@@ -78,6 +78,7 @@
     <!-- 資產 -->
     <section class="view" id="view-assets">
       <div class="listhead"><h2><i data-ic="piggy" data-size="26"></i> 資產</h2><span id="assetsSum" class="pos"></span></div>
+      <button type="button" class="btn bulk-btn" id="bulkOpen"><i data-ic="tw" data-size="22"></i> 一次輸入股票持股</button>
       <div id="assetList"></div>
     </section>
 
@@ -189,6 +190,30 @@
       <button type="button" class="btn danger" id="pdUndo">取消確認</button>
       <button type="button" class="btn" id="pdCancel">關閉</button>
     </div>
+  </dialog>
+
+  <dialog id="tradeDialog" class="cl-dialog">
+    <h2 id="tdTitle">加碼買進</h2>
+    <div class="seg" id="tdType"><button type="button" data-t="buy" class="on">買進</button><button type="button" data-t="sell">賣出</button></div>
+    <div class="fields">
+      <label class="field half"><span class="flabel">日期</span><input id="tdDate" type="date"></label>
+      <label class="field half"><span class="flabel" id="tdSharesLabel">股數</span><input id="tdShares" type="number" inputmode="decimal" step="any"></label>
+      <label class="field"><span class="flabel">成交價（每股）</span><input id="tdPrice" type="number" inputmode="decimal" step="any"></label>
+    </div>
+    <div class="quick" id="tdQuick"></div>
+    <div class="panel" id="tdPreview"></div>
+    <div class="btnrow"><button type="button" class="btn danger" id="tdDelete">刪除這筆</button><span class="spacer"></span><button type="button" class="btn" id="tdCancel">取消</button><button type="button" class="btn primary" id="tdSave">儲存</button></div>
+  </dialog>
+
+  <dialog id="bulkDialog" class="cl-dialog bulk-dialog">
+    <h2><i data-ic="tw" data-size="28"></i> 一次輸入股票持股</h2>
+    <div class="seg" id="bkMkt"><button type="button" data-m="台股" class="on">台股</button><button type="button" data-m="美股">美股</button></div>
+    <p class="small muted">每列一檔：代號、股數、平均成本（可不填）。已經有的股票會歸到同一檔。</p>
+    <div class="bk-head"><span>代號</span><span>股數</span><span>平均成本</span><span></span></div>
+    <div id="bkRows"></div>
+    <button type="button" class="btn mini" id="bkAdd">＋ 再一列</button>
+    <datalist id="bkList"></datalist>
+    <div class="btnrow"><span class="spacer"></span><button type="button" class="btn" id="bkCancel">取消</button><button type="button" class="btn primary" id="bkSave">全部加入</button></div>
   </dialog>
 
   <div class="toast" id="toast" role="status"></div>

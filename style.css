@@ -636,3 +636,34 @@ body.privacy .big { color: var(--muted); }
 .lv-row.cur .lv-hint { display: none; }
 .data-line { font-size: 12px; color: var(--muted); margin: -4px 2px 10px; display: flex; gap: 4px; align-items: center; }
 #stockStatus, #lvrStatus { line-height: 1.7; }
+
+/* ===== v5.4 股票群組 ===== */
+.pl-pct { font-size: 11.5px; font-weight: 700; }
+.pl-line { font-size: 11.5px; font-weight: 700; margin-top: 2px; }
+.lot-title { font-weight: 700; font-size: 13px; margin: 10px 0 4px; }
+.lots { list-style: none; margin: 0; padding: 0; }
+.lots li { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-bottom: 1px dashed var(--line); font-size: 13px; cursor: pointer; border-radius: 8px; }
+.lots li:active { background: var(--card); }
+.lots small { display: block; color: var(--muted); font-size: 11.5px; }
+.lot-tag { flex: none; width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font-weight: 800; font-size: 12px; }
+.lot-tag.buy { background: #ffe1dd; color: #c62828; }
+.lot-tag.sell { background: #d4f5dd; color: #1f7a3a; }
+.lot-pl { text-align: right; font-size: 12px; font-weight: 700; }
+.seg { display: flex; background: var(--soft); border-radius: 12px; padding: 3px; margin: 8px 0 12px; }
+.seg button { flex: 1; border: 0; background: none; padding: 8px; border-radius: 10px; font-size: 14px; cursor: pointer; color: var(--muted); }
+.seg button.on { background: var(--card); color: var(--text); font-weight: 700; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+#tradeDialog .field input, .bk-row input { display: block; width: 100%; padding: 10px 11px; font-size: 16px; border-radius: 11px; border: 1.5px solid var(--line); background: var(--soft); color: var(--text); }
+#tradeDialog .ticker { font-size: 14px; vertical-align: 2px; }
+.bulk-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 12px; }
+.bulk-dialog { width: min(96vw, 520px); }
+.bk-head, .bk-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 28px; gap: 6px; align-items: center; }
+.bk-head { font-size: 12px; color: var(--muted); padding: 0 2px 4px; }
+.bk-row { margin-bottom: 8px; }
+.bk-name { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); margin-top: -3px; min-height: 0; }
+.bk-name:empty { display: none; }
+.bk-del { border: 0; background: var(--soft); border-radius: 50%; width: 28px; height: 28px; font-size: 16px; color: var(--muted); cursor: pointer; }
+.merge-row { background: #e8f7fd; border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; }
+@media (prefers-color-scheme: dark) { .merge-row { background: #16323d; } }
+.btn[hidden] { display: none !important; }
+.pl-pct.up, .pl-line.up { color: #e53935; } .pl-pct.down, .pl-line.down { color: #2e9e4f; }
+.group-head .sub { flex-wrap: wrap; }

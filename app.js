@@ -1110,7 +1110,7 @@ function renderInvest() {
   const el = $('investBody');
   if (!state.plans.length) {
     el.innerHTML = `<div class="card empty big-empty">${Icon('invest', 'ico-xl')}<p>還沒有投資計畫</p>
-      <p class="muted">例如理財型房貸 1,460 萬分 15 個月投入：新增計畫、資金來源選那筆理財型房貸，就會自動算出每月投入、利息怎麼遞增，還款計畫也會跟著更新。</p>
+      <p class="muted">例如把一筆額度分 12 個月投入：新增計畫、資金來源選那筆理財型房貸，就會自動算出每月投入、利息怎麼遞增，還款計畫也會跟著更新。</p>
       <button type="button" class="btn primary" data-add="plan">新增投資計畫</button></div>`;
     return;
   }

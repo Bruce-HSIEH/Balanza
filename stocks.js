@@ -35,14 +35,14 @@ const Stocks = (() => {
     const k = norm(mkt, sym);
     const row = D.s[k];
     if (!row) return null;
-    const [name, closes] = row;
+    const [name, closes, rowDate] = row;
     const series = closes.filter(v => v != null);
     if (!series.length) return null;
     const price = series.at(-1), prev = series.length > 1 ? series.at(-2) : price;
     return {
       sym: k, name, price, prev,
       chg: price - prev, chgPct: prev ? (price - prev) / prev * 100 : 0,
-      series: series.slice(-30), date: D.date,
+      series: series.slice(-30), date: rowDate || D.date,
       ccy: mkt === 'us' ? 'USD' : 'TWD',
     };
   }

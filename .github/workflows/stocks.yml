@@ -22,15 +22,22 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 28
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: 下載股價
-        run: python scripts/build_stocks.py --days 30
+      - name: 台股
+        timeout-minutes: 12
+        continue-on-error: true
+        run: python scripts/build_stocks.py --only tw --budget 540
+      - name: 美股與匯率
+        timeout-minutes: 12
+        continue-on-error: true
+        run: python scripts/build_stocks.py --only us --budget 540
       - name: 提交資料
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -1,0 +1,39 @@
+name: 更新實價登錄資料
+
+on:
+  schedule:
+    - cron: '17 19 * * 0'   # 每週一 03:17（台灣時間）
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/build_lvr.py
+      - .github/workflows/lvr.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lvr
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 下載並彙整
+        run: python scripts/build_lvr.py --seasons 8
+      - name: 提交資料
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/lvr
+          if git diff --cached --quiet; then echo "沒有變更"; exit 0; fi
+          git commit -m "chore: 更新實價登錄資料 $(date -u +%Y-%m-%d)"
+          git pull --rebase origin main
+          git push

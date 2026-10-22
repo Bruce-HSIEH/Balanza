@@ -1,68 +1,70 @@
 'use strict';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '2.0.0';
 const STORE_KEY = 'balanza.v1';
-
-const ASSET_CATS = ['現金/存款', '股票', 'ETF/基金', '債券', '加密貨幣', '保險', '不動產', '車輛', '其他'];
-const DEBT_TYPES = ['房貸', '信貸', '車貸', '學貸', '信用卡', '親友借款', '其他'];
+const { esc, emoji } = UI;
+const $ = id => document.getElementById(id);
+const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 // ---------- 資料 ----------
+function migrate(d) {
+  d = { currency: 'TWD', assets: [], debts: [], ...d };
+  d.debts = d.debts.map(x => {
+    if (x.mode) return x;
+    const b = BANKS.find(b => x.source && (b.name.includes(x.source) || x.source.includes(b.name.replace(/(國際)?商業(儲蓄)?銀行$/, ''))));
+    return { ...x, mode: 'manual', bank: b ? `${b.code}|${b.name}` : (x.source ? `—|${x.source}` : '') };
+  });
+  return d;
+}
 function load() {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const d = JSON.parse(raw);
-      return { currency: 'TWD', assets: [], debts: [], ...d };
-    }
-  } catch (e) { /* ignore */ }
-  return { currency: 'TWD', assets: [], debts: [] };
+  try { const raw = localStorage.getItem(STORE_KEY); if (raw) return migrate(JSON.parse(raw)); } catch (e) { /* ignore */ }
+  return migrate({});
 }
 let state = load();
 function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { alert('儲存失敗：' + e.message); }
   render();
 }
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 
 // ---------- 格式 ----------
 function fmt(n) {
   const digits = state.currency === 'JPY' || state.currency === 'TWD' ? 0 : 2;
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: state.currency, maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(n || 0);
 }
+const wan = n => n >= 1e4 ? `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1).replace(/\.0$/, '')} 萬` : Math.round(n).toLocaleString();
 const pct = n => (n || 0).toFixed(2).replace(/\.?0+$/, '') + '%';
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------- 查找 ----------
+const bankOf = v => { if (!v) return null; const [code, name] = v.split('|'); return BANKS.find(b => b.code === code && b.name === name) || { code, name, s: (name || '?')[0], c: '#757575' }; };
+const bankLabel = b => b ? (b.code !== '—' ? `${b.code} ${b.name}` : b.name) : '—';
+const shortBank = b => b ? b.name.replace(/(\(台灣\))?(國際)?商業(儲蓄)?銀行$/, '').replace(/^臺灣(?=土地|中小)/, '') : '—';
+const catOf = v => ASSET_CATS.find(c => c.v === v) || ASSET_CATS.at(-1);
+const typeOf = v => DEBT_TYPES.find(c => c.v === v) || DEBT_TYPES.at(-1);
+const brandOf = v => CAR_BRANDS.find(c => c.v === v);
+
+function assetIcon(a) {
+  if (a.category === '車輛' && a.brand) return UI.carIcon(brandOf(a.brand));
+  return emoji(catOf(a.category).e);
+}
 
 // ---------- 計算 ----------
-// 以本息平均攤還估算剩餘期數
-function payoff(d) {
-  const B = num(d.balance), P = num(d.monthly), r = num(d.rate) / 100 / 12;
-  if (B <= 0) return { months: 0, interest: 0 };
-  if (P <= 0) return { months: Infinity, interest: Infinity };
-  if (r === 0) return { months: Math.ceil(B / P), interest: 0 };
-  if (P <= B * r) return { months: Infinity, interest: Infinity };
-  const n = -Math.log(1 - (r * B) / P) / Math.log(1 + r);
-  const months = Math.ceil(n);
-  return { months, interest: Math.max(0, n * P - B) };
-}
-
-function addMonths(m) {
-  const d = new Date();
-  d.setMonth(d.getMonth() + m);
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
+function debtStatus(d) { return Loan.status(d); }
 
 function summary() {
+  const st = state.debts.map(d => ({ d, s: debtStatus(d) }));
   const totalAssets = state.assets.reduce((s, a) => s + num(a.amount), 0);
-  const totalDebts = state.debts.reduce((s, d) => s + num(d.balance), 0);
-  const monthlyPay = state.debts.reduce((s, d) => s + num(d.monthly), 0);
-  const monthlyInterest = state.debts.reduce((s, d) => s + num(d.balance) * num(d.rate) / 100 / 12, 0);
-  const avgRate = totalDebts > 0 ? state.debts.reduce((s, d) => s + num(d.balance) * num(d.rate), 0) / totalDebts : 0;
+  const totalDebts = st.reduce((s, x) => s + x.s.balance, 0);
+  const monthlyPay = st.reduce((s, x) => s + x.s.monthly, 0);
+  const monthlyInterest = st.reduce((s, x) => s + x.s.monthlyInterest, 0);
+  const avgRate = totalDebts > 0 ? st.reduce((s, x) => s + x.s.balance * num(x.d.rate), 0) / totalDebts : 0;
+  const graceItems = st.filter(x => x.s.inGrace);
   return {
-    totalAssets, totalDebts, monthlyPay, monthlyInterest, avgRate,
+    st, totalAssets, totalDebts, monthlyPay, monthlyInterest, avgRate, graceItems,
     netWorth: totalAssets - totalDebts,
-    debtRatio: totalAssets > 0 ? totalDebts / totalAssets * 100 : 0,
+    debtRatio: totalAssets > 0 ? totalDebts / totalAssets * 100 : (totalDebts > 0 ? 100 : 0),
     monthlyPrincipal: Math.max(0, monthlyPay - monthlyInterest),
+    graceJump: graceItems.reduce((s, x) => s + (x.s.afterGracePay - x.s.monthly), 0),
   };
 }
 
@@ -72,119 +74,390 @@ function groupSum(items, keyFn, valFn) {
   return [...m.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
 }
 
-function barsHTML(rows, extra) {
+function barsHTML(rows, iconFn, extraFn) {
   if (!rows.length) return '<div class="empty">尚無資料</div>';
   const max = rows[0][1], total = rows.reduce((s, r) => s + r[1], 0);
-  return rows.map(([k, v]) => `
-    <div class="bar">
-      <div class="bar-top"><span>${esc(k)}</span><span>${fmt(v)} · ${(v / total * 100).toFixed(0)}%${extra ? extra(k) : ''}</span></div>
-      <div class="track"><div class="fill" style="width:${(v / max * 100).toFixed(1)}%"></div></div>
+  return rows.map(([k, v], i) => `
+    <div class="bar" style="--i:${i}">
+      ${iconFn ? iconFn(k) : ''}
+      <div class="bar-body">
+        <div class="bar-top"><span>${esc(iconFn && iconFn.label ? iconFn.label(k) : k)}</span><span>${fmt(v)} · ${(v / total * 100).toFixed(0)}%</span></div>
+        ${extraFn ? extraFn(k) : ''}
+        <div class="track"><div class="fill" data-w="${(v / max * 100).toFixed(1)}"></div></div>
+      </div>
     </div>`).join('');
 }
 
 // ---------- 畫面 ----------
-const $ = id => document.getElementById(id);
-
+let lastMood = null;
 function render() {
   const s = summary();
-  $('netWorth').textContent = fmt(s.netWorth);
-  $('netWorth').className = 'big ' + (s.netWorth < 0 ? 'neg' : '');
-  $('totalAssets').textContent = fmt(s.totalAssets);
-  $('totalDebts').textContent = fmt(s.totalDebts);
-  $('debtRatio').textContent = pct(s.debtRatio);
-  $('monthlyPay').textContent = fmt(s.monthlyPay);
-  $('avgRate').textContent = pct(s.avgRate);
-  $('monthlyInterest').textContent = fmt(s.monthlyInterest);
-  $('monthlyPrincipal').textContent = fmt(s.monthlyPrincipal);
 
-  // 負債來源（依機構/債權人），附該來源每月還款
-  const paidBySource = groupSum(state.debts, d => d.source, d => num(d.monthly));
-  const payMap = new Map(paidBySource);
-  $('debtBySource').innerHTML = barsHTML(
-    groupSum(state.debts, d => d.source, d => num(d.balance)),
-    k => payMap.get(k) ? `<br><small>月付 ${fmt(payMap.get(k))}</small>` : ''
-  );
-  $('assetByCat').innerHTML = barsHTML(groupSum(state.assets, a => a.category, a => num(a.amount)));
+  // 吉祥物
+  const mood = UI.moodOf(s);
+  if (mood !== lastMood) {
+    $('mascot').innerHTML = UI.mascotSVG(mood);
+    $('mascotMsg').textContent = UI.MOODS[mood].msg;
+    $('mascotCard').dataset.mood = mood;
+    lastMood = mood;
+  }
+  $('mascotTip').textContent = mood === 'empty' ? '到「資產」「負債」新增資料叫醒牠' : `負債比 ${pct(s.debtRatio)} · 淨資產${s.netWorth >= 0 ? '為正' : '為負'}`;
+
+  UI.countTo($('netWorth'), s.netWorth, fmt);
+  $('netWorth').classList.toggle('neg', s.netWorth < 0);
+  UI.countTo($('totalAssets'), s.totalAssets, fmt);
+  UI.countTo($('totalDebts'), s.totalDebts, fmt);
+  $('debtRatio').textContent = pct(s.debtRatio);
+  $('ratioFill').style.width = Math.min(100, s.debtRatio) + '%';
+  $('ratioFill').className = 'ratio-fill ' + (s.debtRatio >= 70 ? 'hot' : s.debtRatio >= 30 ? 'warm' : 'cool');
+  UI.countTo($('monthlyPay'), s.monthlyPay, fmt);
+  $('avgRate').textContent = pct(s.avgRate);
+  UI.countTo($('monthlyInterest'), s.monthlyInterest, fmt);
+  UI.countTo($('monthlyPrincipal'), s.monthlyPrincipal, fmt);
+
+  $('graceCard').hidden = !s.graceItems.length;
+  if (s.graceItems.length) {
+    $('graceInfo').innerHTML = s.graceItems.map(({ d, s: x }) =>
+      `<div class="grace-row">${UI.bankIcon(bankOf(d.bank))}<div><b>${esc(d.name)}</b><small>寬限期剩 ${x.graceLeft} 個月（${x.graceEndYM} 結束）</small></div><div class="r">${fmt(x.monthly)}<small>→ ${fmt(x.afterGracePay)}</small></div></div>`).join('')
+      + `<div class="grace-sum">寬限期結束後，每月還款將增加 <b class="neg">${fmt(s.graceJump)}</b></div>`;
+  }
+
+  // 負債來源（依銀行）
+  const balByBank = groupSum(s.st, x => x.d.bank || '—|未填', x => x.s.balance);
+  const payByBank = new Map(groupSum(s.st, x => x.d.bank || '—|未填', x => x.s.monthly));
+  const bankIco = k => UI.bankIcon(bankOf(k));
+  bankIco.label = k => { const b = bankOf(k); return b && b.code !== '—' ? `${shortBank(b)} (${b.code})` : (b ? b.name : k); };
+  $('debtBySource').innerHTML = barsHTML(balByBank, bankIco, k => payByBank.get(k) ? `<small class="sub">月付 ${fmt(payByBank.get(k))}</small>` : '');
+  $('assetByCat').innerHTML = barsHTML(groupSum(state.assets, a => a.category, a => num(a.amount)), k => emoji(catOf(k).e));
 
   // 還款時程
-  const debts = [...state.debts].filter(d => num(d.balance) > 0)
-    .map(d => ({ d, p: payoff(d) }))
-    .sort((a, b) => a.p.months - b.p.months);
-  $('payoffList').innerHTML = debts.length ? debts.map(({ d, p }) => {
-    const done = isFinite(p.months)
-      ? `<div>${addMonths(p.months)} 還清</div><div class="sub">約 ${p.months} 期 · 剩餘利息 ${fmt(p.interest)}</div>`
+  const pl = s.st.filter(x => x.s.balance > 0).sort((a, b) => a.s.monthsLeft - b.s.monthsLeft);
+  $('payoffList').innerHTML = pl.length ? pl.map(({ d, s: x }, i) => {
+    const prog = d.mode === 'auto' && x.total ? x.paid / x.total : null;
+    const right = isFinite(x.monthsLeft)
+      ? `<div>${x.payoffYM} 還清</div><div class="sub">剩 ${x.monthsLeft} 期 · 利息 ${fmt(x.interestLeft)}</div>`
       : `<div class="neg">月付不足以還清</div><div class="sub">月付低於每月利息</div>`;
-    return `<div class="payoff"><div><div>${esc(d.name)}</div><div class="sub">${esc(d.source || '')} · ${pct(num(d.rate))}</div></div><div class="r">${done}</div></div>`;
-  }).join('') : '<div class="empty">尚無負債</div>';
+    return `<div class="payoff" style="--i:${i}">${emoji(typeOf(d.type).e)}<div class="grow"><div>${esc(d.name)}</div><div class="sub">${esc(shortBank(bankOf(d.bank)))} · ${pct(num(d.rate))}</div>
+      ${prog !== null ? `<div class="mini-track"><div style="width:${(prog * 100).toFixed(1)}%"></div></div>` : ''}</div><div class="r">${right}</div></div>`;
+  }).join('') : '<div class="empty">沒有負債，太棒了 🎉</div>';
 
   // 資產清單
   const assets = [...state.assets].sort((a, b) => num(b.amount) - num(a.amount));
   $('assetsSum').textContent = fmt(s.totalAssets);
-  $('assetList').innerHTML = assets.length ? assets.map(a => `
-    <li data-edit="asset" data-id="${a.id}">
-      <div><div class="name">${esc(a.name)}</div><div class="sub">${esc(a.category)}${a.note ? ' · ' + esc(a.note) : ''}</div></div>
-      <div class="amt pos">${fmt(num(a.amount))}</div>
-    </li>`).join('') : '<div class="empty">點右下角 ＋ 新增第一筆資產</div>';
+  $('assetList').innerHTML = assets.length ? assets.map((a, i) => {
+    let sub = a.category;
+    if (a.category === '車輛' && a.brand) { const b = brandOf(a.brand); sub = `${b ? b.f + ' ' + b.zh : a.brand}${a.model ? ' ' + a.model : ''}${a.buyYear ? ' · ' + a.buyYear : ''}`; }
+    if (a.category === '不動產' && a.district) sub = `${a.district}${a.road || ''}${a.ping ? ' · ' + a.ping + ' 坪' : ''}${a.lvrAt ? ' · 實價估' : ''}`;
+    return `<li data-edit="asset" data-id="${a.id}" style="--i:${i}">${assetIcon(a)}
+      <div class="grow"><div class="name">${esc(a.name)}</div><div class="sub">${esc(sub)}${a.note ? ' · ' + esc(a.note) : ''}</div></div>
+      <div class="amt pos">${fmt(num(a.amount))}</div></li>`;
+  }).join('') : `<div class="empty big-empty">${emoji('🐷')}<p>點右下角 ＋ 新增第一筆資產</p></div>`;
 
   // 負債清單
-  const ds = [...state.debts].sort((a, b) => num(b.rate) - num(a.rate));
+  const ds = [...s.st].sort((a, b) => num(b.d.rate) - num(a.d.rate));
   $('debtsSum').textContent = fmt(s.totalDebts);
-  $('debtList').innerHTML = ds.length ? ds.map(d => `
-    <li data-edit="debt" data-id="${d.id}">
-      <div><div class="name">${esc(d.name)}</div><div class="sub">${esc(d.type)} · ${esc(d.source || '—')} · 年利率 ${pct(num(d.rate))}</div></div>
-      <div class="amt neg">${fmt(num(d.balance))}<div class="sub">月付 ${fmt(num(d.monthly))}</div></div>
-    </li>`).join('') : '<div class="empty">點右下角 ＋ 新增第一筆負債</div>';
+  $('debtList').innerHTML = ds.length ? ds.map(({ d, s: x }, i) => {
+    const b = bankOf(d.bank);
+    return `<li data-edit="debt" data-id="${d.id}" style="--i:${i}"><span class="stack">${UI.bankIcon(b)}<span class="badge">${typeOf(d.type).e}</span></span>
+      <div class="grow"><div class="name">${esc(d.name)}${x.inGrace ? ` <span class="chip">寬限期剩 ${x.graceLeft} 月</span>` : ''}</div>
+      <div class="sub">${esc(b && b.code !== '—' ? b.code + ' ' + shortBank(b) : (b ? b.name : '—'))} · 年利率 ${pct(num(d.rate))}${d.mode === 'auto' ? ' · 自動試算' : ''}</div></div>
+      <div class="amt neg">${fmt(x.balance)}<div class="sub">月付 ${fmt(x.monthly)}</div></div></li>`;
+  }).join('') : `<div class="empty big-empty">${emoji('🕊️')}<p>點右下角 ＋ 新增負債</p></div>`;
 
-  $('currency').value = state.currency;
+  const cur = CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0];
+  $('currencyBtn').innerHTML = `${emoji(cur.e)}<span>${cur.label}</span><i>›</i>`;
+
+  growBars();
+}
+
+function growBars() {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.querySelectorAll('.view.active .fill[data-w]').forEach(f => { f.style.width = f.dataset.w + '%'; });
+  }));
 }
 
 // ---------- 分頁 ----------
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
-  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + b.dataset.view));
+  document.querySelectorAll('.view').forEach(v => {
+    const on = v.id === 'view-' + b.dataset.view;
+    v.classList.toggle('active', on);
+    if (on) { v.style.animation = 'none'; void v.offsetWidth; v.style.animation = ''; }
+  });
+  document.querySelectorAll('.fill[data-w]').forEach(f => { f.style.width = '0'; });
+  growBars();
   window.scrollTo(0, 0);
 }));
 
-// ---------- 編輯器 ----------
+// ---------- 表單欄位定義 ----------
+const opt = (v, label, icon, sub) => ({ value: v, label, icon, sub });
+const OPTS = {
+  assetCat: () => ASSET_CATS.map(c => opt(c.v, c.v, emoji(c.e))),
+  debtType: () => DEBT_TYPES.map(c => opt(c.v, c.v, emoji(c.e))),
+  bank: () => BANKS.map(b => opt(`${b.code}|${b.name}`, b.name, UI.bankIcon(b), b.code !== '—' ? `銀行代碼 ${b.code}` : '')),
+  mode: () => CALC_MODES.map(c => opt(c.v, c.label, emoji(c.e), c.d)),
+  method: () => REPAY_METHODS.map(c => opt(c.v, c.label, emoji(c.e), c.d)),
+  brand: () => CAR_BRANDS.map(b => opt(b.v, b.zh === b.v ? b.v : `${b.zh} ${b.v}`, UI.carIcon(b), b.f + (b.t === 'scooter' ? ' 機車' : ''))),
+  county: () => COUNTIES.map(c => opt(c.k, c.v, emoji('📍'))),
+  district: async vals => { if (!vals.county) return []; const d = await LVR.loadCounty(vals.county); return Object.keys(d.d).map(k => opt(k, k, emoji('🏙️'), `${d.d[k].s.all[3]} 筆成交`)); },
+  road: async vals => { if (!vals.county || !vals.district) return []; const d = await LVR.loadCounty(vals.county); const r = d.d[vals.district]?.r || {}; return Object.keys(r).sort((a, b) => r[b].s.all[3] - r[a].s.all[3]).map(k => opt(k, k, emoji('🛣️'), `${r[k].s.all[3]} 筆 · 中位 ${wan(r[k].s.all[0])}/坪`)); },
+  btype: () => BUILDING_TYPES.map(c => opt(c.v, c.v, emoji(c.e), c.d)),
+  grace: () => [0, 6, 12, 24, 36, 48, 60].map(m => opt(String(m), m ? `${m} 個月${m % 12 === 0 ? `（${m / 12} 年）` : ''}` : '沒有寬限期', emoji(m ? '⏸️' : '▶️'), m ? '期間只繳利息、不還本金' : '一撥款就開始還本金')),
+};
+const pickLabel = {
+  bank: v => { const b = bankOf(v); return b ? bankLabel(b) : ''; },
+  county: v => (COUNTIES.find(c => c.k === v) || {}).v || '',
+  method: v => (REPAY_METHODS.find(c => c.v === v) || {}).label || '',
+  mode: v => (CALC_MODES.find(c => c.v === v) || {}).label || '',
+  brand: v => { const b = brandOf(v); return b ? (b.zh === b.v ? b.v : `${b.zh} ${b.v}`) : v; },
+  grace: v => +v ? `${v} 個月` : '沒有寬限期',
+};
+const pickIcon = {
+  assetCat: v => emoji(catOf(v).e),
+  debtType: v => emoji(typeOf(v).e),
+  bank: v => UI.bankIcon(bankOf(v)),
+  mode: v => emoji((CALC_MODES.find(c => c.v === v) || {}).e || '🧮'),
+  method: v => emoji((REPAY_METHODS.find(c => c.v === v) || {}).e || '⚖️'),
+  brand: v => UI.carIcon(brandOf(v)),
+  county: () => emoji('📍'), district: () => emoji('🏙️'), road: () => emoji('🛣️'),
+  btype: v => emoji((BUILDING_TYPES.find(c => c.v === v) || {}).e || '🏢'),
+  grace: v => emoji(+v ? '⏸️' : '▶️'),
+};
+
+const isRE = v => v.category === '不動產';
+const isCar = v => v.category === '車輛';
+const isAuto = v => v.mode === 'auto';
+const thisYM = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+
 const FIELDS = {
   asset: [
+    { k: 'category', label: '類別', type: 'pick', opts: 'assetCat', def: '現金/存款' },
     { k: 'name', label: '名稱', type: 'text', req: true, ph: '例：玉山活存' },
-    { k: 'category', label: '類別', type: 'select', opts: ASSET_CATS },
+    { sec: '🏠 實價登錄估價', show: isRE },
+    { k: 'address', label: '地址（只存在手機裡）', type: 'text', ph: '例：臺北市大安區信義路四段1號', show: isRE, action: { id: 'lookupBtn', text: '🔍 查實價' } },
+    { k: 'county', label: '縣市', type: 'pick', opts: 'county', show: isRE, half: true },
+    { k: 'district', label: '行政區', type: 'pick', opts: 'district', show: isRE, half: true },
+    { k: 'road', label: '路段', type: 'pick', opts: 'road', show: isRE },
+    { k: 'btype', label: '建物型態', type: 'pick', opts: 'btype', def: '住宅大樓', show: isRE, half: true },
+    { k: 'ping', label: '建物坪數（不含車位）', type: 'number', show: isRE, half: true },
+    { panel: 'lvrPanel', show: isRE },
+    { sec: '🚗 車輛資訊', show: isCar },
+    { panel: 'carPreview', show: isCar },
+    { k: 'brand', label: '廠牌', type: 'pick', opts: 'brand', show: isCar },
+    { k: 'model', label: '車款', type: 'text', ph: '例：RAV4', show: isCar },
+    { k: 'buyYear', label: '購入年份', type: 'number', ph: String(new Date().getFullYear()), show: isCar, half: true },
+    { k: 'buyPrice', label: '購入價格', type: 'number', show: isCar, half: true },
+    { panel: 'carPanel', show: isCar },
+    { sec: '💰 價值', show: () => true },
     { k: 'amount', label: '目前價值', type: 'number', req: true },
     { k: 'note', label: '備註', type: 'text' },
   ],
   debt: [
-    { k: 'name', label: '名稱', type: 'text', req: true, ph: '例：房貸' },
-    { k: 'type', label: '類型', type: 'select', opts: DEBT_TYPES },
-    { k: 'source', label: '負債來源（銀行/債權人）', type: 'text', req: true, ph: '例：國泰世華' },
-    { k: 'balance', label: '剩餘本金', type: 'number', req: true },
-    { k: 'rate', label: '年利率 (%)', type: 'number', step: '0.01', req: true },
-    { k: 'monthly', label: '每月還款', type: 'number', req: true },
-    { k: 'payDay', label: '每月扣款日', type: 'number', min: 1, max: 31 },
+    { k: 'type', label: '類型', type: 'pick', opts: 'debtType', def: '房貸' },
+    { k: 'name', label: '名稱', type: 'text', req: true, ph: '例：自住房貸' },
+    { k: 'bank', label: '負債來源（銀行）', type: 'pick', opts: 'bank', search: true },
+    { k: 'mode', label: '計算方式', type: 'pick', opts: 'mode', def: 'auto' },
+    { k: 'principal', label: '原始貸款金額', type: 'number', req: true, show: isAuto },
+    { k: 'rate', label: '年利率 (%)', type: 'number', step: '0.001', req: true, half: true },
+    { k: 'years', label: '貸款年限（年）', type: 'number', step: '0.5', req: true, show: isAuto, half: true },
+    { k: 'startYM', label: '撥款年月', type: 'month', req: true, show: isAuto, half: true, def: thisYM },
+    { k: 'payDay', label: '每月扣款日', type: 'number', min: 1, max: 31, half: true },
+    { k: 'grace', label: '寬限期', type: 'pick', opts: 'grace', def: '0', show: isAuto },
+    { k: 'method', label: '還款方式', type: 'pick', opts: 'method', def: 'annuity', show: isAuto },
+    { k: 'balance', label: '剩餘本金', type: 'number', req: true, show: v => !isAuto(v), half: true },
+    { k: 'monthly', label: '每月還款', type: 'number', req: true, show: v => !isAuto(v), half: true },
+    { panel: 'loanPanel', show: () => true },
     { k: 'note', label: '備註', type: 'text' },
   ],
 };
-let editing = null;
+const NUMERIC = new Set(['amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly']);
+
+// ---------- 編輯器 ----------
+let editing = null;   // { kind, id }
+let vals = {};        // 表單目前值
+
+function fieldHTML(f) {
+  if (f.sec) return `<div class="sec" data-show>${f.sec}</div>`;
+  if (f.panel) return `<div class="panel" id="${f.panel}" data-show></div>`;
+  const v = vals[f.k] ?? '';
+  const cls = `field${f.half ? ' half' : ''}`;
+  if (f.type === 'pick') {
+    const label = (pickLabel[f.opts] || pickLabel[f.k] || (x => x))(v);
+    return `<div class="${cls}" data-show data-k="${f.k}"><span class="flabel">${f.label}</span>
+      <button type="button" class="pickbtn" data-pick="${f.k}">${v ? (pickIcon[f.opts] || pickIcon[f.k] || (() => ''))(v) : emoji('➕')}<span>${esc(label || '請選擇')}</span><i>›</i></button></div>`;
+  }
+  const attrs = f.type === 'number' ? `inputmode="decimal" step="${f.step || 'any'}"${f.min ? ` min="${f.min}"` : ''}${f.max ? ` max="${f.max}"` : ''}` : '';
+  return `<label class="${cls}" data-show data-k="${f.k}"><span class="flabel">${f.label}</span>
+    <span class="inrow"><input name="${f.k}" type="${f.type}" ${attrs} value="${esc(v)}" placeholder="${esc(f.ph || '')}" data-req="${f.req ? 1 : ''}">
+    ${f.action ? `<button type="button" class="btn mini" id="${f.action.id}">${f.action.text}</button>` : ''}</span></label>`;
+}
 
 function openEditor(kind, id) {
   const list = kind === 'asset' ? state.assets : state.debts;
-  const item = id ? list.find(x => x.id === id) : {};
+  const item = id ? list.find(x => x.id === id) : null;
   editing = { kind, id };
-  $('editTitle').textContent = (id ? '編輯' : '新增') + (kind === 'asset' ? '資產' : '負債');
+  vals = item ? { ...item } : {};
+  FIELDS[kind].forEach(f => { if (f.k && vals[f.k] == null && f.def != null) vals[f.k] = typeof f.def === 'function' ? f.def() : f.def; });
+  $('editTitle').innerHTML = `${emoji(kind === 'asset' ? '💰' : '💳')} ${id ? '編輯' : '新增'}${kind === 'asset' ? '資產' : '負債'}`;
   $('delBtn').style.display = id ? '' : 'none';
-  $('editFields').innerHTML = FIELDS[kind].map(f => {
-    const v = item[f.k] ?? '';
-    if (f.type === 'select') {
-      return `<label class="field">${f.label}<select name="${f.k}">${f.opts.map(o => `<option${o === v ? ' selected' : ''}>${o}</option>`).join('')}</select></label>`;
-    }
-    const attrs = f.type === 'number'
-      ? `inputmode="decimal" step="${f.step || 'any'}"${f.min ? ` min="${f.min}"` : ''}${f.max ? ` max="${f.max}"` : ''}`
-      : '';
-    return `<label class="field">${f.label}<input name="${f.k}" type="${f.type}" ${attrs} value="${esc(v)}" placeholder="${esc(f.ph || '')}"${f.req ? ' required' : ''}></label>`;
-  }).join('');
+  drawForm();
   $('editor').showModal();
 }
 
+function drawForm() {
+  const fs = FIELDS[editing.kind];
+  $('editFields').innerHTML = fs.map(fieldHTML).join('');
+  refreshForm();
+}
+
+function refreshForm() {
+  const fs = FIELDS[editing.kind];
+  const nodes = $('editFields').querySelectorAll('[data-show]');
+  fs.forEach((f, i) => {
+    const on = !f.show || f.show(vals);
+    nodes[i].hidden = !on;
+    const inp = nodes[i].querySelector('input');
+    if (inp) inp.required = on && inp.dataset.req === '1';
+  });
+  if (editing.kind === 'debt') drawLoanPanel();
+  if (editing.kind === 'asset' && isCar(vals)) drawCarPanels();
+  if (editing.kind === 'asset' && isRE(vals)) drawLvrPanel();
+}
+
+function readInputs() {
+  $('editFields').querySelectorAll('input[name]').forEach(i => { vals[i.name] = i.value; });
+}
+
+$('editFields').addEventListener('input', e => {
+  if (!e.target.name) return;
+  vals[e.target.name] = e.target.value;
+  if (editing.kind === 'debt') drawLoanPanel();
+  if (editing.kind === 'asset' && isCar(vals) && ['buyYear', 'buyPrice', 'model'].includes(e.target.name)) drawCarPanels();
+  if (editing.kind === 'asset' && isRE(vals) && e.target.name === 'ping') drawLvrPanel();
+});
+
+$('editFields').addEventListener('click', async e => {
+  const pb = e.target.closest('[data-pick]');
+  if (pb) {
+    readInputs();
+    const k = pb.dataset.pick;
+    const f = FIELDS[editing.kind].find(x => x.k === k);
+    let options;
+    try { options = await OPTS[f.opts](vals); } catch (err) { return toast(err.message); }
+    if (!options.length) return toast(k === 'district' ? '請先選縣市' : k === 'road' ? '請先選行政區' : '沒有選項');
+    const o = await UI.openPicker({ title: f.label, options, value: vals[k], search: f.search || options.length > 8 });
+    if (!o) return;
+    const prev = vals[k];
+    vals[k] = o.value;
+    if (k === 'county' && prev !== o.value) { vals.district = ''; vals.road = ''; }
+    if (k === 'district' && prev !== o.value) vals.road = '';
+    if (k === 'type' && !editing.id) vals.mode = ['信用卡', '親友借款'].includes(o.value) ? 'manual' : 'auto';
+    if (k === 'category' && o.value === '不動產' && !vals.name) vals.name = '自住房';
+    if (k === 'brand' && !vals.name) vals.name = brandOf(o.value)?.t === 'scooter' ? '機車' : '愛車';
+    drawForm();
+    return;
+  }
+  if (e.target.id === 'lookupBtn') return lookupAddress();
+  const ap = e.target.closest('[data-apply]');
+  if (ap) {
+    vals.amount = ap.dataset.apply;
+    if (ap.dataset.lvr) vals.lvrAt = new Date().toISOString();
+    const inp = $('editFields').querySelector('input[name=amount]');
+    inp.value = vals.amount;
+    inp.classList.remove('flash'); void inp.offsetWidth; inp.classList.add('flash');
+    toast('已套用估價 ✨');
+  }
+});
+
+// --- 貸款試算面板 ---
+function drawLoanPanel() {
+  const el = $('loanPanel');
+  if (!el) return;
+  const d = { ...vals };
+  const ok = isAuto(d) ? num(d.principal) > 0 && num(d.years) > 0 && d.startYM : num(d.balance) > 0;
+  if (!ok) { el.innerHTML = `<div class="hint-row">${emoji('🧮')}<span>${isAuto(d) ? '填入貸款金額、年限與撥款年月，就會自動算出月付' : '填入剩餘本金與月付，估算還清時間'}</span></div>`; return; }
+  const s = Loan.status(d);
+  const rows = [];
+  rows.push(['目前每月還款', `<b class="accent">${fmt(s.monthly)}</b>`]);
+  rows.push(['剩餘本金', fmt(s.balance)]);
+  if (isAuto(d)) rows.push(['已繳期數', `${s.paid} / ${s.total} 期`]);
+  if (s.inGrace) rows.push(['寬限期', `剩 ${s.graceLeft} 個月，${s.graceEndYM} 結束`], ['寬限期後月付', `<b class="neg">${fmt(s.afterGracePay)}</b>`]);
+  rows.push(['預計還清', isFinite(s.monthsLeft) ? `${s.payoffYM}（剩 ${s.monthsLeft} 期）` : '<span class="neg">月付不足以還清</span>']);
+  rows.push(['剩餘利息', isFinite(s.interestLeft) ? fmt(s.interestLeft) : '—']);
+  el.innerHTML = `<div class="panel-title">${emoji('🧮')} 試算結果</div>` + rows.map(([a, b]) => `<div class="kv"><span>${a}</span><span>${b}</span></div>`).join('');
+}
+
+// --- 車輛 ---
+function carValue(price, year) {
+  const age = Math.max(0, new Date().getFullYear() - num(year));
+  // 第一年約 -20%，之後每年約 -12%，最低保留 10%
+  const v = price * (age === 0 ? 1 : 0.8 * Math.pow(0.88, age - 1));
+  return Math.round(Math.max(v, price * 0.1));
+}
+function drawCarPanels() {
+  const b = brandOf(vals.brand);
+  const pv = $('carPreview');
+  if (pv) pv.innerHTML = b ? `<div class="car-stage">${UI.carSVG(b.t, b.c, 150)}<div class="road"></div></div><div class="car-name">${b.f} ${esc(b.zh === b.v ? b.v : b.zh + ' ' + b.v)} ${esc(vals.model || '')}</div>`
+    : `<div class="car-stage">${UI.carSVG('sedan', '#cfd8dc', 150)}<div class="road"></div></div><div class="car-name muted">先選廠牌</div>`;
+  const el = $('carPanel');
+  if (!el) return;
+  const price = num(vals.buyPrice), year = num(vals.buyYear);
+  if (!price || !year) { el.innerHTML = `<div class="hint-row">${emoji('📉')}<span>填入購入年份與價格，可估算目前殘值</span></div>`; return; }
+  const v = carValue(price, year);
+  el.innerHTML = `<div class="kv"><span>估算殘值（車齡 ${Math.max(0, new Date().getFullYear() - year)} 年）</span><b class="accent">${fmt(v)}</b></div>
+    <button type="button" class="btn mini primary" data-apply="${v}">套用為目前價值</button>
+    <div class="muted small">依一般折舊估算（首年約 -20%，之後每年約 -12%），實際以中古車行情為準。</div>`;
+}
+
+// --- 實價登錄 ---
+let lvrToken = 0;
+async function lookupAddress() {
+  readInputs();
+  if (!vals.address) return toast('請先輸入地址');
+  const btn = $('lookupBtn');
+  btn.disabled = true; btn.textContent = '查詢中…';
+  try {
+    const r = await LVR.parseAddress(vals.address);
+    vals.county = r.countyKey; vals.district = r.district; vals.road = r.road;
+    if (!r.district) toast('找不到行政區，請手動選擇');
+    else if (!r.road) toast('找不到這條路的成交，改用行政區行情');
+    drawForm();
+  } catch (err) {
+    toast(err.message);
+    btn.disabled = false; btn.textContent = '🔍 查實價';
+  }
+}
+
+async function drawLvrPanel() {
+  const el = $('lvrPanel');
+  if (!el) return;
+  if (!vals.county || !vals.district) {
+    el.innerHTML = `<div class="hint-row">${emoji('🏘️')}<span>輸入地址按「查實價」，或選縣市與行政區，會用近兩年實價登錄估算價值</span></div>`;
+    return;
+  }
+  const tk = ++lvrToken;
+  el.innerHTML = `<div class="hint-row">${emoji('⏳')}<span>讀取實價登錄資料…</span></div>`;
+  try {
+    const r = await LVR.estimate({ countyKey: vals.county, district: vals.district, road: vals.road, btype: vals.btype, ping: vals.ping });
+    if (tk !== lvrToken) return;
+    const where = r.level === 'road' ? `${vals.road}` : `${vals.district}全區`;
+    const tx = r.tx.slice(0, 6).map(t => `<li><span>${esc(t[0])} · ${esc(t[2])}${t[6] ? ' · ' + esc(t[6]) : ''}<small>${esc(t[1])}</small></span><span>${wan(t[4])}/坪<small>${t[3]} 坪 · 總 ${wan(t[5])}</small></span></li>`).join('');
+    el.innerHTML = `<div class="panel-title">${emoji('📊')} ${esc(where)}${r.typed ? '・' + esc(vals.btype) : ''} 行情</div>
+      <div class="kv"><span>成交單價中位數</span><b class="accent">${wan(r.unit)} / 坪</b></div>
+      <div class="kv"><span>常見區間（中間 50%）</span><span>${wan(r.p25)} ～ ${wan(r.p75)} / 坪</span></div>
+      <div class="kv"><span>樣本</span><span>${r.n} 筆</span></div>
+      ${r.level === 'district' && vals.road ? '<div class="muted small">這條路段樣本不足，改用行政區行情</div>' : ''}
+      ${r.value ? `<div class="estimate"><div><small>估算價值（${vals.ping} 坪）</small><b>${fmt(r.value)}</b><small>${fmt(r.low)} ～ ${fmt(r.high)}</small></div>
+        <button type="button" class="btn mini primary" data-apply="${r.value}" data-lvr="1">套用</button></div>` : '<div class="muted small">填入坪數即可估算總價</div>'}
+      ${tx ? `<details><summary>最近成交 ${Math.min(6, r.tx.length)} 筆</summary><ul class="tx">${tx}</ul></details>` : ''}
+      <div class="muted small">資料：內政部實價登錄（${esc(r.seasons?.[0] || '')}～${esc(r.seasons?.at(-1) || '')}），單價已扣除車位，僅供參考。</div>`;
+  } catch (err) {
+    if (tk !== lvrToken) return;
+    el.innerHTML = `<div class="hint-row">${emoji('🛠️')}<span>${esc(err.message)}。資料每週自動更新，也可以先手動輸入目前價值。</span></div>`;
+  }
+}
+
+// --- 開啟 / 存檔 / 刪除 ---
 document.addEventListener('click', e => {
   const add = e.target.closest('[data-add]');
   if (add) return openEditor(add.dataset.add);
@@ -194,20 +467,23 @@ document.addEventListener('click', e => {
 
 $('editForm').addEventListener('submit', e => {
   e.preventDefault();
-  const fd = new FormData(e.target);
+  readInputs();
+  const fs = FIELDS[editing.kind];
+  if (editing.kind === 'debt' && !vals.bank) return toast('請選擇負債來源');
   const obj = {};
-  for (const f of FIELDS[editing.kind]) {
-    const v = fd.get(f.k);
-    obj[f.k] = f.type === 'number' ? (v === '' ? '' : num(v)) : String(v || '').trim();
+  for (const f of fs) {
+    if (!f.k) continue;
+    if (f.show && !f.show(vals)) continue;
+    const v = vals[f.k];
+    obj[f.k] = NUMERIC.has(f.k) ? (v === '' || v == null ? '' : num(v)) : String(v ?? '').trim();
   }
+  if (vals.lvrAt && isRE(vals)) obj.lvrAt = vals.lvrAt;
   obj.updatedAt = new Date().toISOString();
   const key = editing.kind === 'asset' ? 'assets' : 'debts';
-  if (editing.id) {
-    state[key] = state[key].map(x => x.id === editing.id ? { ...x, ...obj } : x);
-  } else {
-    state[key].push({ id: uid(), ...obj });
-  }
+  if (editing.id) state[key] = state[key].map(x => x.id === editing.id ? { id: x.id, ...obj } : x);
+  else state[key].push({ id: uid(), ...obj });
   $('editor').close();
+  UI.burst(editing.kind === 'asset' ? ['🪙', '✨', '💰'] : ['💪', '✨', '📉']);
   save();
 });
 $('cancelBtn').addEventListener('click', () => $('editor').close());
@@ -219,8 +495,21 @@ $('delBtn').addEventListener('click', () => {
   save();
 });
 
+// ---------- 小提示 ----------
+let toastT;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
 // ---------- 設定 ----------
-$('currency').addEventListener('change', e => { state.currency = e.target.value; save(); });
+$('currencyBtn').addEventListener('click', async () => {
+  const o = await UI.openPicker({ title: '幣別', options: CURRENCIES.map(c => opt(c.v, c.label, emoji(c.e))), value: state.currency });
+  if (o) { state.currency = o.value; save(); }
+});
 
 $('exportBtn').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify({ app: 'Balanza', version: APP_VERSION, exportedAt: new Date().toISOString(), ...state }, null, 2)], { type: 'application/json' });
@@ -238,9 +527,9 @@ $('importFile').addEventListener('change', async e => {
     const d = JSON.parse(await file.text());
     if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
     if (!confirm(`匯入 ${d.assets.length} 筆資產、${d.debts.length} 筆負債？目前資料將被取代。`)) return;
-    state = { currency: d.currency || 'TWD', assets: d.assets, debts: d.debts };
+    state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts });
     save();
-    alert('匯入完成');
+    toast('匯入完成 ✅');
   } catch (err) {
     alert('匯入失敗：' + err.message);
   } finally {
@@ -250,16 +539,23 @@ $('importFile').addEventListener('change', async e => {
 
 $('clearBtn').addEventListener('click', () => {
   if (!confirm('確定清除所有資料？建議先匯出備份。')) return;
-  state = { currency: state.currency, assets: [], debts: [] };
+  state = migrate({ currency: state.currency });
   save();
+});
+
+// 點小秤會跳一下
+$('mascot').addEventListener('click', () => {
+  const m = $('mascot');
+  m.classList.remove('poke'); void m.offsetWidth; m.classList.add('poke');
 });
 
 // ---------- 啟動 ----------
 $('ver').textContent = 'v' + APP_VERSION;
 render();
+LVR.loadIndex().then(ix => { $('lvrStatus').textContent = `實價登錄資料：${ix.seasons[0]}～${ix.seasons.at(-1)}，更新於 ${ix.updated.slice(0, 10)}`; })
+  .catch(() => { $('lvrStatus').textContent = '實價登錄資料：尚未產生（GitHub Action 會自動下載）'; });
 
 if ('serviceWorker' in navigator) {
-  // 只有「原本就有舊版在控制」時，新版接手才重新整理（首次安裝不重整）
   const hadController = !!navigator.serviceWorker.controller;
   let reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f766e">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Balanza">
   <title>Balanza</title>
   <link rel="manifest" href="manifest.json">
@@ -22,76 +22,89 @@
   <main>
     <!-- 總覽 -->
     <section class="view active" id="view-home">
+      <div class="card mascot-card" id="mascotCard">
+        <div id="mascot" class="mascot-wrap" title="戳我"></div>
+        <div class="mascot-text">
+          <div class="mascot-msg" id="mascotMsg"></div>
+          <div class="mascot-tip" id="mascotTip"></div>
+        </div>
+      </div>
+
       <div class="networth card">
         <div class="label">淨資產</div>
         <div class="big" id="netWorth">0</div>
         <div class="row3">
-          <div><div class="label">總資產</div><div class="pos" id="totalAssets">0</div></div>
-          <div><div class="label">總負債</div><div class="neg" id="totalDebts">0</div></div>
-          <div><div class="label">負債比</div><div id="debtRatio">0%</div></div>
+          <div><div class="label">💰 總資產</div><div class="pos" id="totalAssets">0</div></div>
+          <div><div class="label">💳 總負債</div><div class="neg" id="totalDebts">0</div></div>
+          <div><div class="label">⚖️ 負債比</div><div id="debtRatio">0%</div></div>
         </div>
+        <div class="ratio-track"><div class="ratio-fill" id="ratioFill"></div></div>
       </div>
 
       <div class="grid2">
-        <div class="card stat"><div class="label">每月還款</div><div class="mid" id="monthlyPay">0</div></div>
-        <div class="card stat"><div class="label">加權平均利率</div><div class="mid" id="avgRate">0%</div></div>
-        <div class="card stat"><div class="label">每月利息估算</div><div class="mid neg" id="monthlyInterest">0</div></div>
-        <div class="card stat"><div class="label">還款中本金</div><div class="mid pos" id="monthlyPrincipal">0</div></div>
+        <div class="card stat"><div class="label">📅 每月還款</div><div class="mid" id="monthlyPay">0</div></div>
+        <div class="card stat"><div class="label">📈 加權平均利率</div><div class="mid" id="avgRate">0%</div></div>
+        <div class="card stat"><div class="label">🔥 每月利息</div><div class="mid neg" id="monthlyInterest">0</div></div>
+        <div class="card stat"><div class="label">🧱 每月還本金</div><div class="mid pos" id="monthlyPrincipal">0</div></div>
+      </div>
+
+      <div class="card grace-card" id="graceCard" hidden>
+        <h2>⏸️ 寬限期提醒</h2>
+        <div id="graceInfo"></div>
       </div>
 
       <div class="card">
-        <h2>負債來源</h2>
+        <h2>🏦 負債來源</h2>
         <div id="debtBySource" class="bars"></div>
       </div>
 
       <div class="card">
-        <h2>資產分布</h2>
+        <h2>🧺 資產分布</h2>
         <div id="assetByCat" class="bars"></div>
       </div>
 
       <div class="card">
-        <h2>還款時程預估</h2>
+        <h2>🗓️ 還款時程</h2>
         <div id="payoffList"></div>
       </div>
     </section>
 
     <!-- 資產 -->
     <section class="view" id="view-assets">
-      <div class="listhead"><h2>資產</h2><span id="assetsSum" class="pos"></span></div>
+      <div class="listhead"><h2>💰 資產</h2><span id="assetsSum" class="pos"></span></div>
       <ul class="list" id="assetList"></ul>
       <button class="fab" data-add="asset" aria-label="新增資產">＋</button>
     </section>
 
     <!-- 負債 -->
     <section class="view" id="view-debts">
-      <div class="listhead"><h2>負債</h2><span id="debtsSum" class="neg"></span></div>
+      <div class="listhead"><h2>💳 負債</h2><span id="debtsSum" class="neg"></span></div>
       <ul class="list" id="debtList"></ul>
       <button class="fab" data-add="debt" aria-label="新增負債">＋</button>
     </section>
 
     <!-- 設定 -->
     <section class="view" id="view-settings">
-      <h2>設定</h2>
+      <h2>⚙️ 設定</h2>
       <div class="card">
-        <label class="field">幣別
-          <select id="currency">
-            <option value="TWD">TWD 新台幣</option>
-            <option value="USD">USD 美元</option>
-            <option value="JPY">JPY 日圓</option>
-            <option value="EUR">EUR 歐元</option>
-          </select>
-        </label>
+        <span class="flabel">幣別</span>
+        <button type="button" class="pickbtn" id="currencyBtn"></button>
       </div>
       <div class="card">
-        <h3>備份與還原</h3>
+        <h3>💾 備份與還原</h3>
         <p class="muted">資料只存在這支手機的瀏覽器裡，不會上傳到 GitHub。換手機或清除瀏覽器資料前請先匯出備份。</p>
         <div class="btnrow">
-          <button id="exportBtn" class="btn">匯出 JSON</button>
-          <label class="btn">匯入 JSON<input type="file" id="importFile" accept="application/json" hidden></label>
+          <button id="exportBtn" class="btn">📤 匯出 JSON</button>
+          <label class="btn">📥 匯入 JSON<input type="file" id="importFile" accept="application/json" hidden></label>
         </div>
       </div>
       <div class="card">
-        <h3>危險區</h3>
+        <h3>🏘️ 實價登錄</h3>
+        <p class="muted" id="lvrStatus">讀取中…</p>
+        <p class="muted">資料來源：內政部不動產成交案件實際資訊（開放資料），每週自動更新。估價依路段成交單價中位數計算，僅供參考。</p>
+      </div>
+      <div class="card">
+        <h3>⚠️ 危險區</h3>
         <button id="clearBtn" class="btn danger">清除所有資料</button>
       </div>
     </section>
@@ -108,9 +121,9 @@
   <dialog id="editor">
     <form method="dialog" id="editForm">
       <h2 id="editTitle">新增</h2>
-      <div id="editFields"></div>
-      <div class="btnrow">
-        <button type="button" class="btn danger" id="delBtn">刪除</button>
+      <div id="editFields" class="fields"></div>
+      <div class="btnrow sticky">
+        <button type="button" class="btn danger" id="delBtn">🗑️</button>
         <span class="spacer"></span>
         <button type="button" class="btn" id="cancelBtn">取消</button>
         <button type="submit" class="btn primary">儲存</button>
@@ -118,6 +131,12 @@
     </form>
   </dialog>
 
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="data/catalog.js"></script>
+  <script src="loan.js"></script>
+  <script src="ui.js"></script>
+  <script src="lvr.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -696,9 +696,10 @@ body.is-locked .tabs, body.is-locked .fab { visibility: hidden; }
 #lockSet .btnrow .btn { display: inline-flex; align-items: center; gap: 4px; }
 
 /* ===== v5.5.1 App 外殼：整頁固定，只有內容區捲動，底部選單永遠貼底 ===== */
-html { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html { overflow: hidden; overscroll-behavior: none; }
 body {
-  height: 100vh; height: 100dvh; overflow: hidden; overscroll-behavior: none;
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0;   /* 直接貼滿畫面四邊，不用 vh 計算高度 */
+  height: auto; overflow: hidden; overscroll-behavior: none;
   display: flex; flex-direction: column; padding-bottom: 0;
 }
 .top { position: relative; flex: none; }

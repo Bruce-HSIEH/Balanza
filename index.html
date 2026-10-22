@@ -17,6 +17,9 @@
   <header class="top">
     <h1>Balanza</h1>
     <button type="button" class="ver" id="ver" title="看更新紀錄"></button>
+    <span class="spacer"></span>
+    <button type="button" class="top-btn" data-view="levels" aria-label="等級"><i data-ic="trophy" data-size="28"></i></button>
+    <button type="button" class="top-btn" data-view="settings" aria-label="設定"><i data-ic="gear" data-size="28"></i></button>
   </header>
 
   <main>
@@ -44,16 +47,16 @@
         <div class="ratio-track"><div class="ratio-fill" id="ratioFill"></div></div>
       </div>
 
+      <div class="card home-repay" id="homeRepay" hidden>
+        <div class="hr-head"><h2><i data-ic="repay" data-size="24"></i> 本月還款</h2><button type="button" class="link-btn" data-goto="repay">還款計畫 ›</button></div>
+        <div id="homeRepayBody"></div>
+      </div>
+
       <div class="grid2">
         <div class="card stat"><div class="label"><i data-ic="calendar" data-size="18"></i> 每月還款</div><div class="mid" id="monthlyPay">0</div></div>
         <div class="card stat"><div class="label"><i data-ic="percent" data-size="18"></i> 加權平均利率</div><div class="mid" id="avgRate">0%</div></div>
         <div class="card stat"><div class="label"><i data-ic="fire" data-size="18"></i> 每月利息</div><div class="mid neg" id="monthlyInterest">0</div></div>
         <div class="card stat"><div class="label"><i data-ic="brick" data-size="18"></i> 每月還本金</div><div class="mid pos" id="monthlyPrincipal">0</div></div>
-      </div>
-
-      <div class="card grace-card" id="graceCard" hidden>
-        <h2><i data-ic="pause" data-size="24"></i> 寬限期提醒</h2>
-        <div id="graceInfo"></div>
       </div>
 
       <div class="card">
@@ -82,6 +85,18 @@
     <section class="view" id="view-debts">
       <div class="listhead"><h2><i data-ic="card" data-size="26"></i> 負債</h2><span id="debtsSum" class="neg"></span></div>
       <ul class="list" id="debtList"></ul>
+    </section>
+
+    <!-- 還款計畫 -->
+    <section class="view" id="view-repay">
+      <div class="listhead"><h2><i data-ic="repay" data-size="26"></i> 還款計畫</h2></div>
+      <div id="repayBody"></div>
+    </section>
+
+    <!-- 投資計畫 -->
+    <section class="view" id="view-invest">
+      <div class="listhead"><h2><i data-ic="invest" data-size="26"></i> 投資計畫</h2></div>
+      <div id="investBody"></div>
     </section>
 
     <!-- 等級 -->
@@ -137,8 +152,8 @@
     <button data-view="home" class="active"><i data-ic="chart" data-size="26"></i>總覽</button>
     <button data-view="assets"><i data-ic="piggy" data-size="26"></i>資產</button>
     <button data-view="debts"><i data-ic="card" data-size="26"></i>負債</button>
-    <button data-view="levels"><i data-ic="trophy" data-size="26"></i>等級</button>
-    <button data-view="settings"><i data-ic="gear" data-size="26"></i>設定</button>
+    <button data-view="repay"><i data-ic="repay" data-size="26"></i>還款</button>
+    <button data-view="invest"><i data-ic="invest" data-size="26"></i>投資</button>
   </nav>
 
   <dialog id="editor">
@@ -160,6 +175,18 @@
     <div class="btnrow"><span class="spacer"></span><button type="button" class="btn primary" id="clClose">好</button></div>
   </dialog>
 
+  <dialog id="periodDialog" class="cl-dialog">
+    <h2 id="pdTitle">第 1 期</h2>
+    <label class="field"><span class="flabel">實際投入金額</span><input id="pdAmount" type="number" inputmode="decimal" step="any"></label>
+    <div class="small muted" id="pdPlanned"></div>
+    <div class="pd-btns">
+      <button type="button" class="btn primary" id="pdDone">確認已投入這個金額</button>
+      <button type="button" class="btn" id="pdPlan">只修改這期的計畫金額</button>
+      <button type="button" class="btn danger" id="pdUndo">取消確認</button>
+      <button type="button" class="btn" id="pdCancel">關閉</button>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast" role="status"></div>
 
   <script src="data/catalog.js"></script>
@@ -167,6 +194,8 @@
   <script src="icons.js"></script>
   <script src="cars.js"></script>
   <script src="loan.js"></script>
+  <script src="plan.js"></script>
+  <script src="charts.js"></script>
   <script src="ui.js"></script>
   <script src="lvr.js"></script>
   <script src="stocks.js"></script>

@@ -62,6 +62,7 @@ const ASSET_CATS = [
 
 const DEBT_TYPES = [
   { v: '房貸', ic: 'mortgage' },
+  { v: '理財型房貸', ic: 'hourglass' },
   { v: '信貸', ic: 'loan' },
   { v: '車貸', ic: 'car' },
   { v: '學貸', ic: 'student' },
@@ -78,6 +79,7 @@ const REPAY_METHODS = [
 
 const CALC_MODES = [
   { v: 'auto', label: '依貸款條件自動計算', ic: 'calc', d: '輸入貸款金額、年限、寬限期' },
+  { v: 'revolving', label: '理財型／額度型（只繳利息）', ic: 'hourglass', d: '依動用金額計息，可連結投資計畫自動遞增' },
   { v: 'manual', label: '手動輸入剩餘本金與月付', ic: 'pencil', d: '信用卡、親友借款等' },
 ];
 

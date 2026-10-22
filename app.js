@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '5.0.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -10,7 +10,8 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 // ---------- 資料 ----------
 const CAT_MIGRATE = { '股票': '台股', 'ETF/基金': '基金' };
 function migrate(d) {
-  d = { currency: 'TWD', assets: [], debts: [], ...d };
+  d = { currency: 'TWD', assets: [], debts: [], plans: [], ...d };
+  d.plans = d.plans || [];
   d.assets = d.assets.map(a => {
     let category = CAT_MIGRATE[a.category] || a.category;
     if (a.category === 'ETF/基金' && /^00\d{2,4}[A-Z]?$/.test(String(a.name).trim())) category = '台股';
@@ -66,6 +67,8 @@ function assetIcon(a) {
 }
 
 // ---------- 價值計算 ----------
+const debtStatus = d => Plan.status(d, state.plans);
+const debtColor = d => Charts.PALETTE[Math.max(0, state.debts.indexOf(d)) % Charts.PALETTE.length];
 function stockInfo(a) {
   const mkt = mktOf(a);
   if (!mkt || !a.sym) return null;
@@ -84,7 +87,7 @@ function assetValue(a) {
 }
 
 function summary() {
-  const st = state.debts.map(d => ({ d, s: Loan.status(d) }));
+  const st = state.debts.map(d => ({ d, s: debtStatus(d) }));
   const totalAssets = state.assets.reduce((s, a) => s + assetValue(a), 0);
   const totalDebts = st.reduce((s, x) => s + x.s.balance, 0);
   const monthlyPay = st.reduce((s, x) => s + x.s.monthly, 0);
@@ -154,12 +157,7 @@ function render() {
   UI.countTo($('monthlyInterest'), s.monthlyInterest, fmt);
   UI.countTo($('monthlyPrincipal'), s.monthlyPrincipal, fmt);
 
-  $('graceCard').hidden = !s.graceItems.length;
-  if (s.graceItems.length) {
-    $('graceInfo').innerHTML = s.graceItems.map(({ d, s: x }) =>
-      `<div class="grace-row">${UI.bankIcon(bankOf(d.bank))}<div><b>${esc(d.name)}</b><small>寬限期剩 ${x.graceLeft} 個月（${x.graceEndYM} 結束）</small></div><div class="r">${fmt(x.monthly)}<small>→ ${fmt(x.afterGracePay)}</small></div></div>`).join('')
-      + `<div class="grace-sum">寬限期結束後，每月還款將增加 <b class="neg">${fmt(s.graceJump)}</b></div>`;
-  }
+  renderHomeRepay();
 
   // 負債來源
   const balByBank = groupSum(s.st, x => x.d.bank || '—|未填', x => x.s.balance);
@@ -173,7 +171,9 @@ function render() {
   const pl = s.st.filter(x => x.s.balance > 0).sort((a, b) => a.s.monthsLeft - b.s.monthsLeft);
   $('payoffList').innerHTML = pl.length ? pl.map(({ d, s: x }, i) => {
     const prog = d.mode === 'auto' && x.total ? x.paid / x.total : null;
-    const right = isFinite(x.monthsLeft)
+    const right = x.revolving
+      ? `<div>只繳利息</div><div class="sub">動用 ${short(x.balance)} / 額度 ${short(x.limit)}</div>`
+      : isFinite(x.monthsLeft)
       ? `<div>${x.payoffYM} 還清</div><div class="sub">剩 ${x.monthsLeft} 期 · 利息 ${fmt(x.interestLeft)}</div>`
       : `<div class="neg">月付不足以還清</div><div class="sub">月付低於每月利息</div>`;
     return `<div class="payoff" style="--i:${i}">${icDebt(d.type)}<div class="grow"><div>${esc(d.name)}</div><div class="sub">${esc(shortBank(bankOf(d.bank)))} · ${pct(num(d.rate))}</div>
@@ -183,6 +183,8 @@ function render() {
   renderAssets(s);
   renderDebts(s);
   renderLevels(s, L);
+  renderRepay();
+  renderInvest();
 
   const cur = CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0];
   $('currencyBtn').innerHTML = `${Icon(cur.ic)}<span>${cur.label}</span><i>›</i>`;
@@ -254,8 +256,8 @@ function renderDebts(s) {
     const b = bankOf(d.bank);
     return `<li data-edit="debt" data-id="${d.id}" style="--i:${i}"><span class="stack">${UI.bankIcon(b)}<span class="badge">${Icon.svg(typeOf(d.type).ic === 'car' ? 'loan' : typeOf(d.type).ic, 18)}</span></span>
       <div class="grow"><div class="name">${esc(d.name)}${x.inGrace ? ` <span class="chip">寬限期剩 ${x.graceLeft} 月</span>` : ''}</div>
-      <div class="sub">${esc(b && b.code !== '—' ? b.code + ' ' + shortBank(b) : (b ? b.name : '—'))} · 年利率 ${pct(num(d.rate))}${d.mode === 'auto' ? ' · 自動試算' : ''}</div></div>
-      <div class="amt neg">${fmt(x.balance)}<div class="sub">月付 ${fmt(x.monthly)}</div></div></li>`;
+      <div class="sub">${esc(b && b.code !== '—' ? b.code + ' ' + shortBank(b) : (b ? b.name : '—'))} · 年利率 ${pct(num(d.rate))}${d.mode === 'auto' ? ' · 自動試算' : d.mode === 'revolving' ? ` · 額度 ${short(x.limit)}` : ''}</div></div>
+      <div class="amt neg">${fmt(x.balance)}<div class="sub">${x.revolving ? '利息' : '月付'} ${fmt(x.monthly)}</div></div></li>`;
   }).join('') : `<div class="empty big-empty">${Icon('heart', 'ico-xl')}<p>點右下角 ＋ 新增負債</p></div>`;
 }
 
@@ -352,18 +354,20 @@ function showView(name) {
     if (on) { v.style.animation = 'none'; void v.offsetWidth; v.style.animation = ''; }
   });
   const fab = $('fab');
-  const kind = name === 'assets' ? 'asset' : name === 'debts' ? 'debt' : '';
+  const kind = { assets: 'asset', debts: 'debt', invest: 'plan' }[name] || '';
+  document.querySelectorAll('.top-btn').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   fab.hidden = !kind;
   fab.dataset.add = kind;
-  fab.setAttribute('aria-label', kind === 'asset' ? '新增資產' : '新增負債');
+  fab.setAttribute('aria-label', '新增' + KIND_NAME[kind]);
   if (kind) { fab.classList.remove('pop'); void fab.offsetWidth; fab.classList.add('pop'); }
   if (name === 'levels') setTimeout(() => { const r = $('lvCurRow'); r && r.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 450);
   document.querySelectorAll('.fill[data-w]').forEach(f => { f.style.width = '0'; });
   growBars();
   if (name !== 'levels') window.scrollTo(0, 0);
 }
-document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+document.querySelectorAll('.tabs button, .top-btn').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 $('toLevels').addEventListener('click', () => showView('levels'));
+document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) showView(g.dataset.goto); });
 
 // ---------- 表單欄位定義 ----------
 const opt = (v, label, icon, sub, extra = {}) => ({ value: v, label, icon, sub, ...extra });
@@ -380,6 +384,7 @@ const OPTS = {
   district: async vals => { if (!vals.county) return []; const d = await LVR.loadCounty(vals.county); return Object.keys(d.d).map(k => opt(k, k, Icon('city'), `${d.d[k].s.all[3]} 筆成交`)); },
   road: async vals => { if (!vals.county || !vals.district) return []; const d = await LVR.loadCounty(vals.county); const r = d.d[vals.district]?.r || {}; return Object.keys(r).sort((a, b) => r[b].s.all[3] - r[a].s.all[3]).map(k => opt(k, k, Icon('road'), `${r[k].s.all[3]} 筆 · 中位 ${wan(r[k].s.all[0])}/坪`)); },
   btype: () => BUILDING_TYPES.map(c => opt(c.v, c.v, Icon(c.ic), c.d)),
+  planSource: () => [opt('self', '自有資金', Icon('wallet'), '不產生利息'), ...state.debts.filter(isRev).map(d => opt(d.id, d.name, UI.bankIcon(bankOf(d.bank)), `理財型額度 ${short(num(d.limit))} · ${pct(num(d.rate))}`))],
   grace: () => [0, 6, 12, 24, 36, 48, 60].map(m => opt(String(m), m ? `${m} 個月${m % 12 === 0 ? `（${m / 12} 年）` : ''}` : '沒有寬限期', Icon(m ? 'pause' : 'play'), m ? '期間只繳利息、不還本金' : '一撥款就開始還本金')),
   stock: async vals => {
     await Stocks.load();
@@ -390,6 +395,7 @@ const OPTS = {
 const BODY_ZH = { sedan: '轎車', hatch: '掀背車', suv: '休旅車', bigsuv: '越野車', coupe: '跑車', roadster: '敞篷車', minivan: 'MPV', pickup: '皮卡', evcross: '電動跨界休旅', wagon: '旅行車', scooter: '速克達', escooter: '電動機車', sportbike: '檔車' };
 const swatch = c => `<span class="ico swatch" style="--sw:${c}"></span>`;
 const PICK_LABEL = {
+  planSource: v => v === 'self' || !v ? '自有資金' : (state.debts.find(d => d.id === v) || {}).name || '（已刪除的額度）',
   carColor: v => ([...Car.COLORS].find(c => c.v === v) || {}).label || (v ? '品牌代表色' : ''),
   bank: v => { const b = bankOf(v); return b ? bankLabel(b) : ''; },
   county: v => (COUNTIES.find(c => c.k === v) || {}).v || '',
@@ -400,6 +406,7 @@ const PICK_LABEL = {
   stock: (v, vals) => { const q = v && Stocks.quote(mktOf(vals), v); return q ? `${q.sym} ${q.name}` : v; },
 };
 const PICK_ICON = {
+  planSource: v => v === 'self' || !v ? Icon('wallet') : UI.bankIcon(bankOf((state.debts.find(d => d.id === v) || {}).bank)),
   assetCat: v => icCat(v),
   debtType: v => icDebt(v),
   bank: v => UI.bankIcon(bankOf(v)),
@@ -418,6 +425,8 @@ const isRE = v => v.category === '不動產';
 const isCar = v => v.category === '車輛';
 const isStock = v => !!mktOf(v);
 const isAuto = v => v.mode === 'auto';
+const isRev = v => v.mode === 'revolving';
+const isManual = v => !isAuto(v) && !isRev(v);
 const noQuote = v => isStock(v) && v.sym && !Stocks.quote(mktOf(v), v.sym);
 const thisYM = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
@@ -457,19 +466,38 @@ const FIELDS = {
     { k: 'bank', label: '負債來源（銀行）', type: 'pick', opts: 'bank', search: true },
     { k: 'mode', label: '計算方式', type: 'pick', opts: 'mode', def: 'auto' },
     { k: 'principal', label: '原始貸款金額', type: 'number', req: true, show: isAuto },
+    { k: 'limit', label: '核准額度', type: 'number', req: true, show: isRev },
     { k: 'rate', label: '年利率 (%)', type: 'number', step: '0.001', req: true, half: true },
     { k: 'years', label: '貸款年限（年）', type: 'number', step: '0.5', req: true, show: isAuto, half: true },
     { k: 'startYM', label: '撥款年月', type: 'month', req: true, show: isAuto, half: true, def: thisYM },
     { k: 'payDay', label: '每月扣款日', type: 'number', min: 1, max: 31, half: true },
     { k: 'grace', label: '寬限期', type: 'pick', opts: 'grace', def: '0', show: isAuto },
+    { k: 'graceYM', label: '寬限期開始年月（從撥款就開始可不填）', type: 'month', show: v => isAuto(v) && +v.grace > 0 },
     { k: 'method', label: '還款方式', type: 'pick', opts: 'method', def: 'annuity', show: isAuto },
-    { k: 'balance', label: '剩餘本金', type: 'number', req: true, show: v => !isAuto(v), half: true },
-    { k: 'monthly', label: '每月還款', type: 'number', req: true, show: v => !isAuto(v), half: true },
+    { k: 'balance', label: '剩餘本金', type: 'number', req: true, show: isManual, half: true },
+    { k: 'monthly', label: '每月還款', type: 'number', req: true, show: isManual, half: true },
+    { k: 'drawn', label: '已動用金額（投資計畫以外）', type: 'number', show: isRev, half: true, def: '0' },
+    { k: 'endYM', label: '額度到期年月（選填）', type: 'month', show: isRev, half: true },
     { panel: 'loanPanel', show: () => true },
     { k: 'note', label: '備註', type: 'text' },
   ],
 };
-const NUMERIC = new Set(['amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice']);
+FIELDS.plan = [
+  { k: 'name', label: '計畫名稱', type: 'text', req: true, ph: '例：理財型房貸分批投入' },
+  { k: 'total', label: '投入總額', type: 'number', req: true, half: true },
+  { k: 'months', label: '分幾個月投入', type: 'number', req: true, half: true, def: '12', min: 1, max: 120 },
+  { k: 'startYM', label: '第一次投入年月', type: 'month', req: true, half: true, def: thisYM },
+  { k: 'day', label: '每月投入日（選填）', type: 'number', min: 1, max: 31, half: true },
+  { k: 'source', label: '資金來源', type: 'pick', opts: 'planSource', def: 'self' },
+  { k: 'targets', label: '投資標的（選填，可寫比例）', type: 'text', ph: '例：0050 50%、00878 30%、VOO 20%' },
+  { k: 'yieldPct', label: '預估年化報酬／殖利率 %（選填）', type: 'number', step: '0.1', half: true },
+  { panel: 'planPanel', show: () => true },
+  { k: 'note', label: '備註', type: 'text' },
+];
+const KEY = { asset: 'assets', debt: 'debts', plan: 'plans' };
+const KIND_NAME = { asset: '資產', debt: '負債', plan: '投資計畫', '': '' };
+const KIND_ICON = { asset: 'piggy', debt: 'card', plan: 'invest' };
+const NUMERIC = new Set(['amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
 
 // ---------- 編輯器 ----------
 let editing = null;
@@ -493,12 +521,12 @@ function fieldHTML(f) {
 }
 
 function openEditor(kind, id) {
-  const list = kind === 'asset' ? state.assets : state.debts;
+  const list = state[KEY[kind]];
   const item = id ? list.find(x => x.id === id) : null;
   editing = { kind, id };
   vals = item ? { ...item } : {};
   FIELDS[kind].forEach(f => { if (f.k && vals[f.k] == null && f.def != null) vals[f.k] = typeof f.def === 'function' ? f.def() : f.def; });
-  $('editTitle').innerHTML = `${Icon(kind === 'asset' ? 'piggy' : 'card')} ${id ? '編輯' : '新增'}${kind === 'asset' ? '資產' : '負債'}`;
+  $('editTitle').innerHTML = `${Icon(KIND_ICON[kind])} ${id ? '編輯' : '新增'}${KIND_NAME[kind]}`;
   $('delBtn').style.display = id ? '' : 'none';
   drawForm();
   $('editor').showModal();
@@ -523,6 +551,7 @@ function refreshForm() {
   if (editing.kind === 'asset' && isCar(vals)) drawCarPanels();
   if (editing.kind === 'asset' && isRE(vals)) drawLvrPanel();
   if (editing.kind === 'asset' && isStock(vals)) drawStockPanel();
+  if (editing.kind === 'plan') drawPlanPanel();
 }
 
 function readInputs() {
@@ -533,6 +562,7 @@ $('editFields').addEventListener('input', e => {
   if (!e.target.name) return;
   vals[e.target.name] = e.target.value;
   if (editing.kind === 'debt') drawLoanPanel();
+  if (editing.kind === 'plan') drawPlanPanel();
   if (editing.kind === 'asset' && isCar(vals) && ['buyYear', 'buyPrice', 'model'].includes(e.target.name)) drawCarPanels();
   if (editing.kind === 'asset' && isRE(vals) && e.target.name === 'ping') drawLvrPanel();
   if (editing.kind === 'asset' && isStock(vals) && ['shares', 'cost', 'manualPrice'].includes(e.target.name)) drawStockPanel();
@@ -561,7 +591,7 @@ $('editFields').addEventListener('click', async e => {
     vals[k] = o.value;
     if (k === 'county' && prev !== o.value) { vals.district = ''; vals.road = ''; }
     if (k === 'district' && prev !== o.value) vals.road = '';
-    if (k === 'type' && !editing.id) vals.mode = ['信用卡', '親友借款'].includes(o.value) ? 'manual' : 'auto';
+    if (k === 'type' && !editing.id) vals.mode = o.value === '理財型房貸' ? 'revolving' : ['信用卡', '親友借款'].includes(o.value) ? 'manual' : 'auto';
     if (k === 'category') {
       if (o.value === '不動產' && !vals.name) vals.name = '自住房';
       if (mktOf({ category: prev }) !== mktOf(vals)) { vals.sym = ''; }
@@ -624,9 +654,22 @@ function drawLoanPanel() {
   const el = $('loanPanel');
   if (!el) return;
   const d = { ...vals };
+  if (isRev(d)) {
+    const r = num(d.rate) / 100 / 12;
+    const linked = state.plans.filter(p => p.source === d.id && d.id);
+    const st = d.id ? Plan.revolvingStatus({ ...d }, state.plans) : null;
+    el.innerHTML = `<div class="panel-title">${Icon('hourglass')} 理財型額度</div>
+      <div class="kv"><span>目前已動用</span><b>${fmt(st ? st.balance : num(d.drawn))}</b></div>
+      <div class="kv"><span>目前每月利息</span><b class="accent">${fmt((st ? st.balance : num(d.drawn)) * r)}</b></div>
+      <div class="kv"><span>每動用 100 萬，每月利息</span><span>${fmt(1e6 * r)}</span></div>
+      ${num(d.limit) ? `<div class="kv"><span>全額動用每月利息</span><span class="neg">${fmt(num(d.limit) * r)}</span></div>` : ''}
+      ${linked.length ? `<div class="small muted">已連結投資計畫：${linked.map(p => esc(p.name)).join('、')}（已動用會依投入進度自動增加）</div>`
+        : `<div class="small muted">${d.id ? '' : '先儲存，'}到「投資」分頁新增計畫並把資金來源選這筆額度，已動用金額與利息就會依投入進度自動遞增。</div>`}`;
+    return;
+  }
   const ok = isAuto(d) ? num(d.principal) > 0 && num(d.years) > 0 && d.startYM : num(d.balance) > 0;
   if (!ok) { el.innerHTML = `<div class="hint-row">${Icon('calc')}<span>${isAuto(d) ? '填入貸款金額、年限與撥款年月，就會自動算出月付' : '填入剩餘本金與月付，估算還清時間'}</span></div>`; return; }
-  const s = Loan.status(d);
+  const s = Plan.status(d, state.plans);
   const rows = [['目前每月還款', `<b class="accent">${fmt(s.monthly)}</b>`], ['剩餘本金', fmt(s.balance)]];
   if (isAuto(d)) rows.push(['已繳期數', `${s.paid} / ${s.total} 期`]);
   if (s.inGrace) rows.push(['寬限期', `剩 ${s.graceLeft} 個月，${s.graceEndYM} 結束`], ['寬限期後月付', `<b class="neg">${fmt(s.afterGracePay)}</b>`]);
@@ -747,7 +790,7 @@ $('editForm').addEventListener('submit', e => {
     obj.amount = Math.round(assetValue(obj));
   }
   obj.updatedAt = new Date().toISOString();
-  const key = editing.kind === 'asset' ? 'assets' : 'debts';
+  const key = KEY[editing.kind];
   if (editing.id) state[key] = state[key].map(x => x.id === editing.id ? { id: x.id, ...obj } : x);
   else { const id = uid(); state[key].push({ id, ...obj }); openGroups.add(obj.category); }
   $('editor').close();
@@ -757,11 +800,241 @@ $('editForm').addEventListener('submit', e => {
 $('cancelBtn').addEventListener('click', () => $('editor').close());
 $('delBtn').addEventListener('click', () => {
   if (!confirm('確定刪除這筆？')) return;
-  const key = editing.kind === 'asset' ? 'assets' : 'debts';
+  const key = KEY[editing.kind];
   state[key] = state[key].filter(x => x.id !== editing.id);
   $('editor').close();
   save();
 });
+
+
+// ================= 還款計畫 =================
+const EV_INFO = {
+  graceEnd: { ic: 'warn', t: '寬限期結束，開始還本金' },
+  graceStart: { ic: 'pause', t: '寬限期開始，只繳利息' },
+  payoff: { ic: 'heart', t: '還清了' },
+  drawFull: { ic: 'invest', t: '投資計畫投入完成，利息到頂' },
+  lineEnd: { ic: 'lock', t: '額度到期，需展延或還本' },
+};
+const dateTxt = d => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+const daysTxt = n => n < 0 ? '已過' : n === 0 ? '今天' : n < 60 ? `還有 ${n} 天` : n < 730 ? `還有 ${n} 天（約 ${Math.round(n / 30)} 個月）` : `還有 ${n} 天（約 ${(n / 365).toFixed(1)} 年）`;
+function eventHTML(e, compact) {
+  const info = EV_INFO[e.type];
+  const diff = e.to - e.from;
+  const soon = e.days <= 90 && e.type === 'graceEnd';
+  const change = e.type === 'lineEnd' ? '' : e.type === 'payoff'
+    ? `每月少繳 <b class="pos">${fmt(e.from)}</b>`
+    : `${e.debt.mode === 'revolving' ? '每月利息' : '月付'} ${fmt(e.from)} → <b class="${diff > 0 ? 'neg' : 'pos'}">${fmt(e.to)}</b>（${diff > 0 ? '+' : ''}${fmt(diff)}）`;
+  return `<div class="ev ${e.type} ${soon ? 'soon' : ''}">${Icon(info.ic)}
+    <div class="grow"><div class="ev-title"><b>${esc(e.debt.name)}</b> ${info.t}</div>
+    <div class="ev-date">${dateTxt(e.date)} · <span class="${soon ? 'neg' : ''}">${daysTxt(e.days)}</span></div>
+    ${change ? `<div class="ev-change">${change}</div>` : ''}
+    ${!compact && e.total != null && e.type !== 'lineEnd' ? `<div class="ev-total">當月起總月付約 <b>${fmt(e.total)}</b></div>` : ''}</div></div>`;
+}
+
+let repayH = 36, repaySel = 0, repayOpen = new Set();
+function projection(h) { return Plan.project(state.debts, state.plans, h); }
+
+function renderHomeRepay() {
+  const card = $('homeRepay');
+  if (!state.debts.length) { card.hidden = true; return; }
+  card.hidden = false;
+  const P = projection(24);
+  const m0 = P.months[0];
+  const rows = state.debts.map(d => ({ d, it: m0.items[d.id] })).filter(x => x.it && x.it.pay > 0);
+  const next = P.events.find(e => e.days >= 0 && e.type !== 'lineEnd');
+  const spark = UI.sparkline(P.months.map(m => m.total), 300, 44, { color: '#14b8a6', sw: 2 });
+  $('homeRepayBody').innerHTML = `
+    <div class="hr-total"><span>本月應繳</span><b>${fmt(m0.total)}</b></div>
+    ${rows.map(({ d, it }) => `<div class="hr-row"><span class="dot" style="--c:${debtColor(d)}"></span><span class="grow">${esc(d.name)}
+      ${it.grace ? '<span class="chip">寬限期</span>' : ''}${it.revolving ? '<span class="chip blue">只繳息</span>' : ''}${it.paid ? '<span class="chip gray">已扣款</span>' : ''}</span>
+      <span>${fmt(it.pay)}</span></div>`).join('')}
+    ${next ? `<div class="hr-next">${Icon(EV_INFO[next.type].ic)}<div><b>下一個變化</b>：${esc(next.debt.name)} ${EV_INFO[next.type].t}<br><small>${dateTxt(next.date)}（${daysTxt(next.days)}）· ${next.type === 'payoff' ? `每月少 ${fmt(next.from)}` : `月付 ${next.to - next.from >= 0 ? '+' : ''}${fmt(next.to - next.from)}`}</small></div></div>` : ''}
+    <div class="hr-spark"><div class="small muted">未來 24 個月總月付</div>${spark}</div>`;
+}
+
+function renderRepay() {
+  const el = $('repayBody');
+  if (!state.debts.length) {
+    el.innerHTML = `<div class="card empty big-empty">${Icon('repay', 'ico-xl')}<p>先到「負債」新增貸款，這裡就會推算你未來每個月要繳多少</p></div>`;
+    return;
+  }
+  const all = Plan.horizonAll(state.debts);
+  const H = repayH === 0 ? all : repayH;
+  const P = projection(Math.max(H, 13));
+  const months = P.months.slice(0, H);
+  repaySel = Math.min(repaySel, months.length - 1);
+  const series = state.debts.map(d => ({ id: d.id, color: debtColor(d), d }));
+  const next12 = P.months.slice(0, 12).reduce((t, m) => t + m.total, 0);
+  const peak = months.reduce((a, m) => (Math.round(m.total) > Math.round(a.total) ? m : a), months[0]);
+  const PA = projection(all);
+  const evAll = PA.events.filter(e => e.days >= 0 || e.ym === P.cur);
+  const markers = {};
+  P.events.forEach(e => { const k = Loan.ymDiff(P.cur, e.ym); if (k >= 0 && k < H && e.type === 'graceEnd') markers[k] = '#e53935'; else if (k >= 0 && k < H && !markers[k] && e.type !== 'lineEnd') markers[k] = '#90a4ae'; });
+  const sel = months[repaySel];
+  const selRows = series.map(s => ({ s, it: sel.items[s.id] })).filter(x => x.it && x.it.pay > 0);
+  const tableRows = months.map((m, k) => {
+    const prev = k ? months[k - 1].total : m.total, diff = m.total - prev;
+    const evs = P.events.filter(e => e.ym === m.ym && e.type !== 'lineEnd');
+    const open = repayOpen.has(m.ym);
+    return `<li class="mrow ${evs.length ? 'has-ev' : ''} ${open ? 'open' : ''}" data-ym="${m.ym}">
+      <div class="mrow-head"><span class="mym">${m.ym.replace('-', '/')}</span>
+        <span class="grow">${evs.map(e => `<span class="chip ${e.type === 'graceEnd' ? 'red' : e.type === 'payoff' ? 'green' : 'blue'}">${esc(e.debt.name)}${e.type === 'graceEnd' ? '寬限期結束' : e.type === 'graceStart' ? '寬限期開始' : e.type === 'payoff' ? '還清' : '投入完成'}</span>`).join('')}</span>
+        <span class="mtot">${fmt(m.total)}${k && Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'neg' : 'pos'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
+      <div class="mrow-detail">${series.map(s => { const it = m.items[s.id]; if (!it || it.pay <= 0) return ''; return `<div class="kv"><span><span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}<small class="muted"> 本 ${fmt(it.principal)} / 息 ${fmt(it.interest)}</small></span></div>`; }).join('')}</div></li>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="card repay-sum">
+      <div class="rs"><span>本月應繳</span><b>${fmt(P.months[0].total)}</b></div>
+      <div class="rs"><span>下個月</span><b>${fmt(P.months[1]?.total || 0)}</b></div>
+      <div class="rs"><span>未來 12 個月合計</span><b>${fmt(next12)}</b></div>
+      <div class="rs"><span>期間最高月付</span><b class="neg">${fmt(peak.total)}</b><small>${peak.ym.replace('-', '/')} 起</small></div>
+    </div>
+    <div class="card">
+      <h2>${Icon.svg('warn', 24)} 重要時間點</h2>
+      ${evAll.length ? evAll.map(e => eventHTML(e)).join('') : '<div class="empty">沒有即將發生的變化</div>'}
+    </div>
+    <div class="card">
+      <h2>${Icon.svg('chart', 24)} 未來每月要繳多少</h2>
+      <div class="chips">${[[12, '1 年'], [36, '3 年'], [60, '5 年'], [120, '10 年'], [0, '全部']].map(([v, t]) => `<button type="button" class="chip-btn ${repayH === v ? 'on' : ''}" data-h="${v}">${t}</button>`).join('')}</div>
+      <div class="chart-wrap" id="repayChart">${Charts.stacked(months, series, { selected: repaySel, markers })}</div>
+      <div class="legend">${series.map(s => `<span><span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}</span>`).join('')}<span><span class="tri"></span>寬限期結束</span></div>
+      <div class="sel-box"><div class="sel-head"><b>${sel.ym.replace('-', '/')}</b><b>${fmt(sel.total)}</b></div>
+        ${selRows.map(({ s, it }) => `<div class="kv"><span><span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}</span></div>`).join('') || '<div class="muted small">這個月沒有要繳的</div>'}
+        <div class="small muted">點圖上的月份看那個月的明細</div></div>
+    </div>
+    <div class="card">
+      <h2>${Icon.svg('calendar', 24)} 逐月明細</h2>
+      <ul class="mlist">${tableRows}</ul>
+    </div>`;
+}
+
+document.addEventListener('click', e => {
+  const h = e.target.closest('[data-h]');
+  if (h && h.closest('#view-repay')) { repayH = +h.dataset.h; repaySel = 0; renderRepay(); return; }
+  const bar = e.target.closest('#repayChart [data-k]');
+  if (bar) { repaySel = +bar.dataset.k; renderRepay(); return; }
+  const mr = e.target.closest('.mrow');
+  if (mr) { const ym = mr.dataset.ym; repayOpen.has(ym) ? repayOpen.delete(ym) : repayOpen.add(ym); mr.classList.toggle('open'); }
+});
+
+// ================= 投資計畫 =================
+function parseTargets(t) {
+  const out = [];
+  String(t || '').replace(/([^\s,，、;；]+)\s*(\d+(?:\.\d+)?)\s*%/g, (m, name, p) => { out.push({ name, pct: +p }); });
+  return out;
+}
+function planRows(p) {
+  const pr = Plan.progress(p);
+  const src = state.debts.find(d => d.id === p.source);
+  const r = src ? num(src.rate) / 100 / 12 : 0;
+  let cum = 0;
+  return pr.amounts.map((planned, i) => {
+    const st = Plan.periodState(p, i);
+    const amt = st === 'done' ? num(p.done[i]) : planned;
+    cum += amt;
+    const base = src ? num(src.drawn) : 0;
+    return { i, ym: Loan.ymAdd(p.startYM, i), planned, amt, cum, state: st, interest: src ? Math.min(cum + base, num(src.limit) || Infinity) * r : 0 };
+  });
+}
+function renderInvest() {
+  const el = $('investBody');
+  if (!state.plans.length) {
+    el.innerHTML = `<div class="card empty big-empty">${Icon('invest', 'ico-xl')}<p>還沒有投資計畫</p>
+      <p class="muted">例如理財型房貸 1,460 萬分 15 個月投入：新增計畫、資金來源選那筆理財型房貸，就會自動算出每月投入、利息怎麼遞增，還款計畫也會跟著更新。</p>
+      <button type="button" class="btn primary" data-add="plan">新增投資計畫</button></div>`;
+    return;
+  }
+  el.innerHTML = state.plans.map(p => {
+    const pr = Plan.progress(p);
+    const rows = planRows(p);
+    const src = state.debts.find(d => d.id === p.source);
+    const rs = src ? Plan.revolvingStatus(src, state.plans) : null;
+    const curIdx = Math.max(-1, Math.min(rows.length - 1, Loan.ymDiff(p.startYM, Loan.nowYM())));
+    const nowRow = rows[curIdx] && rows[curIdx].state !== 'done' && curIdx >= 0 && Loan.ymDiff(p.startYM, Loan.nowYM()) < rows.length ? rows[curIdx] : null;
+    const nextRow = rows.find(r => r.state === 'future');
+    const targets = parseTargets(p.targets);
+    const y = num(p.yieldPct) / 100;
+    const fullInt = rs ? rs.fullInterest : 0;
+    const income = y ? num(p.total) * y / 12 : 0;
+    const assumed = rows.filter(r => r.state === 'assumed').length;
+    return `<div class="card plan-card">
+      <div class="plan-head"><div><h2>${Icon.svg('invest', 26)} ${esc(p.name)}</h2>
+        <div class="small muted">${src ? `${UI.bankIcon(bankOf(src.bank))}` : ''}資金來源：${src ? esc(src.name) + ` · 利率 ${pct(num(src.rate))}` : '自有資金'}</div></div>
+        <button type="button" class="btn mini" data-edit="plan" data-id="${p.id}">${Icon.svg('pencil', 16)} 編輯</button></div>
+      <div class="plan-top">${Charts.ring(pr.invested / (pr.total || 1))}
+        <div class="plan-stats">
+          <div class="kv"><span>已投入</span><b class="accent">${fmt(pr.invested)}</b></div>
+          <div class="kv"><span>總額</span><span>${fmt(pr.total)}</span></div>
+          <div class="kv"><span>進度</span><span>第 ${Math.min(pr.current, pr.n)} / ${pr.n} 期</span></div>
+          ${nowRow ? `<div class="kv"><span>本月要投入</span><b>${fmt(nowRow.amt)}</b></div>` : nextRow ? `<div class="kv"><span>下次投入</span><span>${nextRow.ym.replace('-', '/')} · ${fmt(nextRow.amt)}</span></div>` : '<div class="kv"><span>狀態</span><b class="pos">全部投入完成</b></div>'}
+        </div></div>
+      ${assumed ? `<div class="hint-row warn-row">${Icon('warn')}<span>有 ${assumed} 期已過但還沒確認，先當作照計畫投入。點下面那期就能確認實際金額。</span></div>` : ''}
+      ${rs ? `<div class="int-box"><div class="kv"><span>目前每月利息</span><b>${fmt(rs.monthly)}</b></div>
+        <div class="kv"><span>全部投入後每月利息（${rs.fullYM || ''} 起）</span><b class="neg">${fmt(rs.fullInterest)}</b></div>
+        <div class="kv"><span>每多投入 100 萬，每月利息增加</span><span>${fmt(1e6 * num(src.rate) / 100 / 12)}</span></div></div>` : ''}
+      ${y ? `<div class="cf-box"><div class="panel-title">${Icon('scale')} 全部投入後的每月現金流（估算）</div>
+        <div class="cf-bars"><div class="cf"><span>預估收益</span><div class="cf-track"><div class="cf-fill pos-bg" style="width:${Math.min(100, income / Math.max(income, fullInt, 1) * 100)}%"></div></div><b class="pos">${fmt(income)}</b></div>
+        <div class="cf"><span>利息成本</span><div class="cf-track"><div class="cf-fill neg-bg" style="width:${Math.min(100, fullInt / Math.max(income, fullInt, 1) * 100)}%"></div></div><b class="neg">${fmt(fullInt)}</b></div></div>
+        <div class="kv"><span>每月淨額</span><b class="${income - fullInt >= 0 ? 'pos' : 'neg'}">${income - fullInt >= 0 ? '+' : ''}${fmt(income - fullInt)}</b></div>
+        <div class="small muted">以總額 × ${pct(num(p.yieldPct))} ÷ 12 估算；${src ? `損益兩平的年化報酬約 ${pct(num(src.rate))}。` : ''}實際報酬會波動，僅供參考。</div></div>` : ''}
+      <div class="chart-wrap">${Charts.invest(rows, { current: curIdx })}</div>
+      <div class="legend"><span><span class="dot" style="--c:#14b8a6"></span>累計投入（左軸）</span>${src ? '<span><span class="dot" style="--c:#ff7043"></span>投入後每月利息（右軸）</span>' : ''}</div>
+      ${targets.length ? `<div class="targets"><div class="small muted">每期分配（以每期 ${fmt(pr.amounts[0])} 計）</div>${targets.map(t => `<span class="chip blue">${esc(t.name)} ${t.pct}% · ${short(pr.amounts[0] * t.pct / 100)}</span>`).join('')}</div>` : p.targets ? `<div class="small muted">標的：${esc(p.targets)}</div>` : ''}
+      <ul class="plist">${rows.map(r => `<li class="prow ${r.state}" data-plan="${p.id}" data-i="${r.i}">
+        <span class="pnum">${r.i + 1}</span>
+        <div class="grow"><div><b>${r.ym.replace('-', '/')}${p.day ? '/' + String(p.day).padStart(2, '0') : ''}</b> ${({ done: '<span class="chip green">已確認</span>', assumed: '<span class="chip gray">未確認</span>', now: '<span class="chip red">本月</span>', future: '' })[r.state]}</div>
+          <div class="sub">累計 ${short(r.cum)}${src ? ` · 之後每月利息 ${fmt(r.interest)}` : ''}</div></div>
+        <div class="pamt">${fmt(r.amt)}${r.state === 'done' && Math.round(r.amt) !== Math.round(r.planned) ? `<small class="muted">計畫 ${fmt(r.planned)}</small>` : ''}</div></li>`).join('')}</ul>
+    </div>`;
+  }).join('') + `<button type="button" class="btn add-plan" data-add="plan">${Icon.svg('plus', 20)} 再新增一個投資計畫</button>`;
+}
+
+// 確認某一期
+let periodCtx = null;
+document.addEventListener('click', e => {
+  const r = e.target.closest('.prow');
+  if (!r) return;
+  const p = state.plans.find(x => x.id === r.dataset.plan);
+  const i = +r.dataset.i;
+  const planned = Plan.amounts(p)[i];
+  const done = p.done && p.done[i] != null;
+  periodCtx = { p, i };
+  $('pdTitle').innerHTML = `${Icon('invest')} 第 ${i + 1} 期 · ${Loan.ymAdd(p.startYM, i).replace('-', '/')}`;
+  $('pdAmount').value = Math.round(done ? p.done[i] : planned);
+  $('pdPlanned').textContent = `計畫金額 ${fmt(planned)}`;
+  $('pdUndo').hidden = !done;
+  $('periodDialog').showModal();
+});
+function savePeriod(mode) {
+  const { p, i } = periodCtx;
+  const v = num($('pdAmount').value);
+  if (mode === 'done') { p.done = { ...(p.done || {}), [i]: v }; UI.burst('coin'); }
+  if (mode === 'plan') { p.custom = { ...(p.custom || {}) }; p.custom[i] = v; }
+  if (mode === 'undo' && p.done) { delete p.done[i]; }
+  $('periodDialog').close();
+  save();
+}
+$('pdDone').addEventListener('click', () => savePeriod('done'));
+$('pdPlan').addEventListener('click', () => savePeriod('plan'));
+$('pdUndo').addEventListener('click', () => savePeriod('undo'));
+$('pdCancel').addEventListener('click', () => $('periodDialog').close());
+
+function drawPlanPanel() {
+  const el = $('planPanel');
+  if (!el) return;
+  const t = num(vals.total), n = Math.max(1, Math.round(num(vals.months)));
+  if (!t) { el.innerHTML = `<div class="hint-row">${Icon('invest')}<span>填入總額與期數，會自動算出每月投入多少；資金來源選理財型房貸，會一起算出利息怎麼遞增</span></div>`; return; }
+  const src = state.debts.find(d => d.id === vals.source);
+  const r = src ? num(src.rate) / 100 / 12 : 0;
+  const end = vals.startYM ? Loan.ymAdd(vals.startYM, n - 1).replace('-', '/') : '';
+  el.innerHTML = `<div class="panel-title">${Icon('calc')} 試算</div>
+    <div class="kv"><span>每月投入</span><b class="accent">${fmt(t / n)}</b></div>
+    <div class="kv"><span>最後一期</span><span>${end}</span></div>
+    ${src ? `<div class="kv"><span>第 1 期後每月利息</span><span>${fmt((num(src.drawn) + t / n) * r)}</span></div>
+    <div class="kv"><span>全部投入後每月利息</span><b class="neg">${fmt((num(src.drawn) + t) * r)}</b></div>
+    ${num(src.limit) && num(src.drawn) + t > num(src.limit) ? `<div class="small neg">超過核准額度 ${fmt(num(src.limit))}</div>` : ''}` : ''}
+    ${num(vals.yieldPct) ? `<div class="kv"><span>預估每月收益（全部投入後）</span><span class="pos">${fmt(t * num(vals.yieldPct) / 100 / 12)}</span></div>` : ''}`;
+}
 
 // ---------- 小提示 ----------
 let toastT;

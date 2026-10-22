@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.7.0';
+const APP_VERSION = '5.7.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -11,7 +11,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const CAT_MIGRATE = { '股票': '台股', 'ETF/基金': '基金' };
 function migrate(d) {
   d = { currency: 'TWD', assets: [], debts: [], plans: [], ...d };
-  d.ai = { on: true, key: '', model: 'claude-haiku-5-5', ...(d.ai || {}) };
+  d.ai = { on: true, provider: 'claude', key: '', model: 'claude-haiku-5-5', gkey: '', gmodel: 'gemini-3.1-flash-lite', ...(d.ai || {}) };
   d.plans = d.plans || [];
   d.assets = d.assets.map(a => {
     let category = CAT_MIGRATE[a.category] || a.category;
@@ -1463,7 +1463,7 @@ function vcCardHTML(r, i) {
       <button type="button" class="btn mini" data-vcform="${i}">${ok ? '修改' : '補資料'}</button></div></div>`;
 }
 // AI 結果 → 與規則解析相同的格式
-const aiReady = () => !!(state.ai && state.ai.on && state.ai.key);
+const aiReady = () => !!(state.ai && state.ai.on && AI.keyOf(state.ai));
 function debtMissing(v) {
   const m = [];
   if (!v.bank) m.push('bank');
@@ -1512,7 +1512,7 @@ async function vcAI(force) {
   $('vcResults').innerHTML = `<div class="vc-thinking">${Icon('star')}<span>AI 整理中…</span></div>`;
   try {
     await Stocks.load();
-    const r = await AI.call(state.ai.key, state.ai.model, txt, ctl.signal);
+    const r = await AI.call(state.ai, txt, ctl.signal);
     if (ctl !== aiCtl) return;
     vcResults = r.items.map(fromAI);
     renderVc(true);
@@ -1603,35 +1603,49 @@ function toast(msg) {
 // ---------- AI 設定 ----------
 function renderAISettings() {
   const a = state.ai || {};
-  const masked = a.key ? a.key.slice(0, 10) + '••••' + a.key.slice(-4) : '';
+  const g = a.provider === 'gemini';
+  const key = g ? a.gkey : a.key;
+  const masked = key ? key.slice(0, 8) + '••••' + key.slice(-4) : '';
+  const models = g ? AI.GMODELS : AI.MODELS, cur = g ? a.gmodel : a.model;
   $('aiSet').innerHTML = `
     <label class="switch-row"><span><b>用 AI 整理語音輸入</b><small class="muted">聽得懂比較口語的說法；沒有金鑰或連不上時會自動改用內建規則</small></span>
       <input type="checkbox" class="switch" id="aiOn" ${a.on ? 'checked' : ''}></label>
-    <span class="flabel" style="margin-top:12px">Anthropic API 金鑰${a.key ? `（目前：${esc(masked)}）` : ''}</span>
-    <div class="inrow"><input id="aiKey" type="password" autocomplete="off" placeholder="${a.key ? '輸入新的金鑰可取代' : 'sk-ant-...'}" class="ai-key">
+    <span class="flabel" style="margin-top:12px">AI 服務</span>
+    <div class="seg" id="aiProv"><button type="button" data-p="claude" class="${g ? '' : 'on'}">Claude<small>Anthropic</small></button><button type="button" data-p="gemini" class="${g ? 'on' : ''}">Gemini<small>Google</small></button></div>
+    <span class="flabel">${g ? 'Gemini' : 'Anthropic'} API 金鑰${key ? `（目前：${esc(masked)}）` : ''}</span>
+    <div class="inrow"><input id="aiKey" type="password" autocomplete="off" placeholder="${key ? '輸入新的金鑰可取代' : g ? 'AIza...' : 'sk-ant-...'}" class="ai-key">
       <button type="button" class="btn mini primary" id="aiSave">儲存</button></div>
     <span class="flabel" style="margin-top:12px">模型</span>
-    <div class="seg" id="aiModel">${AI.MODELS.map(m => `<button type="button" data-m="${m.v}" class="${a.model === m.v ? 'on' : ''}">${m.label}<small>${m.d}</small></button>`).join('')}</div>
-    <div class="btnrow"><button type="button" class="btn mini" id="aiTest">測試連線</button>${a.key ? '<button type="button" class="btn mini danger" id="aiDel">刪除金鑰</button>' : ''}<span class="small muted" id="aiMsg"></span></div>
-    <p class="muted small">金鑰到 <b>platform.claude.com</b> 建立（API Keys），費用記在你的 Anthropic 帳號。使用 Haiku 5.5 每句大約不到新台幣 0.1 元。<br>
+    <div class="seg" id="aiModel">${models.map(m => `<button type="button" data-m="${m.v}" class="${cur === m.v ? 'on' : ''}">${m.label}<small>${m.d}</small></button>`).join('')}</div>
+    <div class="btnrow"><button type="button" class="btn mini" id="aiTest">測試連線</button>${key ? '<button type="button" class="btn mini danger" id="aiDel">刪除金鑰</button>' : ''}<span class="small muted" id="aiMsg"></span></div>
+    <p class="muted small">${g
+      ? `金鑰到 <b>aistudio.google.com</b> →「Get API key」建立。Gemini App 的訂閱（Google AI Pro）<b>不包含 API 用量</b>，API 另外計費。<br>
+         ・<b>沒綁帳單（免費方案）</b>：有每日次數上限，Google 條款寫明送出的內容<b>可能會被用來改善產品</b>。<br>
+         ・<b>綁定 Cloud 帳單（付費方案）</b>：用多少付多少，Flash-Lite 每句大約不到新台幣 0.1 元，內容不會被用來改善產品；AI Pro 訂閱者可能領得到每月 Cloud 抵用額度。`
+      : `金鑰到 <b>platform.claude.com</b> 建立（API Keys），費用記在你的 Anthropic 帳號，Claude 訂閱不包含 API 用量。使用 Haiku 5.5 每句大約不到新台幣 0.1 元。`}<br>
     會送出的只有你說的那句話和選單清單（類別、銀行代碼、車廠），不會送出你的資產負債資料。金鑰存在這支手機裡，開啟 Face ID 鎖時會一起加密；匯出備份不會包含金鑰。</p>`;
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('#aiSave, #aiTest, #aiDel, #aiModel [data-m]');
+  const t = e.target.closest('#aiSave, #aiTest, #aiDel, #aiModel [data-m], #aiProv [data-p]');
   if (!t) return;
+  const g = state.ai.provider === 'gemini';
+  if (t.dataset.p) { state.ai.provider = t.dataset.p; save(); renderAISettings(); return; }
   if (t.id === 'aiSave') {
     const k = $('aiKey').value.trim();
-    if (!/^sk-ant-/.test(k)) return toast('金鑰應該是 sk-ant- 開頭');
-    state.ai.key = k; save(); renderAISettings(); toast('已儲存金鑰');
+    if (g ? !/^AIza[0-9A-Za-z_\-]{20,}$/.test(k) : !/^sk-ant-/.test(k)) return toast(g ? 'Gemini 金鑰應該是 AIza 開頭' : '金鑰應該是 sk-ant- 開頭');
+    if (g) state.ai.gkey = k; else state.ai.key = k;
+    save(); renderAISettings(); toast('已儲存金鑰');
   } else if (t.id === 'aiDel') {
     if (!confirm('刪除 API 金鑰？')) return;
-    state.ai.key = ''; save(); renderAISettings();
+    if (g) state.ai.gkey = ''; else state.ai.key = '';
+    save(); renderAISettings();
   } else if (t.dataset.m) {
-    state.ai.model = t.dataset.m; save(); renderAISettings();
+    if (g) state.ai.gmodel = t.dataset.m; else state.ai.model = t.dataset.m;
+    save(); renderAISettings();
   } else if (t.id === 'aiTest') {
-    if (!state.ai.key) return toast('先輸入並儲存金鑰');
+    if (!AI.keyOf(state.ai)) return toast('先輸入並儲存金鑰');
     $('aiMsg').textContent = '測試中…';
-    try { await AI.test(state.ai.key, state.ai.model); $('aiMsg').innerHTML = '<span class="pos">連線成功</span>'; }
+    try { await AI.test(state.ai); $('aiMsg').innerHTML = '<span class="pos">連線成功</span>'; }
     catch (err) { $('aiMsg').innerHTML = `<span class="neg">${esc(err.message)}</span>`; }
   }
 });

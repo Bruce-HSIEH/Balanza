@@ -2,6 +2,13 @@
 // 版本更新紀錄（App 內「更新紀錄」與 CHANGELOG.md 使用同一份內容）
 const CHANGELOG = [
   {
+    v: '5.7.1', date: '2026-10-22', title: '也可以用 Gemini',
+    items: [
+      'AI 理解可以選 Claude 或 Gemini：Gemini 金鑰到 Google AI Studio 申請，預設使用 Gemini 3.1 Flash-Lite',
+      '設定頁說明：Gemini App 訂閱不包含 API 用量；免費方案的內容可能被 Google 用來改善產品，綁定 Cloud 帳單的付費方案則不會',
+    ],
+  },
+  {
     v: '5.7.0', date: '2026-10-22', title: 'AI 整理語音輸入',
     items: [
       '語音／一句話新增可以交給 AI（Claude）整理，聽得懂比較口語的說法，例如「上個月在國泰辦了八百萬房貸，三十年，前三年只繳利息」，也會修正語音辨識的同音錯字',

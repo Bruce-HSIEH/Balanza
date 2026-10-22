@@ -1,5 +1,5 @@
 'use strict';
-// AI 理解：把一句口語交給 Claude（Anthropic API）整理成資產／負債項目
+// AI 理解：把一句口語交給 Claude（Anthropic API）或 Gemini（Google）整理成資產／負債項目
 // 手機直接呼叫 API（使用者自己的金鑰），只送出這句話與選單清單，不送現有資產負債資料
 
 const AI = (() => {
@@ -7,6 +7,10 @@ const AI = (() => {
   const MODELS = [
     { v: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', d: '最快、最便宜（建議）' },
     { v: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', d: '更聰明，費用約 20 倍' },
+  ];
+  const GMODELS = [
+    { v: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite', d: '最便宜（建議）' },
+    { v: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', d: '更聰明，費用約 3 倍' },
   ];
 
   const TOOL = {
@@ -83,7 +87,8 @@ const AI = (() => {
 車輛廠牌：${cars}。`;
   }
 
-  async function call(key, model, text, signal) {
+  // ---- Claude ----
+  async function callClaude(key, model, text, signal) {
     const res = await fetch(URL, {
       method: 'POST', signal,
       headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
@@ -101,10 +106,52 @@ const AI = (() => {
     return { items: (tool && tool.input && tool.input.items) || [], usage: j.usage };
   }
 
-  async function test(key, model) {
-    const r = await call(key, model, '玉山活存 50 萬');
-    return r.items.length > 0;
+  // ---- Gemini ----
+  // 把 JSON Schema 轉成 Gemini responseSchema（OpenAPI 子集）
+  function toGemini(sc) {
+    const o = { type: String(sc.type).toUpperCase() };
+    if (sc.description) o.description = sc.description;
+    if (sc.enum) o.enum = sc.enum;
+    if (sc.properties) { o.properties = {}; for (const [k, v] of Object.entries(sc.properties)) o.properties[k] = toGemini(v); }
+    if (sc.items) o.items = toGemini(sc.items);
+    if (sc.required) o.required = sc.required;
+    return o;
+  }
+  async function callGemini(key, model, text, signal) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+      method: 'POST', signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system() + '\n\n請只輸出符合 schema 的 JSON：{"items":[...]}。' }] },
+        contents: [{ role: 'user', parts: [{ text }] }],
+        generationConfig: { responseMimeType: 'application/json', responseSchema: toGemini(TOOL.input_schema), temperature: 0.1 },
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = (j.error && j.error.message) || res.statusText;
+      if (res.status === 400 && /API key|API_KEY/i.test(msg)) throw new Error('Gemini API 金鑰無效，請到設定確認');
+      if (res.status === 403) throw new Error('Gemini API 金鑰沒有權限（請確認已在 AI Studio 啟用）');
+      if (res.status === 429) throw new Error('Gemini 使用次數已達上限，稍後再試');
+      if (res.status === 404) throw new Error(`找不到模型 ${model}`);
+      throw new Error(`Gemini 回應錯誤（${res.status}）：${msg}`);
+    }
+    const txt = (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';
+    let out = {};
+    try { out = JSON.parse(txt); } catch (e) { const m = txt.match(/\{[\s\S]*\}/); if (m) try { out = JSON.parse(m[0]); } catch (e2) { /* ignore */ } }
+    return { items: Array.isArray(out.items) ? out.items : [], usage: j.usageMetadata };
   }
 
-  return { call, test, MODELS };
+  function call(cfg, text, signal) {
+    return cfg.provider === 'gemini' ? callGemini(cfg.gkey, cfg.gmodel, text, signal) : callClaude(cfg.key, cfg.model, text, signal);
+  }
+
+  async function test(cfg) {
+    const r = await call(cfg, '玉山活存 50 萬');
+    if (!r.items.length) throw new Error('有連上，但沒有整理出結果');
+    return true;
+  }
+  const keyOf = cfg => cfg.provider === 'gemini' ? cfg.gkey : cfg.key;
+
+  return { call, test, keyOf, MODELS, GMODELS };
 })();

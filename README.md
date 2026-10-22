@@ -44,6 +44,8 @@
 ## 資料隱私
 
 本 repo 是公開的，但**你的財務資料不會進 repo**——資料只存在手機瀏覽器的 localStorage。
+
+啟用「設定 → Face ID 加密鎖」後，資料以 AES-256-GCM 加密：資料金鑰分別由 Face ID 通行密鑰的 WebAuthn PRF 祕密（不支援時改用 IndexedDB 不可匯出的裝置金鑰）與 6 位數 PIN（PBKDF2-SHA256 31 萬次）包裝；localStorage 只會有密文，解鎖後明文只在記憶體。
 換手機或清除瀏覽器資料前，請到「設定 → 匯出 JSON」備份。
 
 ## 更新
@@ -59,6 +61,7 @@
 | `app.js` | 資料、表單、畫面 |
 | `ui.js` | 選擇器、小圖、吉祥物、動畫 |
 | `loan.js` | 貸款攤還與寬限期計算（寬限期可從任何時間點開始） |
+| `lock.js` | Face ID／PIN 加密鎖 |
 | `plan.js` | 投資計畫、理財型額度、逐月還款推算與事件 |
 | `charts.js` | 自繪 SVG 圖表 |
 | `lvr.js` | 實價登錄查詢與估價 |

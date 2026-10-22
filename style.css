@@ -667,3 +667,30 @@ body.privacy .big { color: var(--muted); }
 .btn[hidden] { display: none !important; }
 .pl-pct.up, .pl-line.up { color: #e53935; } .pl-pct.down, .pl-line.down { color: #2e9e4f; }
 .group-head .sub { flex-wrap: wrap; }
+
+/* ===== v5.5 Face ID 加密鎖 ===== */
+.lock-screen { position: fixed; inset: 0; z-index: 100; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); animation: lockIn .3s ease; }
+.lock-screen[hidden] { display: none; }
+.lock-screen.opening { animation: lockOut .35s ease forwards; }
+@keyframes lockIn { from { opacity: 0; } }
+@keyframes lockOut { to { opacity: 0; transform: scale(1.05); } }
+body.is-locked { overflow: hidden; }
+body.is-locked .tabs, body.is-locked .fab { visibility: hidden; }
+.lock-inner { width: 100%; max-width: 340px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.lock-mascot { width: 160px; }
+.lock-mascot svg { width: 100%; }
+.lock-inner h2 { margin: 4px 0 0; }
+.lock-face { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; font-size: 16px; border-radius: 16px; margin: 10px 0 2px; }
+.pin-dots { display: flex; gap: 14px; justify-content: center; margin: 14px 0 16px; }
+.pin-dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); transition: background .15s, transform .15s; }
+.pin-dots i.on { background: var(--accent); border-color: var(--accent); transform: scale(1.15); }
+.pin-dots.shake { animation: shake .4s; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+.pin-keys { display: grid; grid-template-columns: repeat(3, 72px); gap: 12px 22px; justify-content: center; }
+.pin-keys button { width: 72px; height: 72px; border-radius: 50%; border: 0; background: var(--soft); font-size: 26px; font-weight: 600; cursor: pointer; transition: transform .1s, background .1s; }
+.pin-keys button:active { transform: scale(.92); background: var(--accent-soft); }
+.pin-dialog { text-align: center; }
+.pin-msg { font-weight: 600; margin: 4px 0 0; }
+.lock-on { display: flex; gap: 10px; align-items: center; background: var(--accent-soft); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
+.lock-on small { display: block; font-size: 12px; color: var(--muted); line-height: 1.5; }
+#lockSet .btnrow .btn { display: inline-flex; align-items: center; gap: 4px; }

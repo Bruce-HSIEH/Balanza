@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.4.0';
+const APP_VERSION = '5.5.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -37,13 +37,23 @@ function migrate(d) {
   });
   return d;
 }
+let locked = false;
 function load() {
+  if (Vault.enabled()) {                       // 已啟用加密：先上鎖，解鎖後才有資料
+    locked = true;
+    try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+    return migrate({});
+  }
   try { const raw = localStorage.getItem(STORE_KEY); if (raw) return migrate(JSON.parse(raw)); } catch (e) { /* ignore */ }
   return migrate({});
 }
 let state = load();
 function save() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { alert('儲存失敗：' + e.message); }
+  if (Vault.enabled()) {
+    if (Vault.unlocked()) Vault.store(JSON.stringify(state)).catch(e => alert('加密儲存失敗：' + e.message));
+  } else {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { alert('儲存失敗：' + e.message); }
+  }
   render();
 }
 
@@ -1367,7 +1377,7 @@ $('importFile').addEventListener('change', async e => {
     const d = JSON.parse(await file.text());
     if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
     if (!confirm(`匯入 ${d.assets.length} 筆資產、${d.debts.length} 筆負債？目前資料將被取代。`)) return;
-    state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts });
+    state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [] });
     save();
     toast('匯入完成');
   } catch (err) {
@@ -1389,6 +1399,143 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { lastLv = null; levelsKey = ''; render(); }
 });
 
+
+// ================= Face ID 加密鎖 =================
+const afterUnlock = [];
+const LOCK_DELAYS = [[0, '立即'], [60, '1 分鐘'], [300, '5 分鐘'], [900, '15 分鐘']];
+if (prefs.lockAfter == null) prefs.lockAfter = 0;
+
+// PIN 鍵盤
+function pinPad(el, onDone, len = 6) {
+  let v = '';
+  el.innerHTML = `<div class="pin-dots">${'<i></i>'.repeat(len)}</div>
+    <div class="pin-keys">${[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map(k => k === '' ? '<span></span>' : `<button type="button" data-k="${k}">${k}</button>`).join('')}</div>`;
+  const dots = () => el.querySelectorAll('.pin-dots i').forEach((d, i) => d.classList.toggle('on', i < v.length));
+  el.querySelector('.pin-keys').onclick = e => {
+    const b = e.target.closest('[data-k]'); if (!b) return;
+    const k = b.dataset.k;
+    if (k === '⌫') v = v.slice(0, -1); else if (v.length < len) v += k;
+    dots();
+    if (v.length === len) { const x = v; setTimeout(() => { v = ''; dots(); onDone(x); }, 120); }
+  };
+  return { shake() { el.querySelector('.pin-dots').classList.remove('shake'); void el.offsetWidth; el.querySelector('.pin-dots').classList.add('shake'); } };
+}
+
+function closeDialogs() { document.querySelectorAll('dialog[open]').forEach(d => d.close()); }
+
+function showLock(auto) {
+  closeDialogs();
+  const info = Vault.info();
+  const lk = $('lockScreen');
+  lk.hidden = false;
+  document.body.classList.add('is-locked');
+  $('lockMascot').innerHTML = UI.mascotSVG(LEVEL_EMPTY);
+  $('lockFace').hidden = !info.faceID;
+  $('lockMsg').textContent = info.faceID ? '用 Face ID 解鎖，或輸入 PIN' : '輸入 PIN 解鎖';
+  $('lockErr').textContent = '';
+  $('lockPinWrap').hidden = info.faceID;
+  const pad = pinPad($('lockPin'), async pin => {
+    $('lockErr').textContent = '解鎖中…';
+    try { finishUnlock(await Vault.unlockPIN(pin)); }
+    catch (e) { $('lockErr').textContent = e.message; pad.shake(); }
+  });
+  if (info.faceID && auto) setTimeout(() => tryFaceID(true), 350);
+}
+async function tryFaceID(silent) {
+  $('lockErr').textContent = '';
+  try { finishUnlock(await Vault.unlockFaceID()); }
+  catch (e) {
+    if (!silent || e.name !== 'NotAllowedError') $('lockErr').textContent = e.name === 'NotAllowedError' ? 'Face ID 已取消，可以再按一次或改用 PIN' : e.message;
+    $('lockPinWrap').hidden = false;
+  }
+}
+function finishUnlock(plain) {
+  try { state = migrate(JSON.parse(plain)); } catch (e) { state = migrate({}); }
+  locked = false;
+  $('lockScreen').classList.add('opening');
+  setTimeout(() => { $('lockScreen').hidden = true; $('lockScreen').classList.remove('opening'); document.body.classList.remove('is-locked'); }, 350);
+  lastLv = null; levelsKey = '';
+  render();
+  afterUnlock.splice(0).forEach(f => f());
+}
+function lockNow() {
+  if (!Vault.enabled()) return;
+  Vault.lock();
+  state = migrate({});
+  locked = true;
+  lastLv = null; levelsKey = '';
+  render();
+  showLock(false);
+}
+$('lockFace').addEventListener('click', () => tryFaceID(false));
+$('lockUsePin').addEventListener('click', () => { $('lockPinWrap').hidden = false; });
+
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (!Vault.enabled() || locked) return;
+  if (document.visibilityState === 'hidden') {
+    hiddenAt = Date.now();
+    if (!prefs.lockAfter) lockNow();
+  } else if (hiddenAt && Date.now() - hiddenAt >= prefs.lockAfter * 1000) lockNow();
+});
+
+// 設定：啟用／停用／換 PIN
+async function renderLockSettings() {
+  const info = Vault.info();
+  const can = await Vault.platformAvailable();
+  const mode = info ? { prf: 'Face ID 加密金鑰（資料只有掃過 Face ID 或輸入 PIN 才解得開）', device: '裝置金鑰加密＋Face ID 門禁（這台裝置不支援 Face ID 金鑰）', pin: 'PIN 加密（沒有使用 Face ID）' }[info.mode] : '';
+  $('lockSet').innerHTML = info
+    ? `<div class="lock-on">${Icon('lock')}<div><b>已啟用</b><small>${esc(mode)}</small></div></div>
+       <span class="flabel">離開 App 多久後自動上鎖</span>
+       <div class="seg" id="lockDelay">${LOCK_DELAYS.map(([v, t]) => `<button type="button" data-d="${v}" class="${prefs.lockAfter === v ? 'on' : ''}">${t}</button>`).join('')}</div>
+       <div class="btnrow"><button type="button" class="btn" id="lockNowBtn">${Icon.svg('lock', 18)} 立即上鎖</button><button type="button" class="btn" id="pinChange">更換 PIN</button><button type="button" class="btn danger" id="lockOff">停用</button></div>`
+    : `<p class="muted">啟用後，資料會加密存在手機裡，打開 App 要用 ${can ? 'Face ID' : 'PIN'} 解鎖。需要先設定 6 位數 PIN 當備用（Face ID 失敗或換手機時用）。</p>
+       ${can ? '' : '<p class="small neg">這個瀏覽器偵測不到 Face ID／Touch ID，會只用 PIN 加密。請用 iPhone 主畫面的 App 或 Safari 開啟。</p>'}
+       <button type="button" class="btn primary" id="lockOn">${Icon.svg('lock', 18)} 啟用${can ? ' Face ID ' : ' PIN '}鎖</button>`;
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest('#lockOn, #lockOff, #pinChange, #lockNowBtn, [data-d]');
+  if (!t || !t.closest('#lockSet')) return;
+  if (t.id === 'lockNowBtn') return lockNow();
+  if (t.dataset.d != null) { prefs.lockAfter = +t.dataset.d; savePrefs(); return renderLockSettings(); }
+  if (t.id === 'lockOff') {
+    if (!confirm('停用後資料會改回未加密的方式存在手機裡，確定？')) return;
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    Vault.disable();
+    toast('已停用加密鎖');
+    return renderLockSettings();
+  }
+  if (t.id === 'lockOn' || t.id === 'pinChange') pinSetup(t.id === 'pinChange');
+});
+function pinSetup(changing) {
+  let first = null;
+  $('psTitle').innerHTML = `${Icon('lock')} ${changing ? '更換 PIN' : '設定備用 PIN'}`;
+  $('psMsg').textContent = '輸入 6 位數 PIN';
+  $('psErr').textContent = '';
+  const pad = pinPad($('psPad'), async pin => {
+    if (!first) { first = pin; $('psMsg').textContent = '再輸入一次確認'; return; }
+    if (pin !== first) { first = null; $('psMsg').textContent = '兩次不一樣，請重新輸入'; pad.shake(); return; }
+    if (changing) { await Vault.changePIN(pin); $('pinDialog').close(); toast('PIN 已更換'); return; }
+    $('psMsg').textContent = '接著請掃 Face ID（可能會掃兩次）';
+    try {
+      const mode = await Vault.enable(pin, JSON.stringify(state));
+      localStorage.removeItem(STORE_KEY);
+      $('pinDialog').close();
+      UI.burst('heart');
+      toast(mode === 'prf' ? '已啟用 Face ID 加密鎖' : mode === 'device' ? '已啟用（裝置金鑰加密＋Face ID）' : '已啟用 PIN 加密鎖');
+      renderLockSettings();
+    } catch (err) {
+      Vault.disable();
+      first = null;
+      $('psMsg').textContent = '輸入 6 位數 PIN';
+      $('psErr').textContent = err.name === 'NotAllowedError' ? 'Face ID 已取消，沒有啟用。可以再試一次。' : '啟用失敗：' + err.message;
+    }
+  });
+  $('pinDialog').showModal();
+}
+$('psCancel').addEventListener('click', () => $('pinDialog').close());
+renderLockSettings();
+
 // ---------- 啟動 ----------
 Icon.hydrate();
 document.body.classList.toggle('privacy', hidden);
@@ -1399,10 +1546,11 @@ $('clList').innerHTML = changelogHTML(CHANGELOG.slice(0, 3));
   try { seen = localStorage.getItem('balanza.seenVersion'); } catch (e) { /* ignore */ }
   const hasData = state.assets.length || state.debts.length;
   if (seen !== APP_VERSION) {
-    if (hasData) setTimeout(() => openChangelog(true), 900);
+    if (hasData || locked) afterUnlock.push(() => setTimeout(() => openChangelog(true), 600));
     else try { localStorage.setItem('balanza.seenVersion', APP_VERSION); } catch (e) { /* ignore */ }
   }
 })();
+if (locked) showLock(true); else afterUnlock.splice(0).forEach(f => f());
 showView('home');
 render();
 Stocks.load().then(() => {

@@ -698,8 +698,7 @@ body.is-locked .tabs, body.is-locked .fab { visibility: hidden; }
 /* ===== v5.5.1 App 外殼：整頁固定，只有內容區捲動，底部選單永遠貼底 ===== */
 html { overflow: hidden; overscroll-behavior: none; }
 body {
-  position: fixed; top: 0; right: 0; left: 0;
-  bottom: calc(-1 * var(--vgap, 0px));   /* iOS 主畫面 App 畫面比螢幕短時，往下補滿（見 app.js fixViewport） */
+  position: fixed; top: 0; right: 0; bottom: 0; left: 0;
   height: auto; overflow: hidden; overscroll-behavior: none;
   display: flex; flex-direction: column; padding-bottom: 0;
 }
@@ -713,3 +712,7 @@ main {
 .fab { bottom: calc(88px + env(safe-area-inset-bottom)); }
 
 .vp-diag { font-size: 11px; color: var(--muted); text-align: center; margin: 4px 0 12px; opacity: .7; }
+
+/* 狀態列（black-translucent 下時間、電池固定白字）：淺色模式墊一條主題色確保看得清楚 */
+.statusbar-band { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: #0f766e; z-index: 300; pointer-events: none; }
+@media (prefers-color-scheme: dark) { .statusbar-band { background: var(--bg); } }

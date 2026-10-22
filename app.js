@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.5.3';
+const APP_VERSION = '5.5.4';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -994,14 +994,17 @@ const EV_INFO = {
   payoff: { ic: 'heart', t: '還清了' },
   drawFull: { ic: 'invest', t: '投資計畫投入完成，利息到頂' },
   lineEnd: { ic: 'lock', t: '額度到期，需展延或還本' },
+  balloon: { ic: 'warn', t: '到期，需一次還清本金' },
 };
 const dateTxt = d => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 const daysTxt = n => n < 0 ? '已過' : n === 0 ? '今天' : n < 60 ? `還有 ${n} 天` : n < 730 ? `還有 ${n} 天（約 ${Math.round(n / 30)} 個月）` : `還有 ${n} 天（約 ${(n / 365).toFixed(1)} 年）`;
 function eventHTML(e, compact) {
   const info = EV_INFO[e.type];
   const diff = e.to - e.from;
-  const soon = e.days <= 90 && e.type === 'graceEnd';
-  const change = e.type === 'lineEnd' ? '' : e.type === 'payoff'
+  const soon = e.days <= 90 && (e.type === 'graceEnd' || e.type === 'balloon');
+  const change = e.type === 'lineEnd' ? '' : e.type === 'balloon'
+    ? `當月要繳 <b class="neg">${fmt(e.to)}</b>（本金 ${fmt(e.amount)} ＋ 利息）`
+    : e.type === 'payoff'
     ? `每月少繳 <b class="pos">${fmt(e.from)}</b>`
     : `${e.debt.mode === 'revolving' ? '每月利息' : '月付'} ${fmt(e.from)} → <b class="${diff > 0 ? 'neg' : 'pos'}">${fmt(e.to)}</b>（${diff > 0 ? '+' : ''}${fmt(diff)}）`;
   return `<div class="ev ${e.type} ${soon ? 'soon' : ''}">${Icon(info.ic)}
@@ -1028,7 +1031,7 @@ function renderHomeRepay() {
     ${rows.map(({ d, it }) => `<div class="hr-row"><span class="dot" style="--c:${debtColor(d)}"></span><span class="grow">${esc(d.name)}
       ${it.grace ? '<span class="chip">寬限期</span>' : ''}${it.revolving ? '<span class="chip blue">只繳息</span>' : ''}${it.paid ? '<span class="chip gray">已扣款</span>' : ''}</span>
       <span>${fmt(it.pay)}</span></div>`).join('')}
-    ${next ? `<div class="hr-next">${Icon(EV_INFO[next.type].ic)}<div><b>下一個變化</b>：${esc(next.debt.name)} ${EV_INFO[next.type].t}<br><small>${dateTxt(next.date)}（${daysTxt(next.days)}）· ${next.type === 'payoff' ? `每月少 ${fmt(next.from)}` : `月付 ${next.to - next.from >= 0 ? '+' : ''}${fmt(next.to - next.from)}`}</small></div></div>` : ''}
+    ${next ? `<div class="hr-next">${Icon(EV_INFO[next.type].ic)}<div><b>下一個變化</b>：${esc(next.debt.name)} ${EV_INFO[next.type].t}<br><small>${dateTxt(next.date)}（${daysTxt(next.days)}）· ${next.type === 'payoff' ? `每月少 ${fmt(next.from)}` : next.type === 'balloon' ? `當月要繳 ${fmt(next.to)}` : `月付 ${next.to - next.from >= 0 ? '+' : ''}${fmt(next.to - next.from)}`}</small></div></div>` : ''}
     <div class="hr-spark"><div class="small muted">未來 24 個月總月付</div>${spark}</div>`;
 }
 
@@ -1058,7 +1061,7 @@ function renderRepay() {
     const open = repayOpen.has(m.ym);
     return `<li class="mrow ${evs.length ? 'has-ev' : ''} ${open ? 'open' : ''}" data-ym="${m.ym}">
       <div class="mrow-head"><span class="mym">${m.ym.replace('-', '/')}</span>
-        <span class="grow">${evs.map(e => `<span class="chip ${e.type === 'graceEnd' ? 'red' : e.type === 'payoff' ? 'green' : 'blue'}">${esc(e.debt.name)}${e.type === 'graceEnd' ? '寬限期結束' : e.type === 'graceStart' ? '寬限期開始' : e.type === 'payoff' ? '還清' : '投入完成'}</span>`).join('')}</span>
+        <span class="grow">${evs.map(e => `<span class="chip ${e.type === 'graceEnd' || e.type === 'balloon' ? 'red' : e.type === 'payoff' ? 'green' : 'blue'}">${esc(e.debt.name)}${e.type === 'graceEnd' ? '寬限期結束' : e.type === 'graceStart' ? '寬限期開始' : e.type === 'payoff' ? '還清' : e.type === 'balloon' ? '到期還本' : '投入完成'}</span>`).join('')}</span>
         <span class="mtot">${fmt(m.total)}${k && Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'neg' : 'pos'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
       <div class="mrow-detail">${series.map(s => { const it = m.items[s.id]; if (!it || it.pay <= 0) return ''; return `<div class="kv"><span><span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}<small class="muted"> 本 ${fmt(it.principal)} / 息 ${fmt(it.interest)}</small></span></div>`; }).join('')}</div></li>`;
   }).join('');
@@ -1536,24 +1539,15 @@ function pinSetup(changing) {
 $('psCancel').addEventListener('click', () => $('pinDialog').close());
 renderLockSettings();
 
-// ---------- iOS 主畫面 App 畫面高度修正 ----------
-// 部分 iOS 版本在主畫面 App 中，可用畫面會比螢幕短一個狀態列的高度，底部選單因此浮起來；
-// 偵測螢幕實際高度與畫面高度的差距，把 App 外框往下延伸補滿
-let vgap = 0;
-function fixViewport() {
+// ---------- 畫面尺寸診斷（設定頁最下方） ----------
+function viewportDiag() {
   const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
-  const portrait = innerHeight >= innerWidth;
-  const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-  let gap = standalone ? Math.round(full - innerHeight) : 0;
-  if (gap < 2 || gap > 140) gap = 0;          // 只修正狀態列大小的差距，其他情況不動
-  vgap = gap;
-  document.documentElement.style.setProperty('--vgap', gap + 'px');
+  const t = document.querySelector('.tabs').getBoundingClientRect();
   const d = $('vpDiag');
-  if (d) d.textContent = `畫面 ${innerWidth}×${innerHeight} · 螢幕 ${screen.width}×${screen.height} · ${standalone ? '主畫面 App' : '瀏覽器'} · 底部補償 ${gap}px`;
+  if (d) d.textContent = `畫面 ${innerWidth}×${innerHeight} · 螢幕 ${screen.width}×${screen.height} · ${standalone ? '主畫面 App' : '瀏覽器'} · 選單底 ${Math.round(t.bottom)}`;
 }
-['resize', 'orientationchange', 'pageshow'].forEach(ev => window.addEventListener(ev, () => { fixViewport(); setTimeout(fixViewport, 350); }));
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(fixViewport, 100); });
-fixViewport(); setTimeout(fixViewport, 500);
+['resize', 'orientationchange', 'pageshow'].forEach(ev => window.addEventListener(ev, () => setTimeout(viewportDiag, 300)));
+setTimeout(viewportDiag, 500);
 
 // ---------- 啟動 ----------
 Icon.hydrate();

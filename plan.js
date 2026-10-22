@@ -108,7 +108,11 @@ const Plan = (() => {
           if (ymDiff(cur, endYM) >= 0 && rows[gEnd]) ev(d, endYM, 'graceEnd', { from: rows[gEnd - 1].pay, to: rows[gEnd].pay });
         }
         const last = rows.at(-1);
-        if (ymDiff(cur, last.ym) >= 0) ev(d, ymAdd(last.ym, 1), 'payoff', { from: last.pay, to: 0 });
+        if (ymDiff(cur, last.ym) >= 0) {
+          const regular = rows.length > 1 ? rows[rows.length - 2].pay : last.pay;   // 平常的月付（不含最後一期一次還本）
+          if (last.principal > regular * 3) ev(d, last.ym, 'balloon', { from: regular, to: last.pay, amount: last.principal });
+          ev(d, ymAdd(last.ym, 1), 'payoff', { from: last.principal > regular * 3 ? regular : last.pay, to: 0 });
+        }
       } else if (d.mode === 'revolving') {
         const r = n0(d.rate) / 100 / 12;
         months.forEach(m => {

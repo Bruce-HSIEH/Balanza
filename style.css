@@ -612,3 +612,10 @@ body.privacy .big { color: var(--muted); }
 @keyframes cardGlow { 50% { box-shadow: 0 0 calc(4px + var(--g) * 16px) 0 rgba(255, 196, 0, calc(.08 + var(--g) * .2)); } }
 .mascot-card.glow .mascot-lv { background: linear-gradient(90deg, #ffe082, #ffca28, #ffe082); background-size: 200% 100%; animation: shimmer 2.4s linear infinite; box-shadow: 0 0 calc(var(--g) * 14px) rgba(255, 196, 0, .7); }
 .lv-row .mascot.powered.still .halo, .lv-row .mascot.powered.still .bglow { animation: none !important; }
+
+/* ===== v5.2 集氣式氣場 ===== */
+.mascot .streak { animation: streak var(--sd, 1.1s) linear infinite; }
+@keyframes streak { from { transform: translateY(0); opacity: 0; } 25% { opacity: .9; } to { transform: translateY(-90px); opacity: 0; } }
+.mascot .rim { animation: rim 2s ease-in-out infinite; }
+@keyframes rim { 50% { opacity: .35; } }
+.mascot.still .streak { display: none; }

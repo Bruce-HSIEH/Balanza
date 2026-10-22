@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.1.0';
+const APP_VERSION = '5.2.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);

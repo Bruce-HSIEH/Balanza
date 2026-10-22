@@ -144,10 +144,10 @@ const UI = (() => {
     4: { eyes: 'happy', mouth: 'big', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: [] },
     5: { eyes: 'happy', mouth: 'big', arms: 'wave', anim: 'm-bounce', fx: ['coins'], acc: ['tophat', 'bowtie'] },
     6: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: ['shades', 'bag'] },
-    7: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce', fx: ['rays', 'coins', 'sparks'], acc: ['shades', 'medal'] },
+    7: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: ['shades', 'medal'] },
     8: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: ['cape', 'shades', 'crown'] },
     9: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce-big', fx: ['rainbow', 'coins', 'sparks', 'cloudseat'], acc: ['cape', 'crown'] },
-    10: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce-big', fx: ['rays', 'rainbow', 'aura', 'firework', 'coins', 'sparks'], acc: ['wings', 'cape', 'shades', 'bigcrown'] },
+    10: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce-big', fx: ['rainbow', 'firework', 'coins', 'sparks'], acc: ['wings', 'cape', 'shades', 'bigcrown'] },
     0: { eyes: 'sleep', mouth: 'o', arms: 'sleep', anim: 'm-breathe', fx: ['zz'], acc: [] },
     '-1': { eyes: 'nervous', mouth: 'wavy', arms: 'side', anim: 'm-fidget', fx: ['sweat1'], acc: [] },
     '-2': { eyes: 'worried', mouth: 'wavy', arms: 'side', anim: 'm-shake', fx: ['sweat', 'flybill'], acc: [] },
@@ -218,43 +218,74 @@ const UI = (() => {
     return Array.from({ length: n }, (_, i) => `<path d="M${14 + i * 13} 128 q4 -6 8 0 t8 0" stroke="#90a4ae" stroke-width="2.4" fill="none" stroke-linecap="round"/>`).join('');
   }
 
-  // 氣勢光環：淨資產越高越亮（光暈、身體發光、金色火焰、上升光點、環繞星光、閃電）
+  // 氣勢：動漫「集氣」式往上竄的氣場（不放射、不模糊本體），等級越高層數越多、越高、越快
+  // 氣場形狀用 SMIL 在幾個版本間變形，看起來像一直在燃燒
+  function auraPath(r, ry, n, h, seed) {
+    const cx = 110, cy = 120, bottom = 164;
+    const rnd = k => { const x = Math.sin(seed * 97.3 + k * 12.9898) * 43758.5453; return x - Math.floor(x); };
+    const topAt = x => cy - ry * Math.sqrt(Math.max(0, 1 - ((x - cx) / r) ** 2));
+    let d = `M${cx} ${bottom} C${(cx - r * .9).toFixed(1)} ${bottom} ${(cx - r - 4).toFixed(1)} ${(cy + 26).toFixed(1)} ${(cx - r).toFixed(1)} ${cy}`;
+    const x0 = cx - r, w = 2 * r / n;
+    let prev = [cx - r, cy];
+    for (let i = 0; i < n; i++) {
+      const xm = x0 + w * (i + .5), xv = x0 + w * (i + 1);
+      const lean = (cx - xm) * .18;                          // 火舌微微往中間收，像往上竄
+      const hh = h * (.55 + .45 * Math.sin(Math.PI * (i + .5) / n)) * (.8 + rnd(i) * .4);
+      const pk = [xm + lean, topAt(xm) - hh];
+      const vy = i === n - 1 ? cy : topAt(xv) - h * .12;
+      d += ` Q${(prev[0] + w * .15).toFixed(1)} ${((prev[1] + pk[1]) / 2 + 4).toFixed(1)} ${pk[0].toFixed(1)} ${pk[1].toFixed(1)}`;
+      d += ` Q${(xv - w * .15).toFixed(1)} ${((pk[1] + vy) / 2 + 4).toFixed(1)} ${(i === n - 1 ? cx + r : xv).toFixed(1)} ${vy.toFixed(1)}`;
+      prev = [xv, vy];
+    }
+    d += ` C${(cx + r + 4).toFixed(1)} ${(cy + 26).toFixed(1)} ${(cx + r * .9).toFixed(1)} ${bottom} ${cx} ${bottom} Z`;
+    return d;
+  }
   function power(L, id) {
+    const none = { back: '', defs: '', front: '', rim: '' };
     if (L.lv <= -13) {
       const q = Math.min(1, (-L.lv - 12) / 18);
-      return { back: `<ellipse class="gloom" cx="110" cy="118" rx="${70 + q * 20}" ry="${56 + q * 14}" fill="#37474f" opacity="${.18 + q * .25}" filter="url(#${id}b)"/>`, inner: '', defs: `<filter id="${id}b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${8 + q * 6}"/></filter>`, front: '' };
+      const paths = [1, 2, 3].map(k => auraPath(66, 52, 6, 14 + q * 18, k)).join(';');
+      return { ...none, back: `<path fill="#455a64" opacity="${(.16 + q * .22).toFixed(2)}" d="${auraPath(66, 52, 6, 14 + q * 18, 1)}"><animate attributeName="d" dur="3.2s" repeatCount="indefinite" values="${paths};${auraPath(66, 52, 6, 14 + q * 18, 1)}"/></path>` };
     }
-    if (L.lv < 3) return { back: '', inner: '', defs: '', front: '' };
+    if (L.lv < 3) return none;
     const p = Math.min(1, L.lv / 30);
-    const gc = L.lv >= 22 ? '#ffca28' : L.lv >= 10 ? '#ffd54f' : '#fff59d';
-    const defs = `<radialGradient id="${id}h"><stop offset="0" stop-color="${gc}" stop-opacity="${(.35 + p * .55).toFixed(2)}"/><stop offset=".55" stop-color="${gc}" stop-opacity="${(.12 + p * .25).toFixed(2)}"/><stop offset="1" stop-color="${gc}" stop-opacity="0"/></radialGradient>
-      <filter id="${id}b" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${(3 + p * 9).toFixed(1)}"/></filter>
-      <linearGradient id="${id}f" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff8f00"/><stop offset=".45" stop-color="#ffca28"/><stop offset=".8" stop-color="#fff59d" stop-opacity=".8"/><stop offset="1" stop-color="#fffde7" stop-opacity="0"/></linearGradient>`;
-    const R = 62 + p * 58;
-    let back = `<circle class="halo" cx="110" cy="114" r="${R.toFixed(0)}" fill="url(#${id}h)" style="--hd:${(2.4 - p).toFixed(2)}s"/>`;
-    let inner = `<path class="bglow" d="M110 64 C152 64 168 92 168 118 C168 144 144 156 110 156 C76 156 52 144 52 118 C52 92 68 64 110 64 Z" fill="${gc}" filter="url(#${id}b)" opacity="${(.55 + p * .45).toFixed(2)}" transform="translate(110 110) scale(${(1.04 + p * .14).toFixed(2)}) translate(-110 -110)" style="--hd:${(2 - p * .8).toFixed(2)}s"/>`;
+    // 本體保持清楚：只加一圈金色輪廓光
+    const rim = `<path class="rim" d="M110 64 C152 64 168 92 168 118 C168 144 144 156 110 156 C76 156 52 144 52 118 C52 92 68 64 110 64 Z" fill="none" stroke="#fff3b0" stroke-width="${(2 + p * 2.5).toFixed(1)}" opacity="${(.5 + p * .5).toFixed(2)}"/>`;
+    if (L.lv < 10) return { ...none, rim };
+    const layers = L.lv >= 22 ? 3 : L.lv >= 16 ? 2 : 1;
+    const n = L.lv >= 22 ? 7 : L.lv >= 16 ? 6 : 5;
+    const dur = (1.6 - p * .7).toFixed(2);
+    const cols = [['#ffc107', .34], ['#ffca28', .48], ['#fff3c4', .7]];
+    const defs = `<linearGradient id="${id}a" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".15"/><stop offset=".45" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity=".05"/></linearGradient>
+      <mask id="${id}m"><rect x="-20" y="-40" width="260" height="220" fill="url(#${id}a)"/></mask>`;
+    let back = '';
+    for (let k = 0; k < layers; k++) {
+      const big = layers - 1 - k;                                  // 外層最大
+      const r = 64 + big * 8 + p * 6, ry = 52 + big * 6, h = (18 + p * 46) * (1 + big * .35);
+      const vals = [1, 2, 3, 4].map(sd => auraPath(r, ry, n, h, sd + k * 5));
+      const [c, op] = cols[layers === 1 ? 1 : k + (3 - layers)];
+      back += `<path class="aura-l" fill="${c}" opacity="${op}" mask="url(#${id}m)" d="${vals[0]}"><animate attributeName="d" dur="${(+dur + k * .17).toFixed(2)}s" repeatCount="indefinite" values="${vals.join(';')};${vals[0]}"/></path>`;
+    }
     let front = '';
-    if (L.lv >= 10) {
-      const n = 7 + Math.round(p * 9), len = 30 + p * 46, wd = 9 + p * 6;
-      for (let i = 0; i < n; i++) {
-        const a = Math.PI + (i + .5) * Math.PI / n;       // 上半圈
-        const x = 110 + Math.cos(a) * 46, y = 116 + Math.sin(a) * 38;
-        const ang = a * 180 / Math.PI - 270 + 180;   // 預設朝上（270°），轉到朝外
-        inner += `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${(ang - 180).toFixed(0)})"><path class="flame" d="M0 0 q${(-wd).toFixed(1)} ${(-len * .45).toFixed(1)} 0 ${(-len * (i % 2 ? .82 : 1)).toFixed(1)} q${wd.toFixed(1)} ${(len * .55).toFixed(1)} 0 ${(len * (i % 2 ? .82 : 1)).toFixed(1)}z" fill="url(#${id}f)" style="animation-delay:${(i * .13).toFixed(2)}s;--fd:${(.9 - p * .35).toFixed(2)}s"/></g>`;
+    if (L.lv >= 16) {   // 往上衝的氣流線
+      const m = 4 + Math.round(p * 6);
+      for (let i = 0; i < m; i++) {
+        const x = 52 + (i * 37) % 116, len = 14 + (i % 3) * 8;
+        front += `<line class="streak" x1="${x}" y1="150" x2="${x}" y2="${150 - len}" stroke="#fff59d" stroke-width="2.2" stroke-linecap="round" style="animation-delay:${(i * .23 % 1.4).toFixed(2)}s;--sd:${(1.3 - p * .5).toFixed(2)}s"/>`;
       }
     }
     if (L.lv >= 13) {
-      const n = 4 + Math.round(p * 6);
-      for (let i = 0; i < n; i++) front += `<circle class="rise" cx="${(56 + (i * 97) % 110).toFixed(0)}" cy="160" r="${(1.6 + (i % 3) * .7).toFixed(1)}" fill="#fff59d" style="animation-delay:${(i * .37 % 2.2).toFixed(2)}s"/>`;
+      const m = 4 + Math.round(p * 6);
+      for (let i = 0; i < m; i++) front += `<circle class="rise" cx="${(56 + (i * 97) % 110).toFixed(0)}" cy="160" r="${(1.6 + (i % 3) * .7).toFixed(1)}" fill="#fff59d" style="animation-delay:${(i * .37 % 2.2).toFixed(2)}s"/>`;
     }
     if (L.lv >= 19) {
-      const n = 3 + L.sub + (L.lv >= 25 ? 2 : 0);
-      front += `<g class="orbit" style="--od:${(4 - p * 1.5).toFixed(2)}s">${Array.from({ length: n }, (_, i) => { const a = i * 2 * Math.PI / n; return `<g transform="translate(${(110 + Math.cos(a) * 78).toFixed(1)} ${(112 + Math.sin(a) * 30).toFixed(1)})">${Icon.spark(0, 0, 1.4, '#fffde7')}</g>`; }).join('')}</g>`;
+      const m = 3 + L.sub + (L.lv >= 25 ? 2 : 0);
+      front += `<g class="orbit" style="--od:${(4 - p * 1.5).toFixed(2)}s">${Array.from({ length: m }, (_, i) => { const a = i * 2 * Math.PI / m; return `<g transform="translate(${(110 + Math.cos(a) * 80).toFixed(1)} ${(116 + Math.sin(a) * 26).toFixed(1)})">${Icon.spark(0, 0, 1.4, '#fffde7')}</g>`; }).join('')}</g>`;
     }
     if (L.lv >= 25) {
-      front += `<path class="zap" d="M40 96 l8 6 -5 2 9 8" stroke="#fff59d" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path class="zap" style="animation-delay:.7s" d="M180 90 l-8 7 5 2 -9 8" stroke="#fff59d" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+      front += `<path class="zap" d="M36 92 l9 7 -6 2 10 9" stroke="#fff176" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path class="zap" style="animation-delay:.7s" d="M184 86 l-9 8 6 2 -10 9" stroke="#fff176" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
     }
-    return { back, inner, defs, front };
+    return { back, defs, front, rim };
   }
 
   function mascotSVG(L, opts = {}) {
@@ -274,11 +305,11 @@ const UI = (() => {
       ${pw.back}${pre}
       <ellipse class="shadow" cx="110" cy="160" rx="46" ry="6" fill="rgba(0,0,0,.12)"/>
       <g class="body ${look.anim}">
-        ${pw.inner}
         ${behind}
         <g fill="${c}">${ARMS[look.arms]}<ellipse cx="94" cy="155" rx="12" ry="6"/><ellipse cx="126" cy="155" rx="12" ry="6"/></g>
         <path d="M110 64 C152 64 168 92 168 118 C168 144 144 156 110 156 C76 156 52 144 52 118 C52 92 68 64 110 64 Z" fill="${c}"/>
         ${top}
+        ${pw.rim}
         <ellipse cx="92" cy="84" rx="14" ry="7" fill="#fff" opacity=".4" transform="rotate(-20 92 84)"/>
         <ellipse cx="78" cy="118" rx="8" ry="5" fill="#ff8a80" opacity="${blush}"/>
         <ellipse cx="142" cy="118" rx="8" ry="5" fill="#ff8a80" opacity="${blush}"/>

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.12.0';
+const APP_VERSION = '5.12.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -635,10 +635,10 @@ const FIELDS = {
     { k: 'buyDate', label: '買進日期（選填）', type: 'date', show: v => isStock(v) && !v.id },
     { k: 'manualPrice', label: '目前股價（找不到報價時填）', type: 'number', show: noQuote },
     { sec: ['property', '實價登錄估價'], show: isRE },
-    { k: 'address', label: '地址（只存在手機裡）', type: 'text', ph: '例：臺北市大安區信義路四段1號', show: isRE, action: { id: 'lookupBtn', text: '查實價' } },
     { k: 'county', label: '縣市', type: 'pick', opts: 'county', show: isRE, half: true },
     { k: 'district', label: '行政區', type: 'pick', opts: 'district', show: isRE, half: true },
     { k: 'road', label: '路段', type: 'pick', opts: 'road', show: isRE },
+    { k: 'address', label: '巷弄門牌（只存在手機裡）', type: 'text', ph: '例：43巷12號，或貼上完整地址', show: isRE, action: { id: 'lookupBtn', text: '查實價' } },
     { k: 'btype', label: '建物型態', type: 'pick', opts: 'btype', def: '住宅大樓', show: isRE, half: true },
     { k: 'ping', label: '建物坪數（不含車位）', type: 'number', show: isRE, half: true },
     { panel: 'lvrPanel', show: isRE },
@@ -1053,8 +1053,12 @@ async function lookupAddress() {
   const btn = $('lookupBtn');
   btn.disabled = true; btn.textContent = '查詢中…';
   try {
-    const r = await LVR.parseAddress(vals.address);
-    vals.county = r.countyKey; vals.district = r.district; vals.road = r.road;
+    // 只填巷弄門牌時，接上已選的縣市／行政區／路段再查
+    let addr = vals.address.trim();
+    const cn = (COUNTIES.find(c => c.k === vals.county) || {}).v || '';
+    if (vals.district && !/[縣市]/.test(addr.slice(0, 4)) && !addr.includes(vals.district)) addr = cn + vals.district + (vals.road && !addr.includes(vals.road) ? vals.road : '') + addr;
+    const r = await LVR.parseAddress(addr);
+    vals.county = r.countyKey || vals.county; vals.district = r.district || vals.district; vals.road = r.road || vals.road;
     if (!r.district) toast('找不到行政區，請手動選擇');
     else if (!r.road) toast('找不到這條路的成交，改用行政區行情');
     drawForm();
@@ -1068,7 +1072,7 @@ async function drawLvrPanel() {
   const el = $('lvrPanel');
   if (!el) return;
   if (!vals.county || !vals.district) {
-    el.innerHTML = `<div class="hint-row">${Icon('townhouse')}<span>輸入地址按「查實價」，或選縣市與行政區，會用近兩年實價登錄估算價值</span></div>`;
+    el.innerHTML = `<div class="hint-row">${Icon('townhouse')}<span>選縣市、行政區、路段，或在「巷弄門牌」貼上完整地址按「查實價」，會用近兩年實價登錄估算價值</span></div>`;
     return;
   }
   const tk = ++lvrToken;

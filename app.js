@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.6.0';
+const APP_VERSION = '5.6.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -1373,28 +1373,51 @@ function setListening(on) {
   $('vcMic').innerHTML = on ? `<span class="rec-dot"></span> 停止` : `${Icon.svg('mic', 26)} 開始說話`;
   $('vcState').textContent = on ? '正在聽…' : '';
 }
+// iOS Safari 的連續聆聽常常不理會 stop()，所以：每次聆聽有編號、停止時作廢舊的、
+// 先 stop() 再強制 abort()、2.5 秒沒新內容自動停、最長 40 秒
+let recId = 0, silenceT = 0, maxT = 0;
 function startListening() {
   if (!SR || listening) return;
+  const id = ++recId;
   try {
-    rec = new SR();
-    rec.lang = 'zh-TW'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+    const r = new SR();
+    rec = r;
+    r.lang = 'zh-TW'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
     const base = $('vcText').value ? $('vcText').value.trim() + '，' : '';
-    rec.onresult = e => {
+    const bump = () => { clearTimeout(silenceT); silenceT = setTimeout(() => { if (id === recId) stopListening(); }, 2500); };
+    r.onresult = e => {
+      if (id !== recId) return;                 // 已經停止，忽略晚到的結果
       let txt = '';
       for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
       $('vcText').value = base + txt;
       vcParse();
+      bump();
     };
-    rec.onerror = e => {
+    r.onerror = e => {
+      if (id !== recId) return;
       $('vcState').textContent = e.error === 'not-allowed' || e.error === 'service-not-allowed'
-        ? '沒有麥克風或語音辨識權限，可以改用鍵盤上的麥克風聽寫' : e.error === 'no-speech' ? '沒有聽到聲音，再試一次' : '語音辨識發生問題：' + e.error;
+        ? '沒有麥克風或語音辨識權限，可以改用鍵盤上的麥克風聽寫' : e.error === 'no-speech' ? '沒有聽到聲音，再試一次' : e.error === 'aborted' ? '' : '語音辨識發生問題：' + e.error;
+      stopListening();
     };
-    rec.onend = () => { setListening(false); vcParse(); };
-    rec.start();
+    r.onend = () => { if (id === recId) stopListening(); };
+    r.start();
     setListening(true);
+    bump();
+    clearTimeout(maxT); maxT = setTimeout(() => { if (id === recId) stopListening(); }, 40000);
   } catch (err) { setListening(false); $('vcState').textContent = '無法開始語音辨識，可以改用鍵盤聽寫'; }
 }
-function stopListening() { try { rec && rec.stop(); } catch (e) { /* ignore */ } setListening(false); }
+function stopListening() {
+  recId++;                                       // 作廢目前這次聆聽
+  clearTimeout(silenceT); clearTimeout(maxT);
+  const r = rec; rec = null;
+  if (r) {
+    r.onresult = r.onerror = r.onend = null;
+    try { r.stop(); } catch (e) { /* ignore */ }
+    setTimeout(() => { try { r.abort(); } catch (e) { /* ignore */ } }, 400);   // iOS 不理 stop() 時強制中斷
+  }
+  if (listening) { setListening(false); vcParse(); }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') stopListening(); });
 
 function vcCardHTML(r, i) {
   const v = r.vals;
@@ -1610,6 +1633,7 @@ function finishUnlock(plain) {
   afterUnlock.splice(0).forEach(f => f());
 }
 function lockNow() {
+  if (typeof stopListening === 'function') stopListening();
   if (!Vault.enabled()) return;
   Vault.lock();
   state = migrate({});

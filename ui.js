@@ -11,41 +11,13 @@ const UI = (() => {
     return `<span class="ico ico-bank" style="--bc:${b.c}"><b>${esc(b.s)}</b><svg class="bank-coin" viewBox="0 0 16 16">${Icon.coin(8, 8, 6)}</svg></span>`;
   }
 
-  // 可愛小車（自繪，不使用品牌標誌）
-  function carSVG(type = 'sedan', color = '#e53935', size = 40) {
-    const eye = (x, y) => `<circle cx="${x}" cy="${y}" r="3.2" fill="#fff"/><circle cx="${x + .8}" cy="${y + .3}" r="1.7" fill="#222"/><circle cx="${x + 1.4}" cy="${y - .5}" r=".6" fill="#fff"/>`;
-    const wheel = x => `<circle cx="${x}" cy="35" r="6" fill="#2b2b2b"/><circle cx="${x}" cy="35" r="2.4" fill="#cfd8dc"/>`;
-    if (type === 'scooter') {
-      return `<svg class="car" viewBox="0 0 64 44" width="${size}" height="${size * 44 / 64}" aria-hidden="true">
-        <path d="M14 30 Q14 20 26 20 L40 20 Q46 20 47 14 L49 6" stroke="${color}" stroke-width="5" fill="none" stroke-linecap="round"/>
-        <rect x="20" y="22" width="26" height="9" rx="4.5" fill="${color}"/>
-        <rect x="18" y="16" width="16" height="5" rx="2.5" fill="#5d4037"/>
-        <circle cx="50" cy="8" r="4.5" fill="${color}"/>${eye(49, 8)}
-        <path d="M45 6 L54 5" stroke="#455a64" stroke-width="2" stroke-linecap="round"/>
-        ${wheel(15)}${wheel(48)}</svg>`;
-    }
-    const cabins = {
-      sedan: 'M18 20 L24 10 Q25 8 28 8 L40 8 Q43 8 45 10 L51 20 Z',
-      hatch: 'M14 20 L16 10 Q17 8 20 8 L38 8 Q41 8 43 10 L50 20 Z',
-      suv: 'M12 20 L13 7 Q13 5 16 5 L42 5 Q45 5 47 7 L52 20 Z',
-      sport: 'M22 20 L28 12 Q29 11 32 11 L40 11 Q43 11 45 13 L52 20 Z',
-      ev: 'M17 20 L23 9 Q24 7 27 7 L41 7 Q44 7 46 9 L52 20 Z',
-    };
-    const glass = { sedan: 'M22 19 L26 11 L36 11 L36 19 Z M38 19 L38 11 L43 11 L48 19 Z', hatch: 'M17 19 L19 11 L32 11 L32 19 Z M34 19 L34 11 L40 11 L46 19 Z', suv: 'M15 19 L16 8 L30 8 L30 19 Z M32 19 L32 8 L43 8 L48 19 Z', sport: 'M26 19 L30 13 L42 13 L48 19 Z', ev: 'M21 19 L25 10 L37 10 L37 19 Z M39 19 L39 10 L44 10 L49 19 Z' };
-    return `<svg class="car" viewBox="0 0 64 44" width="${size}" height="${size * 44 / 64}" aria-hidden="true">
-      <path d="${cabins[type] || cabins.sedan}" fill="${color}"/>
-      <path d="${glass[type] || glass.sedan}" fill="#bbdefb" opacity=".9"/>
-      <rect x="6" y="18" width="52" height="17" rx="7" fill="${color}"/>
-      <rect x="6" y="18" width="52" height="17" rx="7" fill="none" stroke="rgba(0,0,0,.12)"/>
-      ${eye(52, 24)}
-      <path d="M50 30 Q53 32.5 56 30" stroke="#222" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-      <ellipse cx="45" cy="29" rx="2.4" ry="1.4" fill="#ff8a80" opacity=".8"/>
-      <rect x="5" y="22" width="4" height="4" rx="1.5" fill="#ffab91"/>
-      ${type === 'ev' ? '<path d="M30 21 L26 28 L30 28 L28 33 L34 25 L30 25 L32 21 Z" fill="#ffeb3b"/>' : ''}
-      ${type === 'sport' ? '<path d="M6 17 L13 17 L13 14" stroke="#333" stroke-width="2" fill="none"/>' : ''}
-      ${wheel(18)}${wheel(46)}</svg>`;
+  // 車輛插圖（cars.js，依真實車款比例自繪）
+  const TYPE_MAP = { sport: 'coupe', ev: 'evcross' };
+  const carSVG = (type = 'sedan', color = '#c5cad0', size = 160) => Car.svg(TYPE_MAP[type] || type, color, size);
+  function carIcon(brand, model, color) {
+    const type = brand ? Car.typeOf(brand.v, model, TYPE_MAP[brand.t] || brand.t) : 'hatch';
+    return `<span class="ico ico-car">${Car.svg(type, color || (brand ? brand.c : '#ff8a80'), 44)}</span>`;
   }
-  const carIcon = brand => `<span class="ico ico-car">${carSVG(brand?.t || 'sedan', brand?.c || '#ff8a80', 38)}</span>`;
 
   // ---------- 走勢小圖 ----------
   function sparkline(series, w = 72, h = 24, opts = {}) {
@@ -164,21 +136,31 @@ const UI = (() => {
     sleep: '<ellipse cx="58" cy="124" rx="8" ry="12" transform="rotate(25 58 124)"/><ellipse cx="162" cy="124" rx="8" ry="12" transform="rotate(-25 162 124)"/>',
   };
 
-  // 每個等級的造型
+  // 每個階段（tier）的造型；同階段 3 級用星星數與顏色區分
   const LOOK = {
-    6: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce-big', fx: ['rainbow', 'aura', 'firework', 'coins', 'sparks'], acc: ['cape', 'shades', 'crown'] },
-    5: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: ['shades', 'bag'] },
-    4: { eyes: 'happy', mouth: 'big', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: [] },
-    3: { eyes: 'happy', mouth: 'big', arms: 'hold', anim: 'm-hop', fx: ['sun', 'sparks'], acc: ['coin'] },
-    2: { eyes: 'dot', mouth: 'smile', arms: 'rest', anim: 'm-sway', fx: ['sun'], acc: [] },
     1: { eyes: 'dot', mouth: 'smile', arms: 'rest', anim: 'm-breathe', fx: ['leaf'], acc: ['sprout'] },
+    2: { eyes: 'dot', mouth: 'smile', arms: 'rest', anim: 'm-sway', fx: ['sun'], acc: [] },
+    3: { eyes: 'happy', mouth: 'big', arms: 'hold', anim: 'm-hop', fx: ['sun', 'sparks'], acc: ['coin'] },
+    4: { eyes: 'happy', mouth: 'big', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: [] },
+    5: { eyes: 'happy', mouth: 'big', arms: 'wave', anim: 'm-bounce', fx: ['coins'], acc: ['tophat', 'bowtie'] },
+    6: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: ['shades', 'bag'] },
+    7: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce', fx: ['rays', 'coins', 'sparks'], acc: ['shades', 'medal'] },
+    8: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce', fx: ['coins', 'sparks'], acc: ['cape', 'shades', 'crown'] },
+    9: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce-big', fx: ['rainbow', 'coins', 'sparks', 'cloudseat'], acc: ['cape', 'crown'] },
+    10: { eyes: 'sparkle', mouth: 'grin', arms: 'wave', anim: 'm-bounce-big', fx: ['rays', 'rainbow', 'aura', 'firework', 'coins', 'sparks'], acc: ['wings', 'cape', 'shades', 'bigcrown'] },
     0: { eyes: 'sleep', mouth: 'o', arms: 'sleep', anim: 'm-breathe', fx: ['zz'], acc: [] },
-    '-1': { eyes: 'nervous', mouth: 'wavy', arms: 'side', anim: 'm-fidget', fx: ['cloudlet', 'sweat1'], acc: [] },
+    '-1': { eyes: 'nervous', mouth: 'wavy', arms: 'side', anim: 'm-fidget', fx: ['sweat1'], acc: [] },
     '-2': { eyes: 'worried', mouth: 'wavy', arms: 'side', anim: 'm-shake', fx: ['sweat', 'flybill'], acc: [] },
     '-3': { eyes: 'sad', mouth: 'frown', arms: 'droop', anim: 'm-droop', fx: ['cloud', 'drizzle', 'tear1'], acc: [] },
     '-4': { eyes: 'sad', mouth: 'frown', arms: 'droop', anim: 'm-droop', fx: ['cloud', 'rain', 'tears'], acc: ['bandage'] },
-    '-5': { eyes: 'cry', mouth: 'wail', arms: 'droop', anim: 'm-shiver', fx: ['storm', 'rain', 'bolt', 'tears'], acc: ['bandage', 'wallet'] },
+    '-5': { eyes: 'cry', mouth: 'wail', arms: 'droop', anim: 'm-shiver', fx: ['storm', 'rain', 'bolt', 'tears'], acc: [] },
+    '-6': { eyes: 'sad', mouth: 'frown', arms: 'hold', anim: 'm-droop', fx: ['cloud', 'drizzle', 'tears'], acc: ['patch', 'wallet'] },
+    '-7': { eyes: 'sad', mouth: 'wail', arms: 'droop', anim: 'm-droop', fx: ['cloud', 'rain', 'tears'], acc: ['sign', 'box'] },
+    '-8': { eyes: 'cry', mouth: 'frown', arms: 'side', anim: 'm-shiver', fx: ['snowcloud', 'snow'], acc: ['scarf', 'bandage'] },
+    '-9': { eyes: 'cry', mouth: 'wail', arms: 'droop', anim: 'm-droop', fx: ['storm', 'rain', 'bolt', 'tears'], acc: ['chain'] },
+    '-10': { eyes: 'cry', mouth: 'wail', arms: 'droop', anim: 'm-shiver', fx: ['abyss', 'storm', 'rain', 'bolt', 'tears'], acc: ['chain', 'bandage', 'patch'] },
   };
+  const BACK_FX = ['rays', 'rainbow', 'aura', 'abyss'];
 
   const FX = {
     coins: () => [[30, 0], [70, .6], [150, .3], [190, .9], [110, 1.3], [50, 1.7], [170, 2.0]].map(([x, d]) =>
@@ -187,58 +169,80 @@ const UI = (() => {
     sun: () => `<g class="sun"><circle cx="186" cy="26" r="12" fill="#ffd54f"/>${[0, 45, 90, 135, 180, 225, 270, 315].map(a => `<line x1="186" y1="8" x2="186" y2="2" stroke="#ffd54f" stroke-width="3" stroke-linecap="round" transform="rotate(${a} 186 26)"/>`).join('')}</g><g transform="translate(186 26)">${Icon.face(0, -1, .7, 'happy')}</g>`,
     leaf: () => `<path class="leaf" d="M30 40 q8 -10 14 0 q-6 6 -14 0z" fill="#a5e3b0"/><path class="leaf" style="animation-delay:1.4s" d="M176 60 q8 -10 14 0 q-6 6 -14 0z" fill="#c8f0d0"/>`,
     zz: () => `<text class="zz" x="150" y="70" font-size="16" font-weight="700" fill="#90a4ae">Z</text><text class="zz" style="animation-delay:.8s" x="164" y="54" font-size="12" font-weight="700" fill="#90a4ae">z</text>`,
-    cloudlet: () => `<g class="cloud"><ellipse cx="170" cy="30" rx="20" ry="9" fill="#cfd8dc"/><ellipse cx="160" cy="25" rx="10" ry="9" fill="#cfd8dc"/><ellipse cx="176" cy="22" rx="11" ry="10" fill="#cfd8dc"/></g>`,
     sweat1: () => `<path class="sweat" d="M148 82 Q154 92 148 96 Q142 92 148 82 Z" fill="#81d4fa"/>`,
     sweat: () => `<path class="sweat" d="M148 82 Q154 92 148 96 Q142 92 148 82 Z" fill="#81d4fa"/><path class="sweat" style="animation-delay:.7s" d="M72 86 Q77 94 72 97 Q67 94 72 86 Z" fill="#81d4fa"/>`,
     flybill: () => [0, 1].map(i => `<g class="flybill" style="animation-delay:${i * 1.3}s"><rect x="160" y="60" width="22" height="13" rx="3" fill="#8ce0a8"/><circle cx="171" cy="66.5" r="3.5" fill="#c8f5d6"/><path d="M162 60 q-8 -8 -4 -12 q5 2 8 10z M180 60 q8 -8 4 -12 q-5 2 -8 10z" fill="#fff" stroke="#cfd8dc"/></g>`).join(''),
     cloud: () => `<g class="cloud"><ellipse cx="110" cy="30" rx="44" ry="16" fill="#90a4ae"/><ellipse cx="88" cy="24" rx="20" ry="16" fill="#90a4ae"/><ellipse cx="128" cy="20" rx="24" ry="18" fill="#90a4ae"/></g>`,
+    snowcloud: () => `<g class="cloud"><ellipse cx="110" cy="28" rx="50" ry="16" fill="#cfd8dc"/><ellipse cx="86" cy="22" rx="22" ry="16" fill="#cfd8dc"/><ellipse cx="130" cy="16" rx="26" ry="18" fill="#dfe6ea"/></g>`,
     storm: () => `<g class="cloud"><ellipse cx="110" cy="28" rx="60" ry="18" fill="#607d8b"/><ellipse cx="78" cy="20" rx="26" ry="18" fill="#607d8b"/><ellipse cx="132" cy="14" rx="30" ry="20" fill="#546e7a"/><ellipse cx="160" cy="24" rx="20" ry="14" fill="#607d8b"/></g>`,
     drizzle: () => [92, 110, 128].map((x, i) => `<line class="rain" style="animation-delay:${i * .25}s" x1="${x}" y1="46" x2="${x - 2}" y2="54" stroke="#81d4fa" stroke-width="2.5" stroke-linecap="round"/>`).join(''),
     rain: () => [64, 78, 94, 110, 126, 142, 156].map((x, i) => `<line class="rain fast" style="animation-delay:${i * .11}s" x1="${x}" y1="46" x2="${x - 4}" y2="58" stroke="#4fc3f7" stroke-width="2.5" stroke-linecap="round"/>`).join(''),
+    snow: () => [40, 66, 92, 118, 144, 170, 196, 80, 156].map((x, i) => `<circle class="snow" style="animation-delay:${(i * .37) % 2.6}s" cx="${x}" cy="44" r="${i % 3 ? 2.4 : 3.2}" fill="#fff" stroke="#cfd8dc" stroke-width=".8"/>`).join(''),
     bolt: () => `<path class="bolt" d="M150 30 L138 52 L148 52 L140 72 L160 46 L150 46 L158 30 Z" fill="#ffeb3b" stroke="#fbc02d" stroke-width="1.5"/>`,
     tear1: () => `<path class="tear" d="M90 112 Q94 120 90 123 Q86 120 90 112 Z" fill="#4fc3f7"/>`,
     tears: () => `<path class="tear" d="M90 112 Q94 120 90 123 Q86 120 90 112 Z" fill="#4fc3f7"/><path class="tear" style="animation-delay:.5s" d="M130 112 Q134 120 130 123 Q126 120 130 112 Z" fill="#4fc3f7"/><path class="tear" style="animation-delay:1s" d="M88 112 Q92 120 88 123 Q84 120 88 112 Z" fill="#4fc3f7"/>`,
     rainbow: () => `<g class="rainbow" fill="none" stroke-width="7">${['#ff8a80', '#ffd180', '#ffff8d', '#b9f6ca', '#80d8ff', '#b388ff'].map((c, i) => `<path d="M${14 + i * 7} 150 A${96 - i * 7} ${96 - i * 7} 0 0 1 ${206 - i * 7} 150" stroke="${c}" opacity=".55"/>`).join('')}</g>`,
     aura: () => `<circle class="aura" cx="110" cy="112" r="64" fill="#fff59d" opacity=".35"/>`,
+    rays: () => `<g class="rays">${Array.from({ length: 12 }, (_, i) => `<path d="M110 110 L${110 + 120 * Math.cos((i * 30 - 4) * Math.PI / 180)} ${110 + 120 * Math.sin((i * 30 - 4) * Math.PI / 180)} L${110 + 120 * Math.cos((i * 30 + 4) * Math.PI / 180)} ${110 + 120 * Math.sin((i * 30 + 4) * Math.PI / 180)} Z" fill="#ffe082" opacity=".35"/>`).join('')}</g>`,
+    abyss: () => `<g class="abyss"><ellipse cx="110" cy="160" rx="80" ry="14" fill="#37474f" opacity=".85"/><path class="swirl" d="M110 160 m-60 0 a60 10 0 1 0 120 0 a48 8 0 1 0 -96 0 a34 6 0 1 0 68 0 a20 4 0 1 0 -40 0" fill="none" stroke="#546e7a" stroke-width="2.5"/></g>`,
+    cloudseat: () => `<g class="seat"><ellipse cx="110" cy="164" rx="62" ry="12" fill="#fff"/><ellipse cx="72" cy="160" rx="22" ry="12" fill="#fff"/><ellipse cx="148" cy="160" rx="22" ry="12" fill="#fff"/><ellipse cx="110" cy="166" rx="62" ry="8" fill="#e3f2fd"/></g>`,
     firework: () => [[34, 30, '#ff8fa3', 0], [190, 40, '#80d8ff', .8], [170, 6, '#b9f6ca', 1.5]].map(([x, y, c, d]) => `<g class="firework" style="animation-delay:${d}s;transform-origin:${x}px ${y}px">${Array.from({ length: 8 }, (_, i) => `<line x1="${x}" y1="${y}" x2="${x + 12 * Math.cos(i * Math.PI / 4)}" y2="${y + 12 * Math.sin(i * Math.PI / 4)}" stroke="${c}" stroke-width="2.5" stroke-linecap="round"/>`).join('')}</g>`).join(''),
   };
 
   const ACC = {
-    sprout: () => `<g class="sprout"><path d="M110 64 v-14" stroke="#5cc485" stroke-width="3.5" stroke-linecap="round"/><path d="M110 54 c-14 0 -16 -12 -15 -16 c9 -1 15 5 15 16z" fill="#8ce0a8"/><path d="M110 52 c12 0 15 -10 14 -14 c-8 -1 -14 4 -14 14z" fill="#b8f0c8"/></g>`,
+    sprout: sub => `<g class="sprout"><path d="M110 64 v-14" stroke="#5cc485" stroke-width="3.5" stroke-linecap="round"/><path d="M110 54 c-14 0 -16 -12 -15 -16 c9 -1 15 5 15 16z" fill="#8ce0a8"/>${sub >= 1 ? '<path d="M110 52 c12 0 15 -10 14 -14 c-8 -1 -14 4 -14 14z" fill="#b8f0c8"/>' : ''}${sub >= 2 ? '<circle cx="110" cy="44" r="6" fill="#ffb3c1"/><circle cx="110" cy="44" r="2.5" fill="#ffe066"/>' : ''}</g>`,
     antenna: c => `<path d="M110 64 L110 54" stroke="${INK}" stroke-width="3.5" stroke-linecap="round"/><circle cx="110" cy="51" r="5" fill="${c}"/>`,
     coin: () => `<g class="held">${Icon.coin(110, 140, 13)}</g>`,
     bag: () => `<g class="held"><path d="M98 128 q12 -8 24 0 l-3 4 h-18z" fill="#c6a477"/><path d="M96 134 q-10 8 -8 16 c2 7 10 9 22 9 s20 -2 22 -9 q2 -8 -8 -16z" fill="#e3c08d"/><text x="110" y="152" text-anchor="middle" font-size="13" font-weight="800" fill="#8a6a3c">$</text></g>`,
     shades: () => `<g><rect x="80" y="95" width="25" height="15" rx="6" fill="#263238"/><rect x="115" y="95" width="25" height="15" rx="6" fill="#263238"/><path d="M105 100 h10" stroke="#263238" stroke-width="3"/><path d="M84 99 l8 0" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".7"/><path d="M119 99 l8 0" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".7"/></g>`,
-    crown: () => `<g class="crown"><path d="M88 66 L92 44 L102 56 L110 38 L118 56 L128 44 L132 66 Z" fill="#ffca28" stroke="#f9a825" stroke-width="2.5" stroke-linejoin="round"/><circle cx="110" cy="56" r="3.5" fill="#ff5252"/><circle cx="96" cy="60" r="2.5" fill="#40c4ff"/><circle cx="124" cy="60" r="2.5" fill="#69f0ae"/></g>`,
+    tophat: () => `<g class="crown"><rect x="88" y="58" width="44" height="8" rx="4" fill="#263238"/><rect x="95" y="30" width="30" height="30" rx="4" fill="#37474f"/><rect x="95" y="50" width="30" height="6" fill="#e53935"/></g>`,
+    bowtie: () => `<g><path d="M110 138 l-14 -8 v16z M110 138 l14 -8 v16z" fill="#e53935"/><circle cx="110" cy="138" r="4" fill="#c62828"/></g>`,
+    medal: () => `<g class="held"><path d="M98 120 l8 18 M122 120 l-8 18" stroke="#1e88e5" stroke-width="6" stroke-linecap="round"/>${Icon.coin(110, 145, 11, '1', '#ffd54f', '#f9a825')}</g>`,
+    crown: () => `<g class="crown"><path d="M92 66 L95 48 L103 58 L110 44 L117 58 L125 48 L128 66 Z" fill="#ffca28" stroke="#f9a825" stroke-width="2.5" stroke-linejoin="round"/><circle cx="110" cy="58" r="3" fill="#ff5252"/></g>`,
+    bigcrown: () => `<g class="crown"><path d="M84 66 L88 38 L100 54 L110 30 L120 54 L132 38 L136 66 Z" fill="#ffca28" stroke="#f9a825" stroke-width="2.5" stroke-linejoin="round"/><circle cx="110" cy="54" r="4" fill="#ff5252"/><circle cx="95" cy="60" r="3" fill="#40c4ff"/><circle cx="125" cy="60" r="3" fill="#69f0ae"/><circle cx="88" cy="38" r="3" fill="#fff59d"/><circle cx="110" cy="30" r="3" fill="#fff59d"/><circle cx="132" cy="38" r="3" fill="#fff59d"/></g>`,
     cape: () => `<path class="cape" d="M70 92 Q60 140 50 160 L170 160 Q160 140 150 92 Z" fill="#e53935"/><path d="M70 92 Q110 108 150 92" stroke="#ffca28" stroke-width="4" fill="none"/>`,
+    wings: () => `<g class="wings"><path class="wing-l" d="M60 100 C30 70 10 80 14 96 C4 100 8 116 22 114 C14 124 26 134 40 124 C48 128 58 120 62 112 Z" fill="#fff" stroke="#e0e0e0" stroke-width="2"/><path class="wing-r" d="M160 100 C190 70 210 80 206 96 C216 100 212 116 198 114 C206 124 194 134 180 124 C172 128 162 120 158 112 Z" fill="#fff" stroke="#e0e0e0" stroke-width="2"/></g>`,
     bandage: () => `<g transform="rotate(-25 146 84)"><rect x="132" y="79" width="28" height="10" rx="5" fill="#ffe0b2"/><rect x="142" y="79" width="8" height="10" fill="#ffcc80"/></g>`,
+    patch: () => `<g><rect x="66" y="126" width="18" height="14" rx="3" fill="#a1887f" transform="rotate(-10 75 133)"/><path d="M68 128 l14 10 M68 138 l14 -10" stroke="#6d4c41" stroke-width="1.6" transform="rotate(-10 75 133)"/></g>`,
     wallet: () => `<g class="held"><rect x="94" y="134" width="32" height="20" rx="4" fill="#a1887f"/><path d="M94 138 h32" stroke="#8d6e63" stroke-width="2"/></g><g class="fly"><circle cx="150" cy="128" r="2.5" fill="#455a64"/><ellipse cx="148" cy="125" rx="3" ry="1.6" fill="#fff" opacity=".8"/><ellipse cx="152" cy="125" rx="3" ry="1.6" fill="#fff" opacity=".8"/></g>`,
+    sign: () => `<g class="held"><path d="M168 150 V82" stroke="#8d6e63" stroke-width="4" stroke-linecap="round"/><rect x="146" y="58" width="46" height="28" rx="4" fill="#fff8e1" stroke="#c6a477" stroke-width="2"/><text x="169" y="78" text-anchor="middle" font-size="14" font-weight="800" fill="#c62828">救命</text></g>`,
+    box: () => `<g><path d="M62 130 h96 v34 h-96z" fill="#d7b98e"/><path d="M62 130 l-10 -12 h40 l10 12z M158 130 l10 -12 h-40 l-10 12z" fill="#c6a477"/><path d="M100 140 h20" stroke="#a1887f" stroke-width="2"/></g>`,
+    scarf: () => `<g><path d="M66 130 Q110 146 154 130 L154 140 Q110 156 66 140 Z" fill="#e57373"/><path d="M134 140 l6 24 l10 -2 l-4 -22z" fill="#ef5350"/><path d="M80 134 v8 M96 138 v8 M112 140 v8 M128 138 v8" stroke="#fff" stroke-width="2" opacity=".6"/></g>`,
+    chain: () => `<g><path d="M126 158 Q150 166 170 158" stroke="#78909c" stroke-width="3" fill="none" stroke-dasharray="5 3"/><circle class="ball" cx="180" cy="152" r="12" fill="#455a64"/><ellipse cx="176" cy="147" rx="4" ry="2.5" fill="#fff" opacity=".3"/><text x="180" y="156" text-anchor="middle" font-size="10" font-weight="800" fill="#cfd8dc">債</text></g>`,
   };
 
+  function subMarks(L) {
+    if (!L.lv) return '';
+    const n = (L.sub || 0) + 1;
+    if (L.lv > 0) return Array.from({ length: n }, (_, i) => `<g class="spark" style="animation-delay:${i * .3}s">${Icon.spark(18 + i * 15, 132, 1.5, '#ffd54f')}</g>`).join('');
+    return Array.from({ length: n }, (_, i) => `<path d="M${14 + i * 13} 128 q4 -6 8 0 t8 0" stroke="#90a4ae" stroke-width="2.4" fill="none" stroke-linecap="round"/>`).join('');
+  }
+
   function mascotSVG(L, opts = {}) {
-    const look = LOOK[L.lv];
+    const look = LOOK[L.tier] || LOOK[0];
     const c = L.color;
-    const behind = look.acc.includes('cape') ? ACC.cape() : '';
-    const pre = look.fx.filter(f => ['rainbow', 'aura'].includes(f)).map(f => FX[f]()).join('');
-    const post = look.fx.filter(f => !['rainbow', 'aura'].includes(f)).map(f => FX[f]()).join('');
-    const top = look.acc.includes('sprout') ? ACC.sprout() : look.acc.includes('crown') ? '' : ACC.antenna(L.lv >= 4 ? '#ffb300' : L.lv < 0 ? '#90a4ae' : '#8ce0a8');
-    const accFront = look.acc.filter(a => !['sprout', 'cape'].includes(a)).map(a => ACC[a]()).join('');
+    const behind = ['wings', 'cape'].filter(a => look.acc.includes(a)).map(a => ACC[a]()).join('');
+    const pre = look.fx.filter(f => BACK_FX.includes(f)).map(f => FX[f]()).join('');
+    const post = look.fx.filter(f => !BACK_FX.includes(f)).map(f => FX[f]()).join('');
+    const topAcc = ['sprout', 'tophat', 'crown', 'bigcrown'].find(a => look.acc.includes(a));
+    const top = topAcc ? ACC[topAcc](L.sub) : ACC.antenna(L.tier >= 4 ? '#ffb300' : L.tier < 0 ? '#90a4ae' : '#8ce0a8');
+    const front = look.acc.filter(a => !['sprout', 'cape', 'wings', 'tophat', 'crown', 'bigcrown'].includes(a)).map(a => ACC[a](L.sub)).join('');
     const stress = opts.stress && L.lv > 0 ? FX.sweat1() : '';
-    const blush = L.lv <= -3 ? .25 : .6;
-    return `<svg viewBox="0 -12 220 182" class="mascot lv${L.lv < 0 ? 'n' + -L.lv : L.lv}" role="img" aria-label="${esc(L.name)}">
+    const blush = L.tier <= -3 ? .25 : .6;
+    return `<svg viewBox="0 -12 220 182" class="mascot ${opts.still ? 'still' : ''}" role="img" aria-label="${esc(L.name)}">
       ${pre}
       <ellipse class="shadow" cx="110" cy="160" rx="46" ry="6" fill="rgba(0,0,0,.12)"/>
-      <g class="body ${opts.still ? '' : look.anim}">
+      <g class="body ${look.anim}">
         ${behind}
         <g fill="${c}">${ARMS[look.arms]}<ellipse cx="94" cy="155" rx="12" ry="6"/><ellipse cx="126" cy="155" rx="12" ry="6"/></g>
-        ${top}
         <path d="M110 64 C152 64 168 92 168 118 C168 144 144 156 110 156 C76 156 52 144 52 118 C52 92 68 64 110 64 Z" fill="${c}"/>
+        ${top}
         <ellipse cx="92" cy="84" rx="14" ry="7" fill="#fff" opacity=".4" transform="rotate(-20 92 84)"/>
         <ellipse cx="78" cy="118" rx="8" ry="5" fill="#ff8a80" opacity="${blush}"/>
         <ellipse cx="142" cy="118" rx="8" ry="5" fill="#ff8a80" opacity="${blush}"/>
-        ${EYES[look.eyes]}${MOUTH[look.mouth]}${accFront}
+        ${EYES[look.eyes]}${MOUTH[look.mouth]}${front}
       </g>
-      ${post}${stress}
+      ${post}${subMarks(L)}${stress}
     </svg>`;
   }
 

@@ -98,21 +98,51 @@ const BUILDING_TYPES = [
   { v: '全部', ic: 'search', d: '不分型態' },
 ];
 
-// 小秤等級（門檻為新台幣淨資產；其他幣別依匯率換算）
-const LEVELS = [
-  { lv: 6, name: '傳說富豪', min: 3e7, max: Infinity, color: '#ffd54f', msg: '戴上皇冠披上披風，小秤已經是傳說了', desc: '皇冠、披風、彩虹與煙火' },
-  { lv: 5, name: '財富自由', min: 1e7, max: 3e7, color: '#ffe066', msg: '墨鏡一戴，誰都不愛，小秤財富自由啦', desc: '墨鏡、錢袋、金幣雨' },
-  { lv: 4, name: '富足', min: 5e6, max: 1e7, color: '#ffe08a', msg: '金幣嘩啦啦下，小秤開心到跳起來', desc: '跳舞、揮手、金幣雨' },
-  { lv: 3, name: '穩健', min: 2e6, max: 5e6, color: '#9be3c7', msg: '抱著金幣小跳步，日子越過越穩', desc: '抱金幣、小跳步、太陽' },
-  { lv: 2, name: '小康', min: 5e5, max: 2e6, color: '#b5e8b8', msg: '曬著太陽搖來搖去，小確幸滿滿', desc: '曬太陽、左右搖擺' },
-  { lv: 1, name: '起步新芽', min: 0, max: 5e5, color: '#d6f5d6', msg: '頭上冒出新芽，一步一步長大', desc: '頭頂小芽、輕輕呼吸' },
-  { lv: -1, name: '差一點', min: -1e5, max: 0, color: '#ffe3b3', msg: '只差一點就轉正了，小秤有點緊張', desc: '緊張微笑、一滴汗' },
-  { lv: -2, name: '小赤字', min: -5e5, max: -1e5, color: '#ffd1a1', msg: '錢長翅膀飛走了，小秤急得冒汗', desc: '冒汗、錢飛走' },
-  { lv: -3, name: '苦哈哈', min: -2e6, max: -5e5, color: '#c9d3dc', msg: '頭上一朵小雨雲，小秤苦哈哈', desc: '小雨雲、掉眼淚' },
-  { lv: -4, name: '債台高築', min: -5e6, max: -2e6, color: '#aab6c1', msg: '大雨下不停，還貼了OK繃，撐住啊小秤', desc: '大雨、OK繃、淚流不止' },
-  { lv: -5, name: '債務深淵', min: -Infinity, max: -5e6, color: '#8f9aa5', msg: '雷雨交加錢包空空，小秤需要一個擁抱', desc: '雷雨、空錢包、蒼蠅飛' },
+// 小秤等級：正負各 30 級。門檻為新台幣淨資產（其他幣別依匯率換算）
+// 前面每一級只差幾萬～幾十萬，越往上間距越大，但每一級都看得到下一級
+const POS_STEPS = [0, 1e5, 2e5, 3e5, 5e5, 7e5, 1e6, 1.5e6, 2e6, 3e6, 4e6, 5e6, 7e6, 1e7, 1.3e7, 1.6e7, 2e7, 2.5e7, 3e7, 4e7, 5e7, 6.5e7, 8e7, 1e8, 1.3e8, 1.6e8, 2e8, 3e8, 5e8, 1e9];
+const NEG_STEPS = [0, -5e4, -1e5, -2e5, -3e5, -5e5, -7e5, -1e6, -1.3e6, -1.6e6, -2e6, -2.5e6, -3e6, -4e6, -5e6, -6e6, -7e6, -8.5e6, -1e7, -1.2e7, -1.5e7, -1.8e7, -2.2e7, -2.6e7, -3e7, -3.5e7, -4e7, -5e7, -7e7, -1e8];
+const POS_NAMES = ['冒出新芽', '長出葉子', '含苞待放', '曬太陽', '小確幸', '小康之家', '存錢新手', '存錢達人', '穩穩前進',
+  '金幣雨', '富足人生', '小有成就', '小富翁', '紳士秤', '優雅富翁', '自由見習生', '財富自由', '自由自在', '千萬俱樂部', '大亨',
+  '黃金大亨', '準億萬', '億萬富翁', '億萬大亨', '財閥', '金融巨鱷', '富可敵國', '傳說富豪', '神話富豪', '宇宙首富'];
+const NEG_NAMES = ['差一點', '小透支', '緊張兮兮', '錢飛走了', '小赤字', '月光族', '毛毛雨', '苦哈哈', '欲哭無淚',
+  '下大雨', '貼OK繃', '雨下不停', '打雷了', '雷雨交加', '暴風雨', '錢包空空', '蒼蠅飛', '縫縫補補', '求救中', '舉牌求救',
+  '紙箱秤', '寒風刺骨', '暴風雪', '冷到發抖', '背上枷鎖', '腳鐐', '債台高築', '深淵邊緣', '債務深淵', '無底深淵'];
+// 每 3 級一個「階段」：決定主要造型；同階段內的 3 級用星星數、顏色深淺區分
+const POS_TIERS = [
+  { name: '新芽期', msg: '頭上冒出新芽，一步一步長大', desc: '頭頂小芽、輕輕呼吸', colors: ['#e3f7e3', '#d6f5d6', '#c8f0c8'] },
+  { name: '小康期', msg: '曬著太陽搖來搖去，小確幸滿滿', desc: '曬太陽、左右搖擺', colors: ['#c9eec9', '#b5e8b8', '#a5e0ab'] },
+  { name: '穩健期', msg: '抱著金幣小跳步，日子越過越穩', desc: '抱金幣、小跳步', colors: ['#b4ead5', '#9be3c7', '#86dbbb'] },
+  { name: '富足期', msg: '金幣嘩啦啦下，小秤開心到跳起來', desc: '跳舞、揮手、金幣雨', colors: ['#fff0b3', '#ffe89a', '#ffe082'] },
+  { name: '小富翁期', msg: '戴上紳士帽打領結，優雅地數錢', desc: '紳士帽、領結、金幣雨', colors: ['#ffe89a', '#ffe07a', '#ffd966'] },
+  { name: '自由期', msg: '墨鏡一戴，誰都不愛，小秤財富自由啦', desc: '墨鏡、錢袋、金幣雨', colors: ['#ffe066', '#ffd84d', '#ffd23f'] },
+  { name: '大亨期', msg: '金牌掛胸前，千萬俱樂部歡迎你', desc: '墨鏡、金牌、獎盃光芒', colors: ['#ffd23f', '#ffca28', '#ffc107'] },
+  { name: '億萬期', msg: '小皇冠加披風，億萬富翁駕到', desc: '皇冠、披風、金幣雨', colors: ['#ffca28', '#ffc107', '#ffb300'] },
+  { name: '財閥期', msg: '坐在雲上看彩虹，錢多到數不完', desc: '皇冠、披風、彩虹、祥雲', colors: ['#ffc107', '#ffb300', '#ffa000'] },
+  { name: '傳說期', msg: '金光閃閃還有翅膀，小秤已經是傳說了', desc: '大皇冠、翅膀、彩虹、煙火、光環', colors: ['#ffd54f', '#ffca28', '#ffb300'] },
 ];
-const LEVEL_EMPTY = { lv: 0, name: '還在睡', color: '#e3e9ee', msg: '還沒有資料，小秤在睡覺', desc: '新增資產或負債叫醒牠' };
+const NEG_TIERS = [
+  { name: '緊張期', msg: '只差一點就轉正了，小秤有點緊張', desc: '緊張微笑、冒汗', colors: ['#ffe8c2', '#ffe3b3', '#ffdca3'] },
+  { name: '漏財期', msg: '錢長翅膀飛走了，小秤急得冒汗', desc: '錢飛走、狂冒汗', colors: ['#ffd9ad', '#ffd1a1', '#ffc994'] },
+  { name: '小雨期', msg: '頭上一朵小雨雲，小秤苦哈哈', desc: '小雨雲、掉眼淚', colors: ['#d5dde4', '#c9d3dc', '#bec9d3'] },
+  { name: '大雨期', msg: '大雨下不停，還貼了OK繃，撐住啊', desc: '大雨、OK繃、淚流不止', colors: ['#bcc7d1', '#b2bec9', '#aab6c1'] },
+  { name: '雷雨期', msg: '雷雨交加，小秤嚇得發抖', desc: '雷雨、閃電、發抖', colors: ['#a9b5c0', '#a1adb9', '#99a6b2'] },
+  { name: '空錢包期', msg: '錢包空空還有蒼蠅飛，好想哭', desc: '空錢包、蒼蠅、補丁', colors: ['#a3aeb8', '#9ba6b0', '#939ea8'] },
+  { name: '求救期', msg: '舉著求救牌，小秤需要一個擁抱', desc: '求救牌、紙箱、雨', colors: ['#9aa5af', '#929da7', '#8a959f'] },
+  { name: '寒冬期', msg: '暴風雪好冷，小秤圍著圍巾發抖', desc: '暴風雪、圍巾、冷到發抖', colors: ['#a7b9c9', '#9db0c1', '#93a7b9'] },
+  { name: '枷鎖期', msg: '腳上拖著債務鐵球，走得好辛苦', desc: '鐵球腳鐐、雷雨', colors: ['#8f9aa5', '#87929d', '#7f8a95'] },
+  { name: '深淵期', msg: '掉進債務深淵，但只要開始還，就能慢慢爬上來', desc: '深淵漩渦、鐵球、暴風雨', colors: ['#7f8a95', '#76818c', '#6d7883'] },
+];
+const LEVELS = [];
+for (let i = 29; i >= 0; i--) {
+  const t = Math.floor(i / 3), sub = i % 3;
+  LEVELS.push({ lv: i + 1, name: POS_NAMES[i], min: POS_STEPS[i], max: i === 29 ? Infinity : POS_STEPS[i + 1], tier: t + 1, sub, color: POS_TIERS[t].colors[sub], msg: POS_TIERS[t].msg, desc: POS_TIERS[t].desc, tierName: POS_TIERS[t].name });
+}
+for (let i = 0; i < 30; i++) {
+  const t = Math.floor(i / 3), sub = i % 3;
+  LEVELS.push({ lv: -(i + 1), name: NEG_NAMES[i], min: i === 29 ? -Infinity : NEG_STEPS[i + 1], max: NEG_STEPS[i], tier: -(t + 1), sub, color: NEG_TIERS[t].colors[sub], msg: NEG_TIERS[t].msg, desc: NEG_TIERS[t].desc, tierName: NEG_TIERS[t].name });
+}
+const LEVEL_EMPTY = { lv: 0, tier: 0, sub: 0, name: '還在睡', color: '#e3e9ee', msg: '還沒有資料，小秤在睡覺', desc: '新增資產或負債叫醒牠', tierName: '' };
 
 // 車輛：c = 代表色，f = 產地，t = 車型（決定小車造型）
 const CAR_BRANDS = [

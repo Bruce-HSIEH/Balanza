@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '4.0.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -61,7 +61,7 @@ const icCat = v => v === '車輛' ? UI.carIcon() : Icon(catOf(v).ic);
 const icDebt = v => v === '車貸' ? UI.carIcon() : Icon(typeOf(v).ic);
 
 function assetIcon(a) {
-  if (a.category === '車輛' && a.brand) return UI.carIcon(brandOf(a.brand));
+  if (a.category === '車輛' && a.brand) return UI.carIcon(brandOf(a.brand), a.model, a.carColor);
   return icCat(a.category);
 }
 
@@ -138,6 +138,7 @@ function render() {
     lastLv = L.lv; lastStress = stress;
   }
   $('mascotLv').textContent = L.lv === 0 ? '' : `Lv.${L.lv} ${L.name}`;
+  $('mascotCard').dataset.tier = L.tier;
   $('mascotMsg').textContent = L.msg;
   $('mascotTip').textContent = L.lv === 0 ? '到「資產」「負債」新增資料叫醒牠' : `負債比 ${pct(s.debtRatio)}${stress ? '，負債偏重小秤在冒汗' : ''}`;
 
@@ -263,44 +264,76 @@ function rangeText(L, k) {
   if (L.min === -Infinity) return `淨資產 ${short(L.max * k)} 以下`;
   if (L.max === Infinity) return `淨資產 ${short(L.min * k)} 以上`;
   if (L.min === 0) return `淨資產 0 ～ ${short(L.max * k)}`;
+  if (L.max === 0) return `淨資產 ${short(L.min * k)} ～ 0`;
   return `淨資產 ${short(L.min * k)} ～ ${short(L.max * k)}`;
 }
+const nextLevel = L => L.lv === 0 || L.lv === 30 ? null : LEVELS.find(x => x.lv === (L.lv === -1 ? 1 : L.lv + 1));
+function levelProgress(L, nw, k) {
+  const next = nextLevel(L);
+  if (!next) return { prog: L.lv === 30 ? 1 : 0, need: 0, next: null };
+  const lo = (L.min === -Infinity ? L.max * 1.5 : L.min) * k, hi = next.min * k;
+  return { prog: Math.max(0, Math.min(1, (nw - lo) / (hi - lo))), need: hi - nw, next };
+}
+const lvBadge = L => L.lv === 0 ? 'Zzz' : `Lv.${L.lv}`;
 let levelsKey = '';
 function renderLevels(s, L) {
   const k = twdK();
   const nw = s.netWorth;
-  // 目前等級與升級進度
-  let prog = 0, note = '';
-  if (L.lv === 0) note = '新增資產或負債後，小秤就會醒來';
-  else if (L.lv === 6) { prog = 1; note = '已經是最高等級了，太強了'; }
-  else {
-    const idx = LEVELS.indexOf(L), next = LEVELS[idx - 1];
-    const lo = (L.min === -Infinity ? L.max * 2 : L.min) * k, hi = next.min * k;
-    prog = Math.max(0, Math.min(1, (nw - lo) / (hi - lo)));
-    const need = hi - nw;
-    note = L.lv < 0 ? `再減少 ${fmt(need)} 負債（或增加資產）就能升到 Lv.${next.lv} ${next.name}` : `再增加 ${fmt(need)} 淨資產就能升到 Lv.${next.lv} ${next.name}`;
-  }
+  const { prog, need, next } = levelProgress(L, nw, k);
+  const note = L.lv === 0 ? '新增資產或負債後，小秤就會醒來'
+    : !next ? '已經是最高等級了，太強了'
+    : L.lv < 0 ? `再減少 ${fmt(need)} 負債（或增加資產）就能升到 Lv.${next.lv} ${next.name}`
+    : `再增加 ${fmt(need)} 淨資產就能升到 Lv.${next.lv} ${next.name}`;
   $('lvNow').innerHTML = `<div class="lv-mascot">${UI.mascotSVG(L)}</div>
-    <div class="lv-info"><div class="lv-badge ${L.lv < 0 ? 'neg-bg' : ''}">${L.lv === 0 ? 'Zzz' : 'Lv.' + L.lv}</div><h2>${esc(L.name)}</h2>
+    <div class="lv-info"><div class="lv-badge ${L.lv < 0 ? 'neg-bg' : ''}">${lvBadge(L)}${L.tierName ? ' · ' + esc(L.tierName) : ''}</div><h2>${esc(L.name)}</h2>
     <div class="muted">${esc(L.msg)}</div><div class="lv-nw">目前淨資產 <b class="${nw < 0 ? 'neg' : 'pos'}">${fmt(nw)}</b></div></div>
     <div class="lv-prog"><div class="lv-track"><div class="lv-fill" style="width:${(prog * 100).toFixed(1)}%"></div></div><div class="small muted">${note}</div></div>`;
 
-  const key = `${L.lv}|${state.currency}|${k}`;
+  // 首頁的升級進度
+  $('homeProg').hidden = !next;
+  if (next) {
+    $('homeProgFill').style.width = (prog * 100).toFixed(1) + '%';
+    $('homeProgText').textContent = `距離 Lv.${next.lv} ${next.name} 還差 ${fmt(need)}`;
+  }
+
+  const key = `${L.lv}|${state.currency}|${k.toFixed(6)}`;
   if (key === levelsKey) return;
   levelsKey = key;
   const row = X => {
     const cur = X.lv === L.lv;
-    const reached = L.lv !== 0 && X.lv <= L.lv && X.lv > 0 && L.lv > 0;
-    const tag = cur ? '<span class="lv-tag cur">你在這裡</span>' : reached ? '<span class="lv-tag ok">已達成</span>' : X.lv > 0 && (L.lv < X.lv) ? `<span class="lv-tag lock">${Icon.svg('lock', 14)} 未解鎖</span>` : '';
-    return `<li class="lv-row ${cur ? 'cur' : ''} ${X.lv < 0 ? 'negative' : ''}">
-      <div class="lv-mini">${UI.mascotSVG(X)}</div>
+    const reached = L.lv > 0 && X.lv > 0 && X.lv < L.lv;
+    const tag = cur ? '<span class="lv-tag cur">你在這裡</span>' : reached ? '<span class="lv-tag ok">已達成</span>' : (X.lv > 0 && X.lv > L.lv) ? `<span class="lv-tag lock">${Icon.svg('lock', 13)}</span>` : '';
+    return `<li class="lv-row ${cur ? 'cur' : ''} ${X.lv < 0 ? 'negative' : ''}" ${cur ? 'id="lvCurRow"' : ''}>
+      <div class="lv-mini">${UI.mascotSVG(X, { still: !cur })}</div>
       <div class="grow"><div class="lv-name"><b>Lv.${X.lv}</b> ${esc(X.name)} ${tag}</div>
-      <div class="lv-range">${rangeText(X, k)}</div><div class="sub">${esc(X.desc)}</div></div></li>`;
+      <div class="lv-range">${rangeText(X, k)}</div></div></li>`;
   };
-  $('lvList').innerHTML = `<li class="lv-sep pos-sep">${Icon.svg('star', 18)} 正資產</li>${LEVELS.filter(X => X.lv > 0).map(row).join('')}
-    <li class="lv-sep neg-sep">${Icon.svg('warn', 18)} 負資產</li>${LEVELS.filter(X => X.lv < 0).map(row).join('')}`;
-  $('lvNoteCcy').textContent = state.currency === 'TWD' ? '' : `門檻以新台幣設定，依目前匯率換算成 ${state.currency}。`;
+  const tierBlock = (list, title, desc) => `<li class="lv-tier"><b>${esc(title)}</b><small>${esc(desc)}</small></li>${list.map(row).join('')}`;
+  const pos = [], neg = [];
+  for (let t = 10; t >= 1; t--) { const g = LEVELS.filter(x => x.tier === t); pos.push(tierBlock(g, `${g[0].tierName} · Lv.${g.at(-1).lv}–${g[0].lv}`, g[0].desc)); }
+  for (let t = -1; t >= -10; t--) { const g = LEVELS.filter(x => x.tier === t); neg.push(tierBlock(g, `${g[0].tierName} · Lv.${g[0].lv}–${g.at(-1).lv}`, g[0].desc)); }
+  $('lvList').innerHTML = `<li class="lv-sep pos-sep">${Icon.svg('star', 18)} 正資產 30 級</li>${pos.join('')}
+    <li class="lv-sep neg-sep">${Icon.svg('warn', 18)} 負資產 30 級</li>${neg.join('')}`;
+  $('lvNoteCcy').textContent = state.currency === 'TWD' ? '每 3 級是一個階段，造型會變；同階段用星星數區分。' : `門檻以新台幣設定，依目前匯率換算成 ${state.currency}。`;
 }
+
+// --- 更新紀錄 ---
+function changelogHTML(list) {
+  return list.map((c, i) => `<details class="cl" ${i === 0 ? 'open' : ''}><summary><b>v${c.v}</b> ${esc(c.title)}<small>${c.date}</small></summary>
+    <ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></details>`).join('');
+}
+function openChangelog(onlyNew) {
+  const seen = (() => { try { return localStorage.getItem('balanza.seenVersion'); } catch (e) { return null; } })();
+  let list = CHANGELOG;
+  if (onlyNew && seen) { const i = CHANGELOG.findIndex(c => c.v === seen); if (i > 0) list = CHANGELOG.slice(0, i); }
+  $('clTitle').innerHTML = `${Icon('star')} ${onlyNew ? `更新到 v${APP_VERSION} 了` : '更新紀錄'}`;
+  $('clBody').innerHTML = changelogHTML(list);
+  $('clDialog').showModal();
+  try { localStorage.setItem('balanza.seenVersion', APP_VERSION); } catch (e) { /* ignore */ }
+}
+$('ver').addEventListener('click', () => openChangelog(false));
+$('clClose').addEventListener('click', () => $('clDialog').close());
+$('clOpen').addEventListener('click', () => openChangelog(false));
 
 function growBars() {
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -324,9 +357,10 @@ function showView(name) {
   fab.dataset.add = kind;
   fab.setAttribute('aria-label', kind === 'asset' ? '新增資產' : '新增負債');
   if (kind) { fab.classList.remove('pop'); void fab.offsetWidth; fab.classList.add('pop'); }
+  if (name === 'levels') setTimeout(() => { const r = $('lvCurRow'); r && r.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 450);
   document.querySelectorAll('.fill[data-w]').forEach(f => { f.style.width = '0'; });
   growBars();
-  window.scrollTo(0, 0);
+  if (name !== 'levels') window.scrollTo(0, 0);
 }
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 $('toLevels').addEventListener('click', () => showView('levels'));
@@ -340,6 +374,8 @@ const OPTS = {
   mode: () => CALC_MODES.map(c => opt(c.v, c.label, Icon(c.ic), c.d)),
   method: () => REPAY_METHODS.map(c => opt(c.v, c.label, Icon(c.ic), c.d)),
   brand: () => CAR_BRANDS.map(b => opt(b.v, b.zh === b.v ? b.v : `${b.zh} ${b.v}`, UI.carIcon(b), b.f + (b.t === 'scooter' ? ' · 機車' : ''))),
+  carModel: vals => { const b = brandOf(vals.brand); return Car.models(vals.brand).map(m => opt(m.name, m.name, UI.carIcon(b, m.name, vals.carColor), BODY_ZH[m.type] || '')); },
+  carColor: () => [...(brandOf(vals.brand) ? [{ v: brandOf(vals.brand).c, label: '品牌代表色' }] : []), ...Car.COLORS].map(c => opt(c.v, c.label, swatch(c.v))),
   county: () => COUNTIES.map(c => opt(c.k, c.v, Icon('pin'))),
   district: async vals => { if (!vals.county) return []; const d = await LVR.loadCounty(vals.county); return Object.keys(d.d).map(k => opt(k, k, Icon('city'), `${d.d[k].s.all[3]} 筆成交`)); },
   road: async vals => { if (!vals.county || !vals.district) return []; const d = await LVR.loadCounty(vals.county); const r = d.d[vals.district]?.r || {}; return Object.keys(r).sort((a, b) => r[b].s.all[3] - r[a].s.all[3]).map(k => opt(k, k, Icon('road'), `${r[k].s.all[3]} 筆 · 中位 ${wan(r[k].s.all[0])}/坪`)); },
@@ -351,7 +387,10 @@ const OPTS = {
     return Stocks.list(mkt).map(x => opt(x.sym, `${x.sym}  ${x.name}`, `<span class="ticker small">${esc(x.sym.slice(0, 6))}</span>`, x.price != null ? price(x.price, mkt === 'us' ? 'USD' : 'TWD') : '', { key: `${x.sym} ${x.name}`, right: UI.sparkline(x.series, 56, 22, { tw: mkt === 'tw' }) }));
   },
 };
+const BODY_ZH = { sedan: '轎車', hatch: '掀背車', suv: '休旅車', bigsuv: '越野車', coupe: '跑車', roadster: '敞篷車', minivan: 'MPV', pickup: '皮卡', evcross: '電動跨界休旅', wagon: '旅行車', scooter: '速克達', escooter: '電動機車', sportbike: '檔車' };
+const swatch = c => `<span class="ico swatch" style="--sw:${c}"></span>`;
 const PICK_LABEL = {
+  carColor: v => ([...Car.COLORS].find(c => c.v === v) || {}).label || (v ? '品牌代表色' : ''),
   bank: v => { const b = bankOf(v); return b ? bankLabel(b) : ''; },
   county: v => (COUNTIES.find(c => c.k === v) || {}).v || '',
   method: v => (REPAY_METHODS.find(c => c.v === v) || {}).label || '',
@@ -366,7 +405,9 @@ const PICK_ICON = {
   bank: v => UI.bankIcon(bankOf(v)),
   mode: v => Icon((CALC_MODES.find(c => c.v === v) || {}).ic || 'calc'),
   method: v => Icon((REPAY_METHODS.find(c => c.v === v) || {}).ic || 'scale'),
-  brand: v => UI.carIcon(brandOf(v)),
+  brand: (v, vals) => UI.carIcon(brandOf(v), vals.model, vals.carColor),
+  carModel: (v, vals) => UI.carIcon(brandOf(vals.brand), v, vals.carColor),
+  carColor: v => swatch(v),
   county: () => Icon('pin'), district: () => Icon('city'), road: () => Icon('road'),
   btype: v => Icon((BUILDING_TYPES.find(c => c.v === v) || {}).ic || 'tower'),
   grace: v => Icon(+v ? 'pause' : 'play'),
@@ -401,7 +442,8 @@ const FIELDS = {
     { sec: ['car', '車輛資訊'], show: isCar },
     { panel: 'carPreview', show: isCar },
     { k: 'brand', label: '廠牌', type: 'pick', opts: 'brand', show: isCar },
-    { k: 'model', label: '車款', type: 'text', ph: '例：RAV4', show: isCar },
+    { k: 'model', label: '車款', type: 'pick', opts: 'carModel', show: v => isCar(v) && !!v.brand },
+    { k: 'carColor', label: '車色', type: 'pick', opts: 'carColor', show: v => isCar(v) && !!v.brand },
     { k: 'buyYear', label: '購入年份', type: 'number', ph: String(new Date().getFullYear()), show: isCar, half: true },
     { k: 'buyPrice', label: '購入價格', type: 'number', show: isCar, half: true },
     { panel: 'carPanel', show: isCar },
@@ -505,12 +547,14 @@ $('editFields').addEventListener('click', async e => {
     let options;
     try { options = await OPTS[f.opts](vals); } catch (err) { return toast(err.message); }
     const isStk = f.opts === 'stock';
+    const isModel = f.opts === 'carModel';
     if (!options.length && !isStk) return toast(k === 'district' ? '請先選縣市' : k === 'road' ? '請先選行政區' : '沒有選項');
     const o = await UI.openPicker({
       title: isStk ? (mktOf(vals) === 'us' ? '美股代號' : '台股代號') : f.label, options, value: vals[k],
-      search: f.search || isStk || options.length > 8, limit: isStk ? 40 : 0,
+      search: f.search || isStk || isModel || options.length > 8, limit: isStk ? 40 : 0,
       placeholder: isStk ? (mktOf(vals) === 'us' ? '輸入代號，例如 AAPL、VOO' : '輸入代號或名稱，例如 2330、0050、台積電') : '',
-      custom: isStk ? q => !/^[A-Za-z0-9.\-]{1,10}$/.test(q) ? null : opt(Stocks.norm(mktOf(vals), q), `使用「${Stocks.norm(mktOf(vals), q)}」`, Icon('pencil'), '沒有自動報價，之後手動填股價') : null,
+      custom: isStk ? q => !/^[A-Za-z0-9.\-]{1,10}$/.test(q) ? null : opt(Stocks.norm(mktOf(vals), q), `使用「${Stocks.norm(mktOf(vals), q)}」`, Icon('pencil'), '沒有自動報價，之後手動填股價')
+        : isModel ? q => opt(q, `使用「${q}」`, Icon('pencil'), '清單沒有的車款') : null,
     });
     if (!o) return;
     const prev = vals[k];
@@ -522,7 +566,10 @@ $('editFields').addEventListener('click', async e => {
       if (o.value === '不動產' && !vals.name) vals.name = '自住房';
       if (mktOf({ category: prev }) !== mktOf(vals)) { vals.sym = ''; }
     }
-    if (k === 'brand' && !vals.name) vals.name = brandOf(o.value)?.t === 'scooter' ? '機車' : '愛車';
+    if (k === 'brand') {
+      if (!vals.name) vals.name = brandOf(o.value)?.t === 'scooter' ? '機車' : '愛車';
+      if (prev !== o.value) { vals.model = ''; }
+    }
     drawForm();
     return;
   }
@@ -597,8 +644,10 @@ function carValue(price, year) {
 function drawCarPanels() {
   const b = brandOf(vals.brand);
   const pv = $('carPreview');
-  if (pv) pv.innerHTML = b ? `<div class="car-stage">${UI.carSVG(b.t, b.c, 150)}<div class="road"></div></div><div class="car-name">${esc(b.zh === b.v ? b.v : b.zh + ' ' + b.v)} ${esc(vals.model || '')} <small class="muted">${esc(b.f)}</small></div>`
-    : `<div class="car-stage">${UI.carSVG('sedan', '#cfd8dc', 150)}<div class="road"></div></div><div class="car-name muted">先選廠牌</div>`;
+  const type = b ? Car.typeOf(b.v, vals.model, ({ sport: 'coupe', ev: 'evcross' })[b.t] || b.t) : 'sedan';
+  const color = vals.carColor || (b ? b.c : '#cfd8dc');
+  if (pv) pv.innerHTML = `<div class="car-stage">${Car.svg(type, color, 260)}<div class="road"></div></div>
+    <div class="car-name">${b ? esc(b.zh === b.v ? b.v : b.zh + ' ' + b.v) + ' ' + esc(vals.model || '') : '先選廠牌'} <small class="muted">${b ? esc(BODY_ZH[type] || '') + ' · ' + esc(b.f) : ''}</small></div>`;
   const el = $('carPanel');
   if (!el) return;
   const pr = num(vals.buyPrice), year = num(vals.buyYear);
@@ -770,6 +819,16 @@ $('mascot').addEventListener('click', () => {
 // ---------- 啟動 ----------
 Icon.hydrate();
 $('ver').textContent = 'v' + APP_VERSION;
+$('clList').innerHTML = changelogHTML(CHANGELOG.slice(0, 3));
+(() => {
+  let seen = null;
+  try { seen = localStorage.getItem('balanza.seenVersion'); } catch (e) { /* ignore */ }
+  const hasData = state.assets.length || state.debts.length;
+  if (seen !== APP_VERSION) {
+    if (hasData) setTimeout(() => openChangelog(true), 900);
+    else try { localStorage.setItem('balanza.seenVersion', APP_VERSION); } catch (e) { /* ignore */ }
+  }
+})();
 showView('home');
 render();
 Stocks.load().then(() => {

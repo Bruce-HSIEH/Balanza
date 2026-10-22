@@ -16,7 +16,7 @@
 <body>
   <header class="top">
     <h1>Balanza</h1>
-    <span class="ver" id="ver"></span>
+    <button type="button" class="ver" id="ver" title="看更新紀錄"></button>
   </header>
 
   <main>
@@ -28,6 +28,7 @@
           <div class="mascot-lv" id="mascotLv"></div>
           <div class="mascot-msg" id="mascotMsg"></div>
           <div class="mascot-tip" id="mascotTip"></div>
+          <div class="home-prog" id="homeProg" hidden><div class="hp-track"><div class="hp-fill" id="homeProgFill"></div></div><div class="hp-text" id="homeProgText"></div></div>
           <button type="button" class="link-btn" id="toLevels">看所有等級 ›</button>
         </div>
       </div>
@@ -109,6 +110,11 @@
         </div>
       </div>
       <div class="card">
+        <h3><i data-ic="star" data-size="22"></i> 更新紀錄</h3>
+        <div id="clList"></div>
+        <button type="button" class="btn mini" id="clOpen">看全部版本</button>
+      </div>
+      <div class="card">
         <h3><i data-ic="tw" data-size="22"></i> 股價</h3>
         <p class="muted" id="stockStatus">讀取中…</p>
         <p class="muted">台股（上市、上櫃、ETF）與美股（S&amp;P 500、熱門個股與 ETF）每天收盤後自動更新。你的持股只存在手機裡；App 下載的是整個市場的公開報價檔。</p>
@@ -148,10 +154,18 @@
     </form>
   </dialog>
 
+  <dialog id="clDialog" class="cl-dialog">
+    <h2 id="clTitle">更新紀錄</h2>
+    <div id="clBody"></div>
+    <div class="btnrow"><span class="spacer"></span><button type="button" class="btn primary" id="clClose">好</button></div>
+  </dialog>
+
   <div class="toast" id="toast" role="status"></div>
 
   <script src="data/catalog.js"></script>
+  <script src="changelog.js"></script>
   <script src="icons.js"></script>
+  <script src="cars.js"></script>
   <script src="loan.js"></script>
   <script src="ui.js"></script>
   <script src="lvr.js"></script>

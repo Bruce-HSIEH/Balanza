@@ -81,7 +81,7 @@
     <!-- 資產 -->
     <section class="view" id="view-assets">
       <div class="listhead"><h2><i data-ic="piggy" data-size="26"></i> 資產</h2><span id="assetsSum" class="pos"></span></div>
-      <button type="button" class="btn bulk-btn" id="bulkOpen"><i data-ic="tw" data-size="22"></i> 一次輸入股票持股</button>
+      <button type="button" class="btn bulk-btn" id="bulkOpen"><i data-ic="tw" data-size="22"></i> 一次輸入股票持股（可用截圖）</button>
       <div id="assetList"></div>
     </section>
 
@@ -222,7 +222,11 @@
   <dialog id="bulkDialog" class="cl-dialog bulk-dialog">
     <h2><i data-ic="tw" data-size="28"></i> 一次輸入股票持股</h2>
     <div class="seg" id="bkMkt"><button type="button" data-m="台股" class="on">台股</button><button type="button" data-m="美股">美股</button></div>
-    <p class="small muted">每列一檔：代號、股數、平均成本（可不填）。已經有的股票會歸到同一檔。</p>
+    <div class="bk-shot">
+      <label class="btn primary" id="bkShotBtn"><i data-ic="chart" data-size="20"></i> 從截圖讀取<input type="file" id="bkShot" accept="image/*" multiple hidden></label>
+      <small class="muted" id="bkShotMsg">券商 App 庫存畫面截圖，可一次選多張，台股美股可混在一起</small>
+    </div>
+    <p class="small muted">或每列手動填一檔：代號、股數、平均成本（可不填）。已經有的股票會歸到同一檔。</p>
     <div class="bk-head"><span>代號</span><span>股數</span><span>平均成本</span><span></span></div>
     <div id="bkRows"></div>
     <button type="button" class="btn mini" id="bkAdd">＋ 再一列</button>

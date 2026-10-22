@@ -847,3 +847,12 @@ main {
 .eq-line { margin-top: 2px; }
 .kv-btn { width: 100%; border: 0; background: none; color: inherit; font: inherit; padding: 4px 0; cursor: pointer; text-align: left; }
 .kv-btn span:first-child { color: var(--text) !important; font-weight: 600; }
+
+/* ===== v5.12 截圖讀取持股 ===== */
+.bk-shot { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; flex-wrap: wrap; }
+.bk-shot small { flex: 1; min-width: 160px; line-height: 1.5; }
+.bk-shot .btn.busy { opacity: .6; pointer-events: none; }
+.bk-shot .btn.busy::after { content: ''; width: 12px; height: 12px; margin-left: 6px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: spin .8s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.bk-tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 0 6px; border-radius: 6px; margin-right: 5px; background: #ffe1dc; color: #c62828; }
+.bk-tag.us { background: #dbeafe; color: #1e40af; }

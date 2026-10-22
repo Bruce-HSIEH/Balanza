@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.11.0';
+const APP_VERSION = '5.12.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -1468,7 +1468,7 @@ $('tdCancel').addEventListener('click', () => $('tradeDialog').close());
 // ================= 一次輸入多檔持股 =================
 let bulkMkt = '台股';
 function bulkRow(v = {}) {
-  return `<div class="bk-row"><input class="bk-sym" list="bkList" placeholder="${bulkMkt === '美股' ? 'AAPL' : '2330'}" value="${esc(v.sym || '')}" autocapitalize="characters">
+  return `<div class="bk-row${v.mkt ? ' fixed' : ''}"${v.mkt ? ` data-mkt="${v.mkt}"` : ''}${v.note ? ` data-note="${esc(v.note)}"` : ''}><input class="bk-sym" list="bkList" placeholder="${bulkMkt === '美股' ? 'AAPL' : '2330'}" value="${esc(v.sym || '')}" autocapitalize="characters">
     <input class="bk-sh" type="number" inputmode="decimal" step="any" placeholder="${bulkMkt === '美股' ? '10' : '1000'}" value="${esc(v.shares || '')}">
     <input class="bk-cost" type="number" inputmode="decimal" step="any" placeholder="選填" value="${esc(v.cost || '')}">
     <button type="button" class="bk-del" aria-label="刪除這列">×</button><small class="bk-name"></small></div>`;
@@ -1487,27 +1487,118 @@ function setBulkMkt(m) {
   $('bkRows').querySelectorAll('.bk-row').forEach(bulkName);
 }
 function bulkName(row) {
-  const mkt = bulkMkt === '美股' ? 'us' : 'tw';
+  const cat = row.dataset.mkt || bulkMkt;
+  const mkt = cat === '美股' ? 'us' : 'tw';
   const sym = row.querySelector('.bk-sym').value.trim();
   const el = row.querySelector('.bk-name');
   if (!sym) { el.textContent = ''; return; }
   const q = Stocks.quote(mkt, sym);
-  const ex = findHolding(bulkMkt, sym);
+  const ex = findHolding(cat, sym);
+  const have = ex ? lotsSummary(ex.lots).shares : 0;
+  const note = row.dataset.note ? ' · ' + row.dataset.note : '';
   el.className = 'bk-name ' + (q ? '' : 'neg');
-  el.textContent = q ? `${q.name} · 收盤 ${price(q.price, q.ccy)}${ex ? ' · 已持有，會歸到同一檔' : ''}` : '找不到報價（仍可加入，之後手動填股價）';
+  const tag = row.dataset.mkt ? `<span class="bk-tag ${cat === '美股' ? 'us' : ''}">${cat}</span>` : '';
+  el.innerHTML = tag + (q ? `${esc(q.name)} · 收盤 ${price(q.price, q.ccy)}${esc(note)}${ex ? ` · <span class="neg">已持有 ${have.toLocaleString()} 股，會再加上這列</span>` : ''}` : '找不到報價（仍可加入，之後手動填股價）' + esc(note));
 }
 $('bulkOpen').addEventListener('click', openBulk);
 $('bkMkt').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (b) setBulkMkt(b.dataset.m); });
 $('bkAdd').addEventListener('click', () => { $('bkRows').insertAdjacentHTML('beforeend', bulkRow()); $('bkRows').lastElementChild.querySelector('input').focus(); });
 $('bkRows').addEventListener('input', e => { if (e.target.classList.contains('bk-sym')) bulkName(e.target.closest('.bk-row')); });
 $('bkRows').addEventListener('click', e => { if (e.target.closest('.bk-del')) e.target.closest('.bk-row').remove(); });
-$('bkCancel').addEventListener('click', () => $('bulkDialog').close());
+$('bkCancel').addEventListener('click', () => { if (shotCtl) shotCtl.abort(); $('bulkDialog').close(); });
+
+// --- 從截圖讀取持股（用設定裡的 AI）---
+function shrinkImage(file, maxSide = 1800) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      resolve({ mime: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.88).split(',')[1] });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('讀不到這張圖片')); };
+    img.src = url;
+  });
+}
+// 名稱或代號 → 報價；找不到就在兩個市場都試
+function matchStock(h) {
+  const mkts = h.market === 'us' ? ['us', 'tw'] : ['tw', 'us'];
+  const sym = String(h.symbol || '').toUpperCase().replace(/\.(TW|TWO)$/, '').trim();
+  for (const m of mkts) { const q = sym && Stocks.quote(m, sym); if (q) return { m, q }; }
+  const nm = String(h.name || '').replace(/\s+/g, '');
+  if (nm) for (const m of mkts) {
+    const L = Stocks.list(m);
+    const x = L.find(x => x.name.replace(/\s+/g, '') === nm) || L.find(x => nm.length >= 2 && (x.name.includes(nm) || nm.includes(x.name.replace(/\s+/g, ''))));
+    if (x) return { m, q: Stocks.quote(m, x.sym) };
+  }
+  return { m: mkts[0], q: null, sym };
+}
+const n1 = v => (v === '' || v == null || !isFinite(+v) ? null : +v);
+function holdingToRow(h) {
+  const { m, q, sym } = matchStock(h);
+  const notes = [];
+  const px = n1(h.price) || (q && q.price) || null;
+  const mv = n1(h.market_value);
+  let shares = n1(h.shares);
+  if (!shares && mv && px) { shares = mv / px; notes.push('股數由市值推算'); }
+  if (shares) shares = m === 'tw' ? Math.round(shares) : Math.round(shares * 1e4) / 1e4;
+  let cost = n1(h.avg_cost);
+  if (!cost && shares) {
+    const pl = n1(h.pl_amount), pct = n1(h.pl_pct);
+    let total = n1(h.cost_total);
+    if (!total && mv != null && pl != null) total = mv - pl;
+    if (!total && mv != null && pct != null && pct > -100) total = mv / (1 + pct / 100);
+    if (!total && px && pct != null && pct > -100) total = px / (1 + pct / 100) * shares;
+    if (total) { cost = total / shares; notes.push('成本由損益推算'); }
+  }
+  if (cost) cost = Math.round(cost * (m === 'tw' ? 100 : 1e4)) / (m === 'tw' ? 100 : 1e4);
+  return { mkt: m === 'us' ? '美股' : '台股', sym: q ? q.sym : (sym || h.name || ''), shares: shares || '', cost: cost || '', note: notes.join('、'), name: h.name };
+}
+let shotCtl = null;
+$('bkShot').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  if (!files.length) return;
+  if (!aiReady()) { $('bkShotMsg').innerHTML = '<span class="neg">要先到「設定 → AI 理解」填入 Claude 或 Gemini 金鑰，才能看圖</span>'; return; }
+  const msg = t => { $('bkShotMsg').innerHTML = t; };
+  $('bkShotBtn').classList.add('busy');
+  shotCtl = new AbortController();
+  try {
+    msg(`壓縮 ${files.length} 張圖片…`);
+    const imgs = [];
+    for (const f of files.slice(0, 20)) imgs.push(await shrinkImage(f));
+    await Stocks.load();
+    const hs = await AI.readHoldings(state.ai, imgs, shotCtl.signal, (i, n) => msg(`AI 辨識中…（${Math.min(n, i + 5)}/${n} 張）`));
+    // 去掉跨截圖重複的同一列
+    const seen = new Set(), rows = [];
+    for (const h of hs) {
+      const r = holdingToRow(h);
+      const k = `${r.mkt}|${r.sym}|${r.shares}`;
+      if (!r.sym || seen.has(k)) continue;
+      seen.add(k); rows.push(r);
+    }
+    if (!rows.length) { msg('<span class="neg">沒有在圖片裡找到持股，換一張庫存畫面試試</span>'); return; }
+    // 移除空白列，放進結果
+    $('bkRows').querySelectorAll('.bk-row').forEach(r => { if (!r.querySelector('.bk-sym').value.trim()) r.remove(); });
+    $('bkRows').insertAdjacentHTML('beforeend', rows.map(bulkRow).join(''));
+    $('bkRows').querySelectorAll('.bk-row').forEach(bulkName);
+    const miss = rows.filter(r => !r.shares).length;
+    msg(`讀到 <b>${rows.length}</b> 檔，請核對後按「全部加入」${miss ? `<span class="neg">（${miss} 檔沒讀到股數，請補上）</span>` : ''}${files.length > 20 ? '（只讀前 20 張）' : ''}`);
+  } catch (err) {
+    if (err.name !== 'AbortError') msg(`<span class="neg">${esc(err.message)}</span>`);
+  } finally {
+    $('bkShotBtn').classList.remove('busy'); shotCtl = null;
+  }
+});
 $('bkSave').addEventListener('click', () => {
-  const rows = [...$('bkRows').querySelectorAll('.bk-row')].map(r => ({ sym: r.querySelector('.bk-sym').value.trim(), shares: num(r.querySelector('.bk-sh').value), cost: r.querySelector('.bk-cost').value })).filter(r => r.sym && r.shares);
+  const rows = [...$('bkRows').querySelectorAll('.bk-row')].map(r => ({ cat: r.dataset.mkt || bulkMkt, sym: r.querySelector('.bk-sym').value.trim(), shares: num(r.querySelector('.bk-sh').value), cost: r.querySelector('.bk-cost').value })).filter(r => r.sym && r.shares);
   if (!rows.length) return toast('至少填一列代號與股數');
   let added = 0, merged = 0;
   for (const r of rows) {
-    const res = addLot(bulkMkt, r.sym, { id: uid(), type: 'buy', date: '', shares: r.shares, price: r.cost === '' ? '' : num(r.cost) });
+    const res = addLot(r.cat, r.sym, { id: uid(), type: 'buy', date: '', shares: r.shares, price: r.cost === '' ? '' : num(r.cost) });
     res.merged ? merged++ : added++;
   }
   $('bulkDialog').close();

@@ -142,6 +142,92 @@ const AI = (() => {
     return { items: Array.isArray(out.items) ? out.items : [], usage: j.usageMetadata };
   }
 
+  // ---- 看圖：券商 App 庫存截圖 → 持股 ----
+  const HOLD_TOOL = {
+    name: 'record_holdings',
+    description: '把截圖裡每一檔持股整理出來。看不到或不確定的欄位就省略，不要猜。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        holdings: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              market: { type: 'string', enum: ['tw', 'us'], description: '台股 tw（含 ETF、上櫃）、美股 us' },
+              symbol: { type: 'string', description: '股票代號，台股如 2330、0050、00878，美股如 AAPL；截圖只有名稱時依你的知識填代號' },
+              name: { type: 'string', description: '截圖上的股票名稱' },
+              shares: { type: 'number', description: '持有股數（股，不是張；畫面寫張就 ×1000）' },
+              avg_cost: { type: 'number', description: '平均成本／成交均價／持有均價（每股）' },
+              price: { type: 'number', description: '截圖上的現價／參考價（每股）' },
+              market_value: { type: 'number', description: '市值／參考市值／現值' },
+              cost_total: { type: 'number', description: '總成本／持有成本／付出成本' },
+              pl_amount: { type: 'number', description: '未實現損益金額（虧損為負數）' },
+              pl_pct: { type: 'number', description: '報酬率 %（虧損為負數，例 -3.25）' },
+            },
+            required: ['name'],
+          },
+        },
+      },
+      required: ['holdings'],
+    },
+  };
+  const VISION_PROMPT = `這些是券商 App 的庫存／持股截圖（可能多張、可能有重複的列）。請把每一檔持股整理出來：
+- 同一檔股票在不同截圖重複出現只列一次；同一檔在同一張圖有分「現股」「零股」「融資」就分開列。
+- 數字照畫面抄，千分位逗號去掉；紅綠色或 +/- 決定正負，虧損用負數。
+- 「張」要換成股（×1000）。美股可能有小數股。
+- 欄位對照：庫存股數/持有股數/庫存→shares；成交均價/持有均價/平均成本/成本均價→avg_cost；現價/市價/參考價→price；市值/參考市值/現值→market_value；總成本/持有成本/付出成本→cost_total；損益/未實現損益/參考損益→pl_amount；報酬率/損益率→pl_pct。
+- 不是持股的東西（帳戶總覽、交割款、廣告）不要列。`;
+
+  async function visionClaude(key, model, images, signal) {
+    const content = [...images.map(im => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } })), { type: 'text', text: VISION_PROMPT }];
+    const res = await fetch(URL, {
+      method: 'POST', signal,
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model, max_tokens: 4000, tools: [HOLD_TOOL], tool_choice: { type: 'tool', name: 'record_holdings' }, messages: [{ role: 'user', content }] }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = j.error && j.error.message || res.statusText;
+      if (res.status === 401) throw new Error('API 金鑰無效，請到設定確認');
+      if (res.status === 413 || /too large|size/i.test(msg)) throw new Error('圖片太大，請少選幾張再試');
+      if (res.status === 429) throw new Error('使用次數太頻繁或額度不足，稍後再試');
+      throw new Error(`AI 回應錯誤（${res.status}）：${msg}`);
+    }
+    const tool = (j.content || []).find(c => c.type === 'tool_use');
+    return (tool && tool.input && tool.input.holdings) || [];
+  }
+  async function visionGemini(key, model, images, signal) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+      method: 'POST', signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [...images.map(im => ({ inlineData: { mimeType: im.mime, data: im.data } })), { text: VISION_PROMPT + '\n只輸出 JSON：{"holdings":[...]}' }] }],
+        generationConfig: { responseMimeType: 'application/json', responseSchema: toGemini(HOLD_TOOL.input_schema), temperature: 0 },
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = (j.error && j.error.message) || res.statusText;
+      if (res.status === 400 && /API key|API_KEY/i.test(msg)) throw new Error('Gemini API 金鑰無效，請到設定確認');
+      if (res.status === 429) throw new Error('Gemini 使用次數已達上限，稍後再試');
+      throw new Error(`Gemini 回應錯誤（${res.status}）：${msg}`);
+    }
+    const txt = (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';
+    try { const o = JSON.parse(txt); return Array.isArray(o.holdings) ? o.holdings : []; } catch (e) { return []; }
+  }
+  // 一次最多送 5 張，多的分批
+  async function readHoldings(cfg, images, signal, onProgress) {
+    const out = [];
+    for (let i = 0; i < images.length; i += 5) {
+      const batch = images.slice(i, i + 5);
+      onProgress && onProgress(i, images.length);
+      const r = cfg.provider === 'gemini' ? await visionGemini(cfg.gkey, cfg.gmodel, batch, signal) : await visionClaude(cfg.key, cfg.model, batch, signal);
+      out.push(...r);
+    }
+    return out;
+  }
+
   function call(cfg, text, signal) {
     return cfg.provider === 'gemini' ? callGemini(cfg.gkey, cfg.gmodel, text, signal) : callClaude(cfg.key, cfg.model, text, signal);
   }
@@ -153,5 +239,5 @@ const AI = (() => {
   }
   const keyOf = cfg => cfg.provider === 'gemini' ? cfg.gkey : cfg.key;
 
-  return { call, test, keyOf, MODELS, GMODELS };
+  return { call, test, keyOf, readHoldings, MODELS, GMODELS };
 })();

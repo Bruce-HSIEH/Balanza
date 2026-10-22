@@ -114,49 +114,56 @@
 
     <!-- 設定 -->
     <section class="view" id="view-settings">
-      <h2><i data-ic="gear" data-size="26"></i> 設定</h2>
-      <div class="card">
-        <h3><i data-ic="star" data-size="22"></i> AI 理解（Claude／Gemini）</h3>
-        <div id="aiSet"></div>
+      <div class="set-top">
+        <button type="button" class="set-back" id="setBack" hidden aria-label="回設定">‹ 設定</button>
+        <h2 id="setTitle"><i data-ic="gear" data-size="26"></i> 設定</h2>
       </div>
-      <div class="card">
-        <h3><i data-ic="lock" data-size="22"></i> Face ID 加密鎖</h3>
-        <div id="lockSet"></div>
+      <div id="setMenu"></div>
+      <div class="set-page" data-page="ai" hidden>
+        <div class="card"><div id="aiSet"></div></div>
       </div>
-      <div class="card">
-        <label class="switch-row"><span><b>打開 App 時自動隱藏金額</b><small class="muted">避免一打開就被旁邊的人看到；點總覽淨資產旁的眼睛就能顯示</small></span>
-          <input type="checkbox" id="autoHide" class="switch"></label>
+      <div class="set-page" data-page="lock" hidden>
+        <div class="card"><div id="lockSet"></div></div>
       </div>
-      <div class="card">
-        <span class="flabel">幣別</span>
-        <button type="button" class="pickbtn" id="currencyBtn"></button>
-      </div>
-      <div class="card">
-        <h3><i data-ic="export" data-size="22"></i> 備份與還原</h3>
-        <p class="muted">資料只存在這支手機的瀏覽器裡，不會上傳到 GitHub。換手機或清除瀏覽器資料前請先匯出備份。</p>
-        <div class="btnrow">
-          <button id="exportBtn" class="btn"><i data-ic="export" data-size="18"></i> 匯出 JSON</button>
-          <label class="btn"><i data-ic="import" data-size="18"></i> 匯入 JSON<input type="file" id="importFile" accept="application/json" hidden></label>
+      <div class="set-page" data-page="privacy" hidden>
+        <div class="card">
+          <label class="switch-row"><span><b>打開 App 時自動隱藏金額</b><small class="muted">避免一打開就被旁邊的人看到；點總覽淨資產旁的眼睛就能顯示</small></span>
+            <input type="checkbox" id="autoHide" class="switch"></label>
         </div>
       </div>
-      <div class="card">
-        <h3><i data-ic="star" data-size="22"></i> 更新紀錄</h3>
-        <div id="clList"></div>
-        <button type="button" class="btn mini" id="clOpen">看全部版本</button>
+      <button type="button" class="pickbtn" id="currencyBtn" style="display:none"></button>
+      <div class="set-page" data-page="backup" hidden>
+        <div class="card">
+          <p class="muted">資料只存在這支手機的瀏覽器裡，不會上傳到 GitHub。換手機或清除瀏覽器資料前請先匯出備份。</p>
+          <div class="btnrow">
+            <button id="exportBtn" class="btn"><i data-ic="export" data-size="18"></i> 匯出 JSON</button>
+            <label class="btn"><i data-ic="import" data-size="18"></i> 匯入 JSON<input type="file" id="importFile" accept="application/json" hidden></label>
+          </div>
+        </div>
       </div>
-      <div class="card">
-        <h3><i data-ic="tw" data-size="22"></i> 股價</h3>
-        <p class="muted" id="stockStatus">讀取中…</p>
-        <p class="muted">台股（上市、上櫃、ETF）與美股（S&amp;P 500、熱門個股與 ETF）使用收盤價，不是盤中即時價。你的持股只存在手機裡；App 下載的是整個市場的公開報價檔。</p>
+      <div class="set-page" data-page="stocks" hidden>
+        <div class="card">
+          <p class="muted" id="stockStatus">讀取中…</p>
+          <p class="muted">台股（上市、上櫃、ETF）與美股（S&amp;P 500、熱門個股與 ETF）使用收盤價，不是盤中即時價。你的持股只存在手機裡；App 下載的是整個市場的公開報價檔。</p>
+        </div>
       </div>
-      <div class="card">
-        <h3><i data-ic="townhouse" data-size="22"></i> 實價登錄</h3>
-        <p class="muted" id="lvrStatus">讀取中…</p>
-        <p class="muted">資料來源：內政部不動產成交案件實際資訊（開放資料），每週自動更新。估價依路段成交單價中位數計算，僅供參考。</p>
+      <div class="set-page" data-page="lvr" hidden>
+        <div class="card">
+          <p class="muted" id="lvrStatus">讀取中…</p>
+          <p class="muted">資料來源：內政部不動產成交案件實際資訊（開放資料），每週自動更新。估價依路段成交單價中位數計算，僅供參考。</p>
+        </div>
       </div>
-      <div class="card">
-        <h3><i data-ic="warn" data-size="22"></i> 危險區</h3>
-        <button id="clearBtn" class="btn danger">清除所有資料</button>
+      <div class="set-page" data-page="changelog" hidden>
+        <div class="card">
+          <div id="clList"></div>
+          <button type="button" class="btn mini" id="clOpen">看全部版本</button>
+        </div>
+      </div>
+      <div class="set-page" data-page="danger" hidden>
+        <div class="card">
+          <p class="muted">會刪除這支手機上所有資產、負債、投資計畫與設定，無法復原。建議先到「備份與還原」匯出。</p>
+          <button id="clearBtn" class="btn danger">清除所有資料</button>
+        </div>
       </div>
       <div class="vp-diag" id="vpDiag"></div>
     </section>

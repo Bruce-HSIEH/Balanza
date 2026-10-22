@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.7.1';
+const APP_VERSION = '5.8.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -487,6 +487,7 @@ function showView(name) {
   if (name === 'levels') setTimeout(() => { const r = $('lvCurRow'); r && r.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 450);
   document.querySelectorAll('.fill[data-w]').forEach(f => { f.style.width = '0'; });
   growBars();
+  if (name === 'settings') openSetPage('');
   if (name !== 'levels') document.querySelector('main').scrollTo(0, 0);
 }
 document.querySelectorAll('.tabs button, .top-btn').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -1659,7 +1660,7 @@ $('autoHide').addEventListener('change', e => { prefs.autoHide = e.target.checke
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && prefs.autoHide && !hidden) { hidden = true; document.body.classList.add('privacy'); } });
 $('currencyBtn').addEventListener('click', async () => {
   const o = await UI.openPicker({ title: '幣別', options: CURRENCIES.map(c => opt(c.v, c.label, Icon(c.ic))), value: state.currency });
-  if (o) { state.currency = o.value; levelsKey = ''; save(); }
+  if (o) { state.currency = o.value; levelsKey = ''; save(); renderSetMenu(); }
 });
 
 $('exportBtn').addEventListener('click', () => {
@@ -1867,6 +1868,53 @@ $('clList').innerHTML = changelogHTML(CHANGELOG.slice(0, 3));
   }
 })();
 if (locked) showLock(true); else afterUnlock.splice(0).forEach(f => f());
+// ---- 設定：先列項目，點進去再看內容 ----
+const SET_GROUPS = [
+  ['安全與隱私', [
+    { p: 'lock', ic: 'lock', t: 'Face ID 加密鎖', s: () => Vault.info() ? '已啟用' : '未啟用' },
+    { p: 'privacy', ic: 'eye', t: '隱私', s: () => prefs.autoHide ? '開啟時自動隱藏金額' : '開啟時顯示金額' },
+  ]],
+  ['一般', [
+    { p: 'ai', ic: 'star', t: 'AI 理解', s: () => { const a = state.ai || {}; return !a.on ? '關閉' : AI.keyOf(a) ? (a.provider === 'gemini' ? 'Gemini' : 'Claude') : '尚未設定金鑰（使用內建規則）'; } },
+    { p: 'currency', ic: () => (CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0]).ic, t: '幣別', s: () => (CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0]).label },
+  ]],
+  ['資料', [
+    { p: 'backup', ic: 'export', t: '備份與還原', s: () => '匯出／匯入 JSON' },
+    { p: 'stocks', ic: 'chart', t: '股價資料', s: () => { const m = Stocks.info(); return m ? `台股 ${m.tw?.date || '—'}・美股 ${m.us?.date || '—'}` : '尚未載入'; } },
+    { p: 'lvr', ic: 'townhouse', t: '實價登錄資料', s: () => lvrSummary },
+  ]],
+  ['關於', [
+    { p: 'changelog', ic: 'sprout', t: '更新紀錄', s: () => 'v' + APP_VERSION },
+  ]],
+  ['', [
+    { p: 'danger', ic: 'warn', t: '清除所有資料', s: () => '', cls: 'danger' },
+  ]],
+];
+let lvrSummary = '讀取中…', setPage = '';
+function renderSetMenu() {
+  $('setMenu').innerHTML = SET_GROUPS.map(([g, items]) => `
+    ${g ? `<div class="set-group">${g}</div>` : '<div class="set-gap"></div>'}
+    <div class="set-list">${items.map(it => {
+      let sub = ''; try { sub = it.s(); } catch (e) { /* ignore */ }
+      const ic = typeof it.ic === 'function' ? it.ic() : it.ic;
+      return `<button type="button" class="set-row ${it.cls || ''}" data-sp="${it.p}">${Icon(ic)}<span class="set-t"><b>${esc(it.t)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span><i class="set-chev">›</i></button>`;
+    }).join('')}</div>`).join('');
+}
+function openSetPage(p) {
+  if (p === 'currency') { $('currencyBtn').click(); return; }
+  setPage = p;
+  const it = SET_GROUPS.flatMap(g => g[1]).find(x => x.p === p);
+  document.querySelectorAll('#view-settings .set-page').forEach(el => { el.hidden = el.dataset.page !== p; });
+  $('setMenu').hidden = !!p;
+  $('setBack').hidden = !p;
+  $('setTitle').innerHTML = p ? `<span class="ic-inline">${Icon.svg(typeof it.ic === 'function' ? it.ic() : it.ic, 26)}</span> ${esc(it.t)}` : `<span class="ic-inline">${Icon.svg('gear', 26)}</span> 設定`;
+  if (!p) renderSetMenu();
+  const v = $('view-settings'); v.classList.remove('set-in'); void v.offsetWidth; if (p) v.classList.add('set-in');
+  document.querySelector('main').scrollTo(0, 0);
+}
+document.addEventListener('click', e => { const r = e.target.closest('[data-sp]'); if (r) openSetPage(r.dataset.sp); });
+$('setBack').addEventListener('click', () => openSetPage(''));
+
 showView('home');
 render();
 Stocks.load().then(() => {
@@ -1877,8 +1925,8 @@ Stocks.load().then(() => {
   $('stockStatus').innerHTML = m ? `<b>台股 ${esc(m.tw?.date || '—')} 收盤</b>（${m.tw?.n || 0} 檔）、<b>美股 ${esc(m.us?.date || '—')} 收盤</b>（${m.us?.n || 0} 檔）<br>最後更新：${upd}<br>自動更新：週一～五 14:23（台股收盤後）、05:41（美股收盤後）` : '股價資料：尚未產生（GitHub Action 每天收盤後自動更新）';
   if ($('view-assets').classList.contains('active')) renderAssets(summary());
 });
-LVR.loadIndex().then(ix => { $('lvrStatus').innerHTML = `<b>成交資料：${esc(ix.seasons[0])}～${esc(ix.seasons.at(-1))}</b><br>最後更新：${esc(ix.updated.slice(0, 10))}<br>自動更新：每週一 03:17（內政部約每 10 天發布一批新成交）`; })
-  .catch(() => { $('lvrStatus').textContent = '實價登錄資料：尚未產生（GitHub Action 會自動下載）'; });
+LVR.loadIndex().then(ix => { lvrSummary = `更新到 ${ix.updated.slice(0, 10)}`; if (currentView === 'settings' && !setPage) renderSetMenu(); $('lvrStatus').innerHTML = `<b>成交資料：${esc(ix.seasons[0])}～${esc(ix.seasons.at(-1))}</b><br>最後更新：${esc(ix.updated.slice(0, 10))}<br>自動更新：每週一 03:17（內政部約每 10 天發布一批新成交）`; })
+  .catch(() => { lvrSummary = '尚未產生'; $('lvrStatus').textContent = '實價登錄資料：尚未產生（GitHub Action 會自動下載）'; });
 
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;

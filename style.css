@@ -769,4 +769,25 @@ main {
 .vc-err { display: flex; gap: 8px; align-items: center; font-size: 12.5px; background: #fff3e0; border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; }
 @media (prefers-color-scheme: dark) { .vc-err { background: #3a2a14; } .vc-ai { background: #2c2440; color: #c9b8ff; border-color: #4a3d73; } }
 .ai-key { flex: 1; min-width: 0; padding: 10px 11px; font-size: 15px; border-radius: 11px; border: 1.5px solid var(--line); background: var(--soft); color: var(--text); }
-#aiModel button small { display: block; font-size: 10.5px; color: var(--muted); font-weight: 400; }
+#aiModel button small, #aiProv button small { display: block; font-size: 10.5px; color: var(--muted); font-weight: 400; }
+
+/* ===== v5.8 設定：清單 → 內頁 ===== */
+.set-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.set-top h2 { margin: 2px 0 10px; flex: 1; }
+.set-back { border: 0; background: none; color: var(--accent, #2e9e6a); font: inherit; font-size: 15px; font-weight: 700; padding: 6px 8px 6px 0; margin-bottom: 8px; cursor: pointer; white-space: nowrap; }
+.set-group { font-size: 12.5px; color: var(--muted); margin: 14px 4px 6px; font-weight: 600; }
+.set-group:first-child { margin-top: 0; }
+.set-gap { height: 14px; }
+.set-list { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); overflow: hidden; }
+.set-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; position: relative; }
+.set-row + .set-row::before { content: ''; position: absolute; top: 0; left: 62px; right: 0; border-top: 1px solid var(--line); }
+.set-row:active { background: var(--soft, rgba(0,0,0,.04)); }
+.set-row .ico { width: 36px; height: 36px; flex: none; }
+.set-row .ico svg { width: 28px; height: 28px; }
+.set-t { flex: 1; min-width: 0; }
+.set-t b { display: block; font-size: 15px; font-weight: 600; }
+.set-t small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-chev { font-style: normal; color: var(--muted); font-size: 20px; line-height: 1; }
+.set-row.danger b { color: #e53935; }
+#view-settings.set-in .set-page:not([hidden]) { animation: setIn .28s ease both; }
+@keyframes setIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }

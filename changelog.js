@@ -2,6 +2,13 @@
 // 版本更新紀錄（App 內「更新紀錄」與 CHANGELOG.md 使用同一份內容）
 const CHANGELOG = [
   {
+    v: '5.8.0', date: '2026-10-22', title: '設定改成清單',
+    items: [
+      '設定頁先列出所有項目（分成安全與隱私、一般、資料、關於），每項顯示目前狀態，點進去才看到詳細內容，左上「‹ 設定」返回',
+      '幣別直接點就跳出選單；切換到別的分頁再回來會回到設定清單',
+    ],
+  },
+  {
     v: '5.7.1', date: '2026-10-22', title: '也可以用 Gemini',
     items: [
       'AI 理解可以選 Claude 或 Gemini：Gemini 金鑰到 Google AI Studio 申請，預設使用 Gemini 3.1 Flash-Lite',

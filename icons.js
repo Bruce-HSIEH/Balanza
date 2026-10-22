@@ -114,6 +114,7 @@ const Icon = (() => {
     star: `<path d="M24 5 l5.6 11.6 12.6 1.8 -9.1 8.9 2.2 12.6 -11.3 -6 -11.3 6 2.2 -12.6 -9.1 -8.9 12.6 -1.8z" fill="#ffd166" stroke="#ffd166" stroke-width="2" stroke-linejoin="round"/>${face(24, 23, .7)}`,
     up: `<circle cx="24" cy="24" r="17" fill="#ffd7d2"/><path d="M24 33 v-17 M16 23 l8 -8 8 8" stroke="#e53935" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
     down: `<circle cx="24" cy="24" r="17" fill="#d4f5dd"/><path d="M24 15 v17 M16 25 l8 8 8 -8" stroke="#2e9e4f" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+    eye: `<path d="M4 25 C10 13 38 13 44 25 C38 37 10 37 4 25z" fill="#e8f7fd" stroke="#7cc4e8" stroke-width="2.5"/><circle cx="24" cy="25" r="8" fill="#4a8fc4"/><circle cx="26.5" cy="22.5" r="2.4" fill="#fff"/><ellipse cx="12" cy="31" rx="2" ry="1.2" fill="#ff8fa3" opacity=".7"/><ellipse cx="36" cy="31" rx="2" ry="1.2" fill="#ff8fa3" opacity=".7"/>`,
     lock: `<rect x="10" y="21" width="28" height="20" rx="6" fill="#b5a6ff"/><path d="M16 21 v-5 a8 8 0 0 1 16 0 v5" stroke="#9b8cff" stroke-width="4" fill="none"/>${face(24, 30, .8)}`,
   };
 

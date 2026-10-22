@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.0.0';
+const APP_VERSION = '5.1.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -34,13 +34,34 @@ function save() {
   render();
 }
 
+// ---------- 隱藏金額 ----------
+const EYE_ON = '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="#e8f7fd" stroke="#4a8fc4" stroke-width="1.8"/><circle cx="12" cy="12" r="3.6" fill="#4a8fc4"/><circle cx="13.2" cy="10.8" r="1.1" fill="#fff"/></svg><span>隱藏</span>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="#f1f3f5" stroke="#90a4ae" stroke-width="1.8"/><path d="M4 4l16 16" stroke="#90a4ae" stroke-width="2" stroke-linecap="round"/></svg><span>顯示</span>';
+const PREFS_KEY = 'balanza.prefs';
+const prefs = (() => { try { return { autoHide: true, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch (e) { return { autoHide: true }; } })();
+const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
+let hidden = !!prefs.autoHide;
+const MASK = '••••••';
+function setHidden(h) {
+  hidden = h;
+  document.body.classList.toggle('privacy', hidden);
+  lastLv = null; levelsKey = '';
+  render();
+  if ($('editor').open) refreshForm();
+}
+
 // ---------- 格式 ----------
 function fmt(n, ccy = state.currency) {
+  if (hidden) return `$${MASK}`;
   const digits = ccy === 'JPY' || ccy === 'TWD' ? 0 : 2;
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: ccy, maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(n || 0);
 }
 const wan = n => Math.abs(n) >= 1e4 ? `${(n / 1e4).toFixed(Math.abs(n) >= 1e6 ? 0 : 1).replace(/\.0$/, '')} 萬` : Math.round(n).toLocaleString();
 function short(n) {
+  if (hidden) return MASK;
+  return shortRaw(n);
+}
+function shortRaw(n) {
   if (state.currency === 'TWD') {
     if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(1).replace(/\.0$/, '')} 億`;
     return wan(n);
@@ -138,6 +159,8 @@ function render() {
   if (L.lv !== lastLv || stress !== lastStress) {
     $('mascot').innerHTML = UI.mascotSVG(L, { stress });
     $('mascotCard').dataset.lv = L.lv;
+    $('mascotCard').style.setProperty('--g', L.lv > 0 ? Math.min(1, L.lv / 30).toFixed(2) : 0);
+    $('mascotCard').classList.toggle('glow', L.lv >= 7);
     lastLv = L.lv; lastStress = stress;
   }
   $('mascotLv').textContent = L.lv === 0 ? '' : `Lv.${L.lv} ${L.name}`;
@@ -145,6 +168,8 @@ function render() {
   $('mascotMsg').textContent = L.msg;
   $('mascotTip').textContent = L.lv === 0 ? '到「資產」「負債」新增資料叫醒牠' : `負債比 ${pct(s.debtRatio)}${stress ? '，負債偏重小秤在冒汗' : ''}`;
 
+  $('eyeBtn').innerHTML = hidden ? EYE_OFF : EYE_ON;
+  $('eyeBtn').setAttribute('aria-label', hidden ? '顯示金額' : '隱藏金額');
   UI.countTo($('netWorth'), s.netWorth, fmt);
   $('netWorth').classList.toggle('neg', s.netWorth < 0);
   UI.countTo($('totalAssets'), s.totalAssets, fmt);
@@ -263,11 +288,11 @@ function renderDebts(s) {
 
 // --- 等級 ---
 function rangeText(L, k) {
-  if (L.min === -Infinity) return `淨資產 ${short(L.max * k)} 以下`;
-  if (L.max === Infinity) return `淨資產 ${short(L.min * k)} 以上`;
-  if (L.min === 0) return `淨資產 0 ～ ${short(L.max * k)}`;
-  if (L.max === 0) return `淨資產 ${short(L.min * k)} ～ 0`;
-  return `淨資產 ${short(L.min * k)} ～ ${short(L.max * k)}`;
+  if (L.min === -Infinity) return `淨資產 ${shortRaw(L.max * k)} 以下`;
+  if (L.max === Infinity) return `淨資產 ${shortRaw(L.min * k)} 以上`;
+  if (L.min === 0) return `淨資產 0 ～ ${shortRaw(L.max * k)}`;
+  if (L.max === 0) return `淨資產 ${shortRaw(L.min * k)} ～ 0`;
+  return `淨資產 ${shortRaw(L.min * k)} ～ ${shortRaw(L.max * k)}`;
 }
 const nextLevel = L => L.lv === 0 || L.lv === 30 ? null : LEVELS.find(x => x.lv === (L.lv === -1 ? 1 : L.lv + 1));
 function levelProgress(L, nw, k) {
@@ -1047,6 +1072,11 @@ function toast(msg) {
 }
 
 // ---------- 設定 ----------
+$('eyeBtn').addEventListener('click', () => setHidden(!hidden));
+$('autoHide').checked = !!prefs.autoHide;
+$('autoHide').addEventListener('change', e => { prefs.autoHide = e.target.checked; savePrefs(); });
+// 切到背景再回來時，若設定為自動隱藏就重新遮住
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && prefs.autoHide && !hidden) { hidden = true; document.body.classList.add('privacy'); } });
 $('currencyBtn').addEventListener('click', async () => {
   const o = await UI.openPicker({ title: '幣別', options: CURRENCIES.map(c => opt(c.v, c.label, Icon(c.ic))), value: state.currency });
   if (o) { state.currency = o.value; levelsKey = ''; save(); }
@@ -1088,9 +1118,15 @@ $('mascot').addEventListener('click', () => {
   const m = $('mascot');
   m.classList.remove('poke'); void m.offsetWidth; m.classList.add('poke');
 });
+$('mascot').addEventListener('animationend', e => { if (e.animationName === 'poke') $('mascot').classList.remove('poke'); });
+// 回到 App 時重新開始動畫（有些手機在背景會暫停 SVG 動畫）
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { lastLv = null; levelsKey = ''; render(); }
+});
 
 // ---------- 啟動 ----------
 Icon.hydrate();
+document.body.classList.toggle('privacy', hidden);
 $('ver').textContent = 'v' + APP_VERSION;
 $('clList').innerHTML = changelogHTML(CHANGELOG.slice(0, 3));
 (() => {

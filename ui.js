@@ -218,8 +218,48 @@ const UI = (() => {
     return Array.from({ length: n }, (_, i) => `<path d="M${14 + i * 13} 128 q4 -6 8 0 t8 0" stroke="#90a4ae" stroke-width="2.4" fill="none" stroke-linecap="round"/>`).join('');
   }
 
+  // 氣勢光環：淨資產越高越亮（光暈、身體發光、金色火焰、上升光點、環繞星光、閃電）
+  function power(L, id) {
+    if (L.lv <= -13) {
+      const q = Math.min(1, (-L.lv - 12) / 18);
+      return { back: `<ellipse class="gloom" cx="110" cy="118" rx="${70 + q * 20}" ry="${56 + q * 14}" fill="#37474f" opacity="${.18 + q * .25}" filter="url(#${id}b)"/>`, inner: '', defs: `<filter id="${id}b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="${8 + q * 6}"/></filter>`, front: '' };
+    }
+    if (L.lv < 3) return { back: '', inner: '', defs: '', front: '' };
+    const p = Math.min(1, L.lv / 30);
+    const gc = L.lv >= 22 ? '#ffca28' : L.lv >= 10 ? '#ffd54f' : '#fff59d';
+    const defs = `<radialGradient id="${id}h"><stop offset="0" stop-color="${gc}" stop-opacity="${(.35 + p * .55).toFixed(2)}"/><stop offset=".55" stop-color="${gc}" stop-opacity="${(.12 + p * .25).toFixed(2)}"/><stop offset="1" stop-color="${gc}" stop-opacity="0"/></radialGradient>
+      <filter id="${id}b" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${(3 + p * 9).toFixed(1)}"/></filter>
+      <linearGradient id="${id}f" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff8f00"/><stop offset=".45" stop-color="#ffca28"/><stop offset=".8" stop-color="#fff59d" stop-opacity=".8"/><stop offset="1" stop-color="#fffde7" stop-opacity="0"/></linearGradient>`;
+    const R = 62 + p * 58;
+    let back = `<circle class="halo" cx="110" cy="114" r="${R.toFixed(0)}" fill="url(#${id}h)" style="--hd:${(2.4 - p).toFixed(2)}s"/>`;
+    let inner = `<path class="bglow" d="M110 64 C152 64 168 92 168 118 C168 144 144 156 110 156 C76 156 52 144 52 118 C52 92 68 64 110 64 Z" fill="${gc}" filter="url(#${id}b)" opacity="${(.55 + p * .45).toFixed(2)}" transform="translate(110 110) scale(${(1.04 + p * .14).toFixed(2)}) translate(-110 -110)" style="--hd:${(2 - p * .8).toFixed(2)}s"/>`;
+    let front = '';
+    if (L.lv >= 10) {
+      const n = 7 + Math.round(p * 9), len = 30 + p * 46, wd = 9 + p * 6;
+      for (let i = 0; i < n; i++) {
+        const a = Math.PI + (i + .5) * Math.PI / n;       // 上半圈
+        const x = 110 + Math.cos(a) * 46, y = 116 + Math.sin(a) * 38;
+        const ang = a * 180 / Math.PI - 270 + 180;   // 預設朝上（270°），轉到朝外
+        inner += `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${(ang - 180).toFixed(0)})"><path class="flame" d="M0 0 q${(-wd).toFixed(1)} ${(-len * .45).toFixed(1)} 0 ${(-len * (i % 2 ? .82 : 1)).toFixed(1)} q${wd.toFixed(1)} ${(len * .55).toFixed(1)} 0 ${(len * (i % 2 ? .82 : 1)).toFixed(1)}z" fill="url(#${id}f)" style="animation-delay:${(i * .13).toFixed(2)}s;--fd:${(.9 - p * .35).toFixed(2)}s"/></g>`;
+      }
+    }
+    if (L.lv >= 13) {
+      const n = 4 + Math.round(p * 6);
+      for (let i = 0; i < n; i++) front += `<circle class="rise" cx="${(56 + (i * 97) % 110).toFixed(0)}" cy="160" r="${(1.6 + (i % 3) * .7).toFixed(1)}" fill="#fff59d" style="animation-delay:${(i * .37 % 2.2).toFixed(2)}s"/>`;
+    }
+    if (L.lv >= 19) {
+      const n = 3 + L.sub + (L.lv >= 25 ? 2 : 0);
+      front += `<g class="orbit" style="--od:${(4 - p * 1.5).toFixed(2)}s">${Array.from({ length: n }, (_, i) => { const a = i * 2 * Math.PI / n; return `<g transform="translate(${(110 + Math.cos(a) * 78).toFixed(1)} ${(112 + Math.sin(a) * 30).toFixed(1)})">${Icon.spark(0, 0, 1.4, '#fffde7')}</g>`; }).join('')}</g>`;
+    }
+    if (L.lv >= 25) {
+      front += `<path class="zap" d="M40 96 l8 6 -5 2 9 8" stroke="#fff59d" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path class="zap" style="animation-delay:.7s" d="M180 90 l-8 7 5 2 -9 8" stroke="#fff59d" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+    return { back, inner, defs, front };
+  }
+
   function mascotSVG(L, opts = {}) {
     const look = LOOK[L.tier] || LOOK[0];
+    const pw = power(L, 'p' + Math.random().toString(36).slice(2, 8));
     const c = L.color;
     const behind = ['wings', 'cape'].filter(a => look.acc.includes(a)).map(a => ACC[a]()).join('');
     const pre = look.fx.filter(f => BACK_FX.includes(f)).map(f => FX[f]()).join('');
@@ -229,10 +269,12 @@ const UI = (() => {
     const front = look.acc.filter(a => !['sprout', 'cape', 'wings', 'tophat', 'crown', 'bigcrown'].includes(a)).map(a => ACC[a](L.sub)).join('');
     const stress = opts.stress && L.lv > 0 ? FX.sweat1() : '';
     const blush = L.tier <= -3 ? .25 : .6;
-    return `<svg viewBox="0 -12 220 182" class="mascot ${opts.still ? 'still' : ''}" role="img" aria-label="${esc(L.name)}">
-      ${pre}
+    return `<svg viewBox="0 -12 220 182" class="mascot ${opts.still ? 'still' : ''} ${L.lv >= 3 ? 'powered' : ''}" role="img" aria-label="${esc(L.name)}">
+      ${pw.defs ? `<defs>${pw.defs}</defs>` : ''}
+      ${pw.back}${pre}
       <ellipse class="shadow" cx="110" cy="160" rx="46" ry="6" fill="rgba(0,0,0,.12)"/>
       <g class="body ${look.anim}">
+        ${pw.inner}
         ${behind}
         <g fill="${c}">${ARMS[look.arms]}<ellipse cx="94" cy="155" rx="12" ry="6"/><ellipse cx="126" cy="155" rx="12" ry="6"/></g>
         <path d="M110 64 C152 64 168 92 168 118 C168 144 144 156 110 156 C76 156 52 144 52 118 C52 92 68 64 110 64 Z" fill="${c}"/>
@@ -242,7 +284,7 @@ const UI = (() => {
         <ellipse cx="142" cy="118" rx="8" ry="5" fill="#ff8a80" opacity="${blush}"/>
         ${EYES[look.eyes]}${MOUTH[look.mouth]}${front}
       </g>
-      ${post}${subMarks(L)}${stress}
+      ${post}${pw.front}${subMarks(L)}${stress}
     </svg>`;
   }
 
@@ -251,7 +293,7 @@ const UI = (() => {
   function countTo(el, to, fmt, ms = 700) {
     const from = lastVals.has(el) ? lastVals.get(el) : 0;
     lastVals.set(el, to);
-    if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
+    if (from === to) { el.textContent = fmt(to); return; }
     const t0 = performance.now();
     const step = t => {
       const p = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - p, 3);

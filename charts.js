@@ -22,7 +22,7 @@ const Charts = (() => {
     let bars = '', grid = '', xlab = '', marks = '', hits = '';
     for (const f of [0, .5, 1]) {
       const v = max * f, yy = y(v);
-      grid += `<line x1="${L}" y1="${yy.toFixed(1)}" x2="${width - R}" y2="${yy.toFixed(1)}" class="grid"/><text x="${L - 4}" y="${(yy + 3.5).toFixed(1)}" text-anchor="end" class="ax">${wanLabel(v)}</text>`;
+      grid += `<line x1="${L}" y1="${yy.toFixed(1)}" x2="${width - R}" y2="${yy.toFixed(1)}" class="grid"/><text x="${L - 4}" y="${(yy + 3.5).toFixed(1)}" text-anchor="end" class="ax ay">${wanLabel(v)}</text>`;
     }
     months.forEach((m, k) => {
       const x = L + k * bw;
@@ -73,8 +73,8 @@ const Charts = (() => {
       if (i === 0 || i === n - 1 || (n > 6 && i % Math.ceil(n / 5) === 0)) lab += `<text x="${(x + bw / 2).toFixed(1)}" y="${height - 6}" text-anchor="middle" class="ax">${r.ym.slice(2).replace('-', '/')}</text>`;
     });
     const grid = [0, .5, 1].map(f => `<line x1="${L}" y1="${(T + ph - f * ph).toFixed(1)}" x2="${width - R}" y2="${(T + ph - f * ph).toFixed(1)}" class="grid"/>
-      <text x="${L - 4}" y="${(T + ph - f * ph + 3.5).toFixed(1)}" text-anchor="end" class="ax">${wanLabel(maxC * f)}</text>
-      <text x="${width - R + 4}" y="${(T + ph - f * ph + 3.5).toFixed(1)}" class="ax ax-r">${wanLabel(maxI * f)}</text>`).join('');
+      <text x="${L - 4}" y="${(T + ph - f * ph + 3.5).toFixed(1)}" text-anchor="end" class="ax ay">${wanLabel(maxC * f)}</text>
+      <text x="${width - R + 4}" y="${(T + ph - f * ph + 3.5).toFixed(1)}" class="ax ax-r ay">${wanLabel(maxI * f)}</text>`).join('');
     const cur = current >= 0 ? `<rect x="${(L + current * bw).toFixed(1)}" y="${T - 4}" width="${bw.toFixed(1)}" height="${ph + 4}" class="sel"/>` : '';
     return `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${grid}${cur}${bars}
       <polyline class="iline" points="${pts.join(' ')}" fill="none"/>${pts.map(p => `<circle cx="${p.split(',')[0]}" cy="${p.split(',')[1]}" r="2.6" class="idot"/>`).join('')}${lab}</svg>`;

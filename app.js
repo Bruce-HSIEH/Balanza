@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.5.4';
+const APP_VERSION = '5.5.5';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -1538,6 +1538,9 @@ function pinSetup(changing) {
 }
 $('psCancel').addEventListener('click', () => $('pinDialog').close());
 renderLockSettings();
+
+// ---------- 主畫面 App 模式標記（給 iOS 26 畫面高度修正用，見 style.css） ----------
+if (navigator.standalone === true || matchMedia('(display-mode: standalone)').matches) document.documentElement.classList.add('standalone');
 
 // ---------- 畫面尺寸診斷（設定頁最下方） ----------
 function viewportDiag() {

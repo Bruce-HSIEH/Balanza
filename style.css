@@ -696,7 +696,11 @@ body.is-locked .tabs, body.is-locked .fab { visibility: hidden; }
 #lockSet .btnrow .btn { display: inline-flex; align-items: center; gap: 4px; }
 
 /* ===== v5.5.1 App 外殼：整頁固定，只有內容區捲動，底部選單永遠貼底 ===== */
-html { overflow: hidden; overscroll-behavior: none; }
+html { overscroll-behavior: none; }
+/* iOS 26 主畫面 App bug（WebKit 301108）：頁面比螢幕短時，iOS 會把畫面少算一個狀態列高度，底部留白。
+   讓頁面本身剛好和整個螢幕一樣高，iOS 就會給完整畫面（min() 避免不透明狀態列時多出可捲動空間） */
+@media (display-mode: standalone) { html { min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); } }
+html.standalone { min-height: min(100lvh, calc(100% + env(safe-area-inset-top))); }
 body {
   position: fixed; top: 0; right: 0; bottom: 0; left: 0;
   height: auto; overflow: hidden; overscroll-behavior: none;

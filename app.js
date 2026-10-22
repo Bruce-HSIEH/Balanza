@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.8.0';
+const APP_VERSION = '5.8.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -454,11 +454,20 @@ function openChangelog(onlyNew) {
   if (onlyNew && seen) { const i = CHANGELOG.findIndex(c => c.v === seen); if (i > 0) list = CHANGELOG.slice(0, i); }
   $('clTitle').innerHTML = `${Icon('star')} ${onlyNew ? `更新到 v${APP_VERSION} 了` : '更新紀錄'}`;
   $('clBody').innerHTML = changelogHTML(list);
-  $('clDialog').showModal();
-  try { localStorage.setItem('balanza.seenVersion', APP_VERSION); } catch (e) { /* ignore */ }
+  $('clClose').textContent = onlyNew ? '我知道了' : '關閉';
+  clOnlyNew = !!onlyNew;
+  if (!$('clDialog').open) $('clDialog').showModal();
 }
+// 新版說明要按「我知道了」才算看過；看過之前每次開 App 都會再顯示
+let clOnlyNew = false, pendingReload = false;
 $('ver').addEventListener('click', () => openChangelog(false));
-$('clClose').addEventListener('click', () => $('clDialog').close());
+$('clClose').addEventListener('click', () => {
+  if (clOnlyNew) try { localStorage.setItem('balanza.seenVersion', APP_VERSION); } catch (e) { /* ignore */ }
+  clOnlyNew = false;
+  $('clDialog').close();
+  if (pendingReload) location.reload();
+});
+$('clDialog').addEventListener('cancel', e => { if (clOnlyNew) e.preventDefault(); });
 $('clOpen').addEventListener('click', () => openChangelog(false));
 
 function growBars() {
@@ -1932,7 +1941,10 @@ if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
   let reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    // 新版說明開著的時候先不要重新整理，等使用者按「我知道了」
+    if ($('clDialog').open) pendingReload = true; else location.reload();
   });
   navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(() => {});
 }

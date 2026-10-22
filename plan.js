@@ -168,5 +168,43 @@ const Plan = (() => {
     return Math.min(max, 480);
   }
 
-  return { amounts, periodState, progress, investedBefore, drawnAt, revolvingStatus, status, project, horizonAll };
+  // 到今天為止已經繳出去的錢（依貸款條件／歷程回推）
+  // 回傳 { interest, principal, total, months, since, byYear: {YYYY: {i, p}}, estimated } 或 null（無法回推）
+  function paidSoFar(d, plans, today = new Date()) {
+    const out = { interest: 0, principal: 0, months: 0, since: null, byYear: {}, estimated: false };
+    const addM = (ym, i, p) => {
+      const y = ym.slice(0, 4);
+      (out.byYear[y] = out.byYear[y] || { i: 0, p: 0 });
+      out.byYear[y].i += i; out.byYear[y].p += p;
+      out.interest += i; out.principal += p; out.months++;
+      if (!out.since) out.since = ym;
+    };
+    if (d.mode === 'auto') {
+      const rows = Loan.schedule(d);
+      if (!rows.length) return null;
+      const k = Math.min(Loan.paidPeriods(d.startYM, n0(d.payDay), today), rows.length);
+      rows.slice(0, k).forEach(r => addM(r.ym, r.interest, r.principal));
+    } else if (d.mode === 'revolving') {
+      const cur = nowYM(today), r = n0(d.rate) / 100 / 12;
+      const linked = plans.filter(p => p.source === d.id && p.startYM);
+      const starts = linked.map(p => p.startYM).concat(n0(d.drawn) > 0 && d.drawnYM ? [d.drawnYM] : []);
+      if (!starts.length) return n0(d.drawn) > 0 ? null : out;
+      let ym = starts.reduce((a, b) => (ymDiff(a, b) < 0 ? b : a));
+      const payDay = Math.round(n0(d.payDay)) || 1;
+      const last = today.getDate() >= payDay ? cur : ymAdd(cur, -1);
+      ym = ymAdd(ym, 1);                                   // 動用後的下個月開始付息
+      for (let g = 0; ymDiff(ym, last) >= 0 && g < 600; g++, ym = ymAdd(ym, 1)) {
+        let bal = d.drawnYM && ymDiff(d.drawnYM, ym) > 0 ? n0(d.drawn) : 0;
+        for (const p of linked) bal += investedBefore(p, ym, cur);
+        if (n0(d.limit)) bal = Math.min(bal, n0(d.limit));
+        if (bal > 0) addM(ym, bal * r, 0);
+      }
+      out.estimated = true;
+      if (n0(d.drawn) > 0 && !d.drawnYM) out.partial = true;   // 計畫以外的動用不知道從何時開始
+    } else return null;
+    out.total = out.interest + out.principal;
+    return out;
+  }
+
+  return { amounts, periodState, progress, investedBefore, drawnAt, revolvingStatus, status, project, horizonAll, paidSoFar };
 })();

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.12.1';
+const APP_VERSION = '5.13.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -672,6 +672,7 @@ const FIELDS = {
     { k: 'balance', label: '剩餘本金', type: 'number', req: true, show: isManual, half: true },
     { k: 'monthly', label: '每月還款', type: 'number', req: true, show: isManual, half: true },
     { k: 'drawn', label: '已動用金額（投資計畫以外）', type: 'number', show: isRev, half: true, def: '0' },
+    { k: 'drawnYM', label: '這筆動用從哪個月開始（選填，用來算已繳利息）', type: 'month', show: v => isRev(v) && num(v.drawn) > 0 },
     { k: 'endYM', label: '額度到期年月（選填）', type: 'month', show: isRev, half: true },
     { panel: 'loanPanel', show: () => true },
     { panel: 'chgPanel', show: isAuto },
@@ -919,6 +920,7 @@ function drawLoanPanel() {
       <div class="kv"><span>目前每月利息</span><b class="accent">${fmt((st ? st.balance : num(d.drawn)) * r)}</b></div>
       <div class="kv"><span>每動用 100 萬，每月利息</span><span>${fmt(1e6 * r)}</span></div>
       ${num(d.limit) ? `<div class="kv"><span>全額動用每月利息</span><span class="neg">${fmt(num(d.limit) * r)}</span></div>` : ''}
+      ${(() => { const ps = d.id ? Plan.paidSoFar(d, state.plans) : null; return ps && ps.months ? `<div class="kv"><span>已繳利息（累計，估算）</span><span class="neg">${fmt(ps.interest)}</span></div>` : ''; })()}
       ${linked.length ? `<div class="small muted">已連結投資計畫：${linked.map(p => esc(p.name)).join('、')}（已動用會依投入進度自動增加）</div>`
         : `<div class="small muted">${d.id ? '' : '先儲存，'}到「投資」分頁新增計畫並把資金來源選這筆額度，已動用金額與利息就會依投入進度自動遞增。</div>`}`;
     return;
@@ -931,6 +933,8 @@ function drawLoanPanel() {
   if (s.inGrace) rows.push(['寬限期', `剩 ${s.graceLeft} 個月，${s.graceEndYM} 結束`], ['寬限期後月付', `<b class="neg">${fmt(s.afterGracePay)}</b>`]);
   rows.push(['預計還清', isFinite(s.monthsLeft) ? `${s.payoffYM}（剩 ${s.monthsLeft} 期）` : '<span class="neg">月付不足以還清</span>']);
   rows.push(['剩餘利息', isFinite(s.interestLeft) ? fmt(s.interestLeft) : '—']);
+  const ps = isAuto(d) ? Plan.paidSoFar(d, state.plans) : null;
+  if (ps && ps.months) rows.push(['已繳利息（累計）', `<span class="neg">${fmt(ps.interest)}</span>`], ['已還本金（累計）', `<span class="pos">${fmt(ps.principal)}</span>`]);
   el.innerHTML = `<div class="panel-title">${Icon('calc')} 試算結果</div>` + rows.map(([a, b]) => `<div class="kv"><span>${a}</span><span>${b}</span></div>`).join('');
 }
 
@@ -968,7 +972,8 @@ function drawChgPanel() {
       if (after) items.push({ ym: after.ym, ic: 'warn', t: '寬限期結束', d: '開始還本金', x: `月付 ${fmt(rows[g.to].pay)} → <b class="neg">${fmt(after.pay)}</b>`, auto: true, future: Loan.ymDiff(today, after.ym) > 0 });
     }
     const k = Math.min(Loan.paidPeriods(d.startYM, num(d.payDay)), rows.length);
-    if (k > 0 && k < rows.length) items.push({ ym: today, ic: 'pin', t: '現在', d: `已繳 ${k} 期，剩 ${rows.length - k} 期`, x: `剩餘本金 <b>${fmt(rows[k - 1].balance)}</b>・本月 ${fmt(rows[k].pay)}`, now: true });
+    if (k > 0 && k < rows.length) { const pi = rows.slice(0, k).reduce((t, r) => t + r.interest, 0), pp = rows.slice(0, k).reduce((t, r) => t + r.principal, 0);
+      items.push({ ym: today, ic: 'pin', t: '現在', d: `已繳 ${k} 期，剩 ${rows.length - k} 期・累計繳了利息 <span class="neg">${fmt(pi)}</span>、本金 <span class="pos">${fmt(pp)}</span>`, x: `剩餘本金 <b>${fmt(rows[k - 1].balance)}</b>・本月 ${fmt(rows[k].pay)}`, now: true }); }
     const last = rows.at(-1);
     items.push({ ym: last.ym, ic: 'heart', t: '還清', d: `共 ${rows.length} 期`, x: `總利息 ${fmt(rows.reduce((t, r) => t + r.interest, 0))}`, auto: true, future: true });
     items.sort((a, b) => Loan.ymDiff(b.ym, a.ym) || (a.now ? 1 : 0) - (b.now ? 1 : 0));
@@ -1212,6 +1217,41 @@ function renderHomeRepay() {
     <div class="hr-spark"><div class="small muted">未來 24 個月總月付</div>${spark}</div>`;
 }
 
+// 已經繳出去的錢
+let paidOpen = false;
+function paidCardHTML() {
+  const list = state.debts.map(d => ({ d, p: Plan.paidSoFar(d, state.plans) }));
+  const ok = list.filter(x => x.p && x.p.months);
+  const skipped = list.filter(x => !x.p).map(x => x.d.name);
+  if (!ok.length) return skipped.length ? `<div class="card paid-card"><h2>${Icon.svg('coin', 24)} 已經繳出去的錢</h2><p class="small muted">手動輸入的貸款沒有撥款條件，無法回推已繳金額；改用「自動試算」並填入撥款條件就看得到。</p></div>` : '';
+  const I = ok.reduce((t, x) => t + x.p.interest, 0), Pp = ok.reduce((t, x) => t + x.p.principal, 0), T = I + Pp;
+  const y = String(new Date().getFullYear());
+  const yi = ok.reduce((t, x) => t + (x.p.byYear[y]?.i || 0), 0), yp = ok.reduce((t, x) => t + (x.p.byYear[y]?.p || 0), 0);
+  const years = {};
+  ok.forEach(x => Object.entries(x.p.byYear).forEach(([k, v]) => { (years[k] = years[k] || { i: 0, p: 0 }); years[k].i += v.i; years[k].p += v.p; }));
+  const ys = Object.keys(years).sort();
+  const maxY = Math.max(1, ...ys.map(k => years[k].i + years[k].p));
+  const since = ok.map(x => x.p.since).sort()[0];
+  const ip = T ? I / T * 100 : 0;
+  return `<div class="card paid-card">
+    <h2>${Icon.svg('coin', 24)} 已經繳出去的錢</h2>
+    <div class="paid-total"><small>從 ${since.replace('-', '/')} 到現在，貸款一共繳了</small><b>${fmt(T)}</b></div>
+    <div class="paid-bar"><span class="pi" style="width:${ip.toFixed(1)}%"></span><span class="pp" style="width:${(100 - ip).toFixed(1)}%"></span></div>
+    <div class="paid-legend">
+      <div><span class="dot" style="--c:#ff7a59"></span>利息 <b class="neg">${fmt(I)}</b><small>付給銀行的成本，不會回來</small></div>
+      <div><span class="dot" style="--c:#2fbf71"></span>本金 <b class="pos">${fmt(Pp)}</b><small>還掉的債，變成你的淨資產</small></div>
+    </div>
+    <div class="kv paid-year"><span>${y} 年至今</span><span>利息 <b class="neg">${fmt(yi)}</b>・本金 ${fmt(yp)}</span></div>
+    <button type="button" class="link-btn" id="paidMore">${paidOpen ? '收起' : '看每筆貸款與每年明細'} ›</button>
+    ${paidOpen ? `<div class="paid-detail">
+      ${ok.map(x => `<div class="kv"><span><span class="dot" style="--c:${debtColor(x.d)}"></span>${esc(x.d.name)}<small class="muted"> ${x.p.since.replace('-', '/')} 起${x.p.estimated ? '・估算' : ''}</small></span><span>利息 <span class="neg">${fmt(x.p.interest)}</span>${x.p.principal ? `<br><small>本金 ${fmt(x.p.principal)}</small>` : ''}</span></div>`).join('')}
+      <div class="paid-years">${ys.map(k => { const v = years[k]; return `<div class="py"><span>${k}</span><div class="py-bar"><span class="pi" style="width:${(v.i / maxY * 100).toFixed(1)}%"></span><span class="pp" style="width:${(v.p / maxY * 100).toFixed(1)}%"></span></div><small>${short(v.i)} / ${short(v.p)}</small></div>`; }).join('')}</div>
+      <div class="small muted">每年：利息 / 本金。依撥款條件與貸款歷程推算，實際金額以銀行對帳單為準${ok.some(x => x.p.partial) ? '；理財型額度有「已動用金額」沒填開始月份的部分沒算進去' : ''}${skipped.length ? `；${skipped.map(esc).join('、')} 是手動輸入，無法回推` : ''}。</div>
+    </div>` : ''}
+  </div>`;
+}
+document.addEventListener('click', e => { if (e.target.closest('#paidMore')) { paidOpen = !paidOpen; renderRepay(); } });
+
 function renderRepay() {
   const el = $('repayBody');
   if (!state.debts.length) {
@@ -1249,6 +1289,7 @@ function renderRepay() {
       <div class="rs"><span>未來 12 個月合計</span><b>${fmt(next12)}</b></div>
       <div class="rs"><span>期間最高月付</span><b class="neg">${fmt(peak.total)}</b><small>${peak.ym.replace('-', '/')} 起</small></div>
     </div>
+    ${paidCardHTML()}
     <div class="card">
       <h2>${Icon.svg('warn', 24)} 重要時間點</h2>
       ${evAll.length ? evAll.map(e => eventHTML(e)).join('') : '<div class="empty">沒有即將發生的變化</div>'}

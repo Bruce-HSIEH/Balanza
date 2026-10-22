@@ -856,3 +856,22 @@ main {
 @keyframes spin { to { transform: rotate(360deg); } }
 .bk-tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 0 6px; border-radius: 6px; margin-right: 5px; background: #ffe1dc; color: #c62828; }
 .bk-tag.us { background: #dbeafe; color: #1e40af; }
+
+/* ===== v5.13 已經繳出去的錢 ===== */
+.paid-total { display: flex; flex-direction: column; margin: 4px 0 10px; }
+.paid-total small { color: var(--muted); font-size: 12.5px; }
+.paid-total b { font-size: 26px; font-variant-numeric: tabular-nums; }
+.paid-bar, .py-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--soft); }
+.paid-bar .pi, .py-bar .pi { background: #ff7a59; }
+.paid-bar .pp, .py-bar .pp { background: #2fbf71; }
+.paid-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 6px; font-size: 13px; }
+.paid-legend b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+.paid-legend small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.paid-detail { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.paid-detail .kv span:last-child { line-height: 1.35; }
+.paid-years { margin: 10px 0 6px; display: grid; gap: 6px; }
+.py { display: grid; grid-template-columns: 40px 1fr auto; gap: 8px; align-items: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.py .py-bar { height: 8px; background: none; }
+.py small { color: var(--muted); }
+.paid-year span:first-child { white-space: nowrap; }
+.paid-year { font-size: 13.5px; }

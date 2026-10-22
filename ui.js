@@ -115,6 +115,12 @@ const UI = (() => {
     worried: '<circle cx="92" cy="104" r="5" fill="#263238"/><circle cx="128" cy="104" r="5" fill="#263238"/>' + st('M83 92 L99 96') + st('M137 92 L121 96'),
     sad: '<circle cx="92" cy="106" r="5" fill="#263238"/><circle cx="128" cy="106" r="5" fill="#263238"/>' + st('M84 96 L99 92') + st('M136 96 L121 92'),
     cry: st('M85 100 L97 105 L85 110') + st('M135 100 L123 105 L135 110'),
+    wink: '<circle cx="92" cy="102" r="5.5" fill="#263238"/><circle cx="94" cy="100" r="1.8" fill="#fff"/>' + st('M120 104 Q128 96 136 104'),
+    heart: [92, 128].map(x => `<path d="M${x} 109 C${x - 11} 101 ${x - 7} 93 ${x} 98 C${x + 7} 93 ${x + 11} 101 ${x} 109 Z" fill="#ff4f7a"/>`).join(''),
+    star: [92, 128].map(x => `<path d="M${x} 93 l2.6 5.6 6 .8 -4.4 4.2 1.1 6 -5.3 -2.9 -5.3 2.9 1.1 -6 -4.4 -4.2 6 -.8z" fill="#ffb300" stroke="#263238" stroke-width="1.6" stroke-linejoin="round"/>`).join(''),
+    dizzy: [92, 128].map(x => `<path d="M${x} 102 m-1 0 a1.5 1.5 0 1 1 3 0 a3 3 0 1 1 -6 0 a4.6 4.6 0 1 1 9.2 0" stroke="#263238" stroke-width="2.2" fill="none" stroke-linecap="round"/>`).join(''),
+    teary: '<circle cx="92" cy="104" r="6" fill="#263238"/><circle cx="128" cy="104" r="6" fill="#263238"/><circle cx="94" cy="101" r="2.4" fill="#fff"/><circle cx="130" cy="101" r="2.4" fill="#fff"/><path d="M85 110 q7 3 14 0" stroke="#4fc3f7" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M121 110 q7 3 14 0" stroke="#4fc3f7" stroke-width="2.4" fill="none" stroke-linecap="round"/>' + st('M84 95 L99 92', 3) + st('M136 95 L121 92', 3),
+    closed: st('M85 104 L99 104') + st('M121 104 L135 104'),
     sparkle: '<circle cx="92" cy="102" r="6.5" fill="#263238"/><circle cx="128" cy="102" r="6.5" fill="#263238"/><circle cx="94.5" cy="99.5" r="2.4" fill="#fff"/><circle cx="130.5" cy="99.5" r="2.4" fill="#fff"/><circle cx="90" cy="105" r="1.1" fill="#fff"/><circle cx="126" cy="105" r="1.1" fill="#fff"/>',
   };
   const MOUTH = {
@@ -126,6 +132,12 @@ const UI = (() => {
     frown: st('M100 128 Q110 118 120 128'),
     wail: '<path d="M98 130 Q110 114 122 130 Z" fill="#8e2b2b"/>',
     o: '<ellipse cx="110" cy="123" rx="3.5" ry="2.8" fill="#263238"/>',
+    cat: st('M100 120 Q105 126 110 120 Q115 126 120 120'),
+    tongue: '<path d="M98 118 Q110 132 122 118 Z" fill="#c62828"/><path d="M106 124 q4 10 9 0 z" fill="#ff8a95"/>',
+    smirk: st('M102 122 Q114 126 121 117'),
+    gasp: '<ellipse cx="110" cy="125" rx="5.5" ry="7" fill="#8e2b2b"/>',
+    zigzag: st('M98 124 l4 -3 4 3 4 -3 4 3 4 -3 4 3', 3),
+    sigh: st('M101 125 Q110 121 119 125'),
   };
   const ARMS = {
     rest: '<ellipse cx="56" cy="118" rx="8" ry="12" transform="rotate(20 56 118)"/><ellipse cx="164" cy="118" rx="8" ry="12" transform="rotate(-20 164 118)"/>',
@@ -160,9 +172,51 @@ const UI = (() => {
     '-9': { eyes: 'cry', mouth: 'wail', arms: 'droop', anim: 'm-droop', fx: ['storm', 'rain', 'bolt', 'tears'], acc: ['chain'] },
     '-10': { eyes: 'cry', mouth: 'wail', arms: 'droop', anim: 'm-shiver', fx: ['abyss', 'storm', 'rain', 'bolt', 'tears'], acc: ['chain', 'bandage', 'patch'] },
   };
-  const BACK_FX = ['rays', 'rainbow', 'aura', 'abyss'];
+  const BACK_FX = ['rays', 'rainbow', 'aura', 'abyss', 'palm', 'galaxy', 'rope'];
+  // 每一級自己的表情、道具與特效（同階段相似但不相同）
+  const EXTRA = {
+    1: {}, 2: { fx: ['notes'] }, 3: { eyes: 'happy', fx: ['butterfly'] },
+    4: {}, 5: { acc: ['tea'], mouth: 'cat' }, 6: { eyes: 'happy', acc: ['balloon'], fx: ['notes'] },
+    7: {}, 8: { drop: ['coin'], acc: ['piggy'], eyes: 'wink' }, 9: { drop: ['coin'], acc: ['coinstack'], mouth: 'tongue' },
+    10: {}, 11: { fx: ['confetti'], eyes: 'wink' }, 12: { fx: ['hearts'], eyes: 'heart' },
+    13: {}, 14: { acc: ['monocle'], mouth: 'smirk' }, 15: { acc: ['cane'], fx: ['notes'], eyes: 'closed' },
+    16: {}, 17: { acc: ['drink'], mouth: 'tongue' }, 18: { acc: ['drink'], fx: ['palm'], eyes: 'star' },
+    19: {}, 20: { acc: ['goldchain'], mouth: 'smirk' }, 21: { drop: ['medal'], acc: ['trophy', 'goldchain'], eyes: 'star' },
+    22: {}, 23: { acc: ['scepter'] }, 24: { acc: ['scepter', 'gem'], eyes: 'star' },
+    25: {}, 26: { acc: ['goldbars'], eyes: 'star' }, 27: { acc: ['goldbars'], fx: ['confetti'], eyes: 'heart' },
+    28: {}, 29: { acc: ['halo', 'gem'] }, 30: { acc: ['halo', 'gem', 'scepter'], fx: ['galaxy'], eyes: 'star' },
+    '-1': {}, '-2': { fx: ['question'] }, '-3': { acc: ['calc'], mouth: 'zigzag' },
+    '-4': {}, '-5': { acc: ['pockets'], eyes: 'nervous' }, '-6': { acc: ['pockets'], fx: ['receipts'], eyes: 'dizzy' },
+    '-7': {}, '-8': { acc: ['leafbrella'], mouth: 'sigh' }, '-9': { acc: ['leafbrella'], fx: ['puddle'], eyes: 'teary' },
+    '-10': {}, '-11': { acc: ['brokenbrella'], mouth: 'gasp' }, '-12': { acc: ['brokenbrella'], fx: ['puddle'], eyes: 'teary' },
+    '-13': {}, '-14': { fx: ['smoke'], eyes: 'dizzy' }, '-15': { fx: ['smoke', 'crack'], mouth: 'gasp' },
+    '-16': {}, '-17': { drop: ['wallet'], acc: ['noodles'], mouth: 'sigh' }, '-18': { acc: ['iou'], fx: ['moths'], eyes: 'teary' },
+    '-19': {}, '-20': { acc: ['candle'], eyes: 'teary' }, '-21': { acc: ['candle', 'blanket'], mouth: 'zigzag' },
+    '-22': {}, '-23': { acc: ['icicles'], mouth: 'zigzag' }, '-24': { acc: ['icicles', 'snot'], eyes: 'closed' },
+    '-25': {}, '-26': { acc: ['stickers'], eyes: 'teary' }, '-27': { acc: ['stickers', 'chain2'], mouth: 'gasp' },
+    '-28': {}, '-29': { fx: ['ghosts'], eyes: 'dizzy' }, '-30': { fx: ['ghosts', 'rope'], eyes: 'teary', mouth: 'o' },
+  };
+  function lookOf(L) {
+    const base = LOOK[L.tier] || LOOK[0], x = EXTRA[L.lv] || {};
+    const drop = x.drop || [];
+    return { ...base, eyes: x.eyes || base.eyes, mouth: x.mouth || base.mouth, acc: base.acc.filter(a => !drop.includes(a)).concat(x.acc || []), fx: base.fx.concat(x.fx || []) };
+  }
 
   const FX = {
+    notes: () => [[34, 70, 0], [186, 58, 1.1]].map(([x, y, d]) => `<g class="zz" style="animation-delay:${d}s"><path d="M${x} ${y} v-14 l10 -3 v14" stroke="${INK}" stroke-width="2.4" fill="none" stroke-linejoin="round"/><ellipse cx="${x - 3}" cy="${y}" rx="4" ry="3" fill="${INK}"/><ellipse cx="${x + 7}" cy="${y - 3}" rx="4" ry="3" fill="${INK}"/></g>`).join(''),
+    hearts: () => [[30, 84, 0, '#ff6f91'], [190, 74, .8, '#ff8fab'], [176, 40, 1.6, '#ffb3c6']].map(([x, y, d, c]) => `<g class="zz" style="animation-delay:${d}s"><path d="M${x} ${y} c-8 -6 -5 -12 0 -8 c5 -4 8 2 0 8z" fill="${c}"/></g>`).join(''),
+    butterfly: () => `<g class="fly" style="transform-box:fill-box"><path d="M186 46 q-10 -10 -12 0 q2 8 12 0z M186 46 q10 -10 12 0 q-2 8 -12 0z" fill="#ffb3d1"/><path d="M186 40 v12" stroke="${INK}" stroke-width="1.6"/></g>`,
+    confetti: () => [[24, '#ff6f91', 0], [56, '#40c4ff', .4], [92, '#ffd54f', .9], [140, '#69f0ae', .2], [176, '#b388ff', .7], [200, '#ff8a65', 1.2]].map(([x, c, d], i) => `<rect class="coin" style="animation-delay:${d}s" x="${x}" y="0" width="${i % 2 ? 5 : 7}" height="${i % 2 ? 9 : 5}" rx="1.5" fill="${c}" transform="rotate(${i * 37} ${x} 0)"/>`).join(''),
+    palm: () => `<g opacity=".9"><path d="M196 160 q-6 -40 4 -70" stroke="#a1887f" stroke-width="6" fill="none" stroke-linecap="round"/><path d="M200 90 q-22 -8 -34 6 q18 -4 34 -6z M200 90 q-6 -22 -26 -24 q14 10 26 24z M200 90 q14 -18 30 -14 q-16 2 -30 14z" fill="#66bb6a"/></g>`,
+    galaxy: () => `<g class="orbit" style="--od:9s">${[0, 1, 2, 3, 4, 5].map(i => { const a = i * Math.PI / 3; return `<circle cx="${(110 + Math.cos(a) * 96).toFixed(1)}" cy="${(112 + Math.sin(a) * 40).toFixed(1)}" r="${i % 2 ? 3 : 5}" fill="${['#b388ff', '#80d8ff', '#ff8a80'][i % 3]}"/>`; }).join('')}</g><ellipse cx="110" cy="112" rx="96" ry="40" fill="none" stroke="#e1bee7" stroke-width="1.5" stroke-dasharray="3 5" opacity=".8"/>`,
+    question: () => [[40, 70, 0], [176, 58, .9]].map(([x, y, d]) => `<text class="zz" style="animation-delay:${d}s" x="${x}" y="${y}" font-size="20" font-weight="800" fill="#ff8a65">?</text>`).join(''),
+    receipts: () => [[30, 0], [80, .7], [150, .3], [196, 1.1]].map(([x, d]) => `<g class="coin" style="animation-delay:${d}s"><rect x="${x - 7}" y="-6" width="14" height="18" rx="2" fill="#fff" stroke="#cfd8dc"/><path d="M${x - 4} 0 h8 M${x - 4} 4 h8 M${x - 4} 8 h5" stroke="#e57373" stroke-width="1.4"/></g>`).join(''),
+    puddle: () => `<ellipse cx="110" cy="164" rx="66" ry="7" fill="#81d4fa" opacity=".55"/><ellipse class="spark" cx="78" cy="163" rx="9" ry="2.2" fill="none" stroke="#4fc3f7" stroke-width="1.4"/><ellipse class="spark" style="animation-delay:.6s" cx="148" cy="165" rx="7" ry="1.8" fill="none" stroke="#4fc3f7" stroke-width="1.4"/>`,
+    smoke: () => [[86, 58, 0], [130, 54, .8]].map(([x, y, d]) => `<g class="zz" style="animation-delay:${d}s"><circle cx="${x}" cy="${y}" r="6" fill="#b0bec5"/><circle cx="${x + 6}" cy="${y - 5}" r="5" fill="#cfd8dc"/></g>`).join(''),
+    crack: () => `<path d="M60 166 l14 -4 6 5 12 -6 8 4 14 -5 10 6 14 -4 12 5" stroke="#5d4037" stroke-width="2.4" fill="none" stroke-linejoin="round"/>`,
+    moths: () => [[150, 128, 0], [168, 110, .7]].map(([x, y, d]) => `<g class="zz" style="animation-delay:${d}s"><path d="M${x} ${y} q-7 -6 -9 1 q4 4 9 -1z M${x} ${y} q7 -6 9 1 q-4 4 -9 -1z" fill="#bcaaa4"/></g>`).join(''),
+    ghosts: () => [[30, 60, 0], [190, 70, 1.2]].map(([x, y, d]) => `<g class="zz" style="animation-delay:${d}s"><path d="M${x - 10} ${y + 12} v-12 a10 10 0 0 1 20 0 v12 l-5 -4 -5 4 -5 -4z" fill="#eceff1" opacity=".9"/><text x="${x}" y="${y + 6}" text-anchor="middle" font-size="9" font-weight="800" fill="#546e7a">債</text></g>`).join(''),
+    rope: () => `<g class="held"><path d="M150 -12 Q146 30 150 74" stroke="#bcaaa4" stroke-width="4" fill="none" stroke-dasharray="6 3"/><circle cx="150" cy="-6" r="10" fill="#fff59d" opacity=".55"/></g>`,
     coins: () => [[30, 0], [70, .6], [150, .3], [190, .9], [110, 1.3], [50, 1.7], [170, 2.0]].map(([x, d]) =>
       `<g class="coin" style="animation-delay:${d}s">${Icon.coin(x, 0, 7)}</g>`).join(''),
     sparks: () => [[40, 50], [184, 64], [158, 14], [24, 96]].map(([x, y], i) => `<g class="spark" style="animation-delay:${i * .35}s">${Icon.spark(x, y, 1.6, '#fff59d')}</g>`).join(''),
@@ -190,6 +244,31 @@ const UI = (() => {
   };
 
   const ACC = {
+    tea: () => `<g class="held"><path d="M168 108 l3 32 h14 l3 -32z" fill="#f3e5d0" stroke="#bcaaa4" stroke-width="1.5"/><path d="M169 118 h18" stroke="#c49a6c" stroke-width="10" opacity=".55"/><circle cx="174" cy="136" r="2" fill="#4e342e"/><circle cx="180" cy="134" r="2" fill="#4e342e"/><circle cx="183" cy="137" r="2" fill="#4e342e"/><path d="M180 108 l6 -14" stroke="#ff8a65" stroke-width="3" stroke-linecap="round"/></g>`,
+    balloon: () => `<g class="held"><path d="M170 116 Q178 90 182 64" stroke="#90a4ae" stroke-width="1.5" fill="none"/><ellipse cx="184" cy="48" rx="13" ry="16" fill="#ff8fab"/><path d="M181 63 l3 4 3 -4z" fill="#ff8fab"/><ellipse cx="179" cy="42" rx="3" ry="5" fill="#fff" opacity=".5"/></g>`,
+    piggy: () => `<g class="held"><ellipse cx="110" cy="146" rx="20" ry="14" fill="#ffb3c6"/><circle cx="128" cy="142" r="7" fill="#ff9ab4"/><circle cx="130" cy="142" r="1.5" fill="#c2185b"/><path d="M102 133 l4 -6 4 6z" fill="#ff9ab4"/><rect x="104" y="133" width="10" height="2.5" rx="1" fill="#c2185b"/><circle cx="98" cy="144" r="1.6" fill="${INK}"/></g>`,
+    coinstack: () => `<g class="held">${[0, 1, 2, 3].map(i => `<ellipse cx="110" cy="${154 - i * 6}" rx="15" ry="5" fill="#ffca28" stroke="#f9a825" stroke-width="1.5"/>`).join('')}${Icon.coin(110, 124, 10)}</g>`,
+    monocle: () => `<g><circle cx="128" cy="102" r="10" fill="#fff" fill-opacity=".25" stroke="#c49a00" stroke-width="2.5"/><path d="M138 106 Q146 120 140 134" stroke="#c49a00" stroke-width="1.5" fill="none"/></g>`,
+    cane: () => `<g class="held"><path d="M172 160 V100 q0 -12 10 -12 q8 0 8 8" stroke="#5d4037" stroke-width="5" fill="none" stroke-linecap="round"/><circle cx="172" cy="100" r="3" fill="#ffca28"/></g>`,
+    drink: () => `<g class="held"><path d="M166 104 h26 l-10 16 v14 h6 v4 h-16 v-4 h6 v-14z" fill="#80deea" fill-opacity=".7" stroke="#4dd0e1" stroke-width="1.5"/><path d="M168 106 h22 l-6 9 h-10z" fill="#ff8a65"/><path d="M182 104 l8 -16" stroke="#7cb342" stroke-width="2"/><path d="M180 90 q10 -8 16 2 z" fill="#ff5252"/></g>`,
+    goldchain: () => `<g><path d="M78 128 Q110 150 142 128" stroke="#ffca28" stroke-width="4" fill="none" stroke-dasharray="4 2"/><circle cx="110" cy="144" r="7" fill="#ffd54f" stroke="#f9a825" stroke-width="2"/><text x="110" y="147.5" text-anchor="middle" font-size="9" font-weight="800" fill="#a17400">$</text></g>`,
+    trophy: () => `<g class="held"><path d="M98 128 h24 v6 q0 14 -12 16 q-12 -2 -12 -16z" fill="#ffca28" stroke="#f9a825" stroke-width="2"/><path d="M98 132 q-8 0 -6 8 q2 4 8 4 M122 132 q8 0 6 8 q-2 4 -8 4" stroke="#f9a825" stroke-width="2" fill="none"/><rect x="104" y="150" width="12" height="4" fill="#a1887f"/><rect x="100" y="154" width="20" height="5" rx="1" fill="#8d6e63"/></g>`,
+    scepter: () => `<g class="held"><path d="M174 164 L184 92" stroke="#ffb300" stroke-width="5" stroke-linecap="round"/><circle cx="185" cy="86" r="8" fill="#e040fb" stroke="#ffca28" stroke-width="3"/><circle cx="183" cy="84" r="2.5" fill="#fff" opacity=".7"/></g>`,
+    gem: () => `<g class="held"><path d="M28 70 l10 -10 h16 l10 10 -18 22z" fill="#80deea" stroke="#26c6da" stroke-width="2" stroke-linejoin="round"/><path d="M28 70 h36 M38 60 l8 32 M54 60 l-8 32" stroke="#26c6da" stroke-width="1.2"/></g><g class="spark">${Icon.spark(60, 56, 1.3, '#fff')}</g>`,
+    goldbars: () => `<g>${[[70, 150], [96, 150], [83, 140], [150, 152]].map(([x, y]) => `<path d="M${x} ${y} l4 -8 h16 l4 8z" fill="#ffca28" stroke="#f9a825" stroke-width="1.5"/>`).join('')}</g>`,
+    halo: () => `<g class="crown"><ellipse cx="110" cy="${30}" rx="26" ry="7" fill="none" stroke="#fff59d" stroke-width="5"/><ellipse cx="110" cy="30" rx="26" ry="7" fill="none" stroke="#ffd54f" stroke-width="1.6"/></g>`,
+    calc: () => `<g class="held"><rect x="98" y="130" width="24" height="28" rx="4" fill="#78909c"/><rect x="101" y="133" width="18" height="7" rx="1.5" fill="#c5e1a5"/>${[0, 1, 2].map(r => [0, 1, 2].map(c => `<rect x="${102 + c * 6}" y="${143 + r * 5}" width="4" height="3" rx=".8" fill="#eceff1"/>`).join('')).join('')}</g>`,
+    pockets: () => `<g><path d="M62 132 q-8 10 2 16 q8 -2 8 -12z" fill="#eceff1" stroke="#b0bec5" stroke-width="1.5"/><path d="M158 132 q8 10 -2 16 q-8 -2 -8 -12z" fill="#eceff1" stroke="#b0bec5" stroke-width="1.5"/></g>`,
+    leafbrella: () => `<g class="held"><path d="M70 60 Q110 20 150 60 Q130 52 110 58 Q90 52 70 60z" fill="#81c784"/><path d="M110 58 V38" stroke="#4caf50" stroke-width="1.5"/></g>`,
+    brokenbrella: () => `<g class="held"><path d="M176 156 V96" stroke="#5d4037" stroke-width="3"/><path d="M176 96 L158 70 L170 84 L176 66 L182 84 L194 70z" fill="#7986cb" stroke="#5c6bc0" stroke-width="1.5" stroke-linejoin="round"/></g>`,
+    noodles: () => `<g class="held"><path d="M94 132 h32 l-4 24 h-24z" fill="#fff" stroke="#e57373" stroke-width="2"/><path d="M96 138 h28" stroke="#e57373" stroke-width="3"/><path d="M104 132 q3 -8 0 -14 M112 132 q3 -8 0 -14" stroke="#ffe082" stroke-width="2.5" fill="none"/><text x="110" y="151" text-anchor="middle" font-size="8" font-weight="800" fill="#e57373">泡麵</text></g>`,
+    iou: () => `<g transform="rotate(12 150 130)"><rect x="138" y="118" width="26" height="20" rx="2" fill="#fffde7" stroke="#e0c27a"/><text x="151" y="132" text-anchor="middle" font-size="9" font-weight="800" fill="#c62828">借據</text></g>`,
+    candle: () => `<g><rect x="176" y="132" width="9" height="26" rx="2" fill="#fff8e1" stroke="#e0c27a"/><path class="spark" d="M180.5 118 q5 6 0 12 q-5 -6 0 -12z" fill="#ffb300"/><circle cx="180.5" cy="126" r="16" fill="#fff59d" opacity=".25"/></g>`,
+    blanket: () => `<path d="M56 136 Q110 126 164 136 L162 156 Q110 166 58 156 Z" fill="#9575cd"/><path d="M70 136 v20 M90 132 v26 M110 131 v28 M130 132 v26 M150 136 v20" stroke="#b39ddb" stroke-width="3" opacity=".7"/><path d="M56 136 Q110 126 164 136" stroke="#7e57c2" stroke-width="3" fill="none"/>`,
+    icicles: () => `<g>${[74, 88, 100, 122, 136, 150].map((x, i) => `<path d="M${x} ${70 + Math.abs(110 - x) * .2} l3 ${10 + (i % 3) * 4} l3 -${10 + (i % 3) * 4}z" fill="#e1f5fe" stroke="#81d4fa" stroke-width="1"/>`).join('')}</g>`,
+    snot: () => `<g class="spark"><circle cx="118" cy="114" r="6" fill="#b3e5fc" fill-opacity=".75" stroke="#81d4fa"/></g>`,
+    stickers: () => `<g>${[[74, 96, -14], [140, 132, 10]].map(([x, y, r]) => `<g transform="rotate(${r} ${x} ${y})"><rect x="${x - 11}" y="${y - 7}" width="22" height="14" rx="2" fill="#fff9c4" stroke="#e0c27a"/><text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="8" font-weight="800" fill="#c62828">欠款</text></g>`).join('')}</g>`,
+    chain2: () => `<g><path d="M90 158 Q66 168 46 160" stroke="#78909c" stroke-width="3" fill="none" stroke-dasharray="5 3"/><circle class="ball" cx="36" cy="154" r="11" fill="#455a64"/><text x="36" y="158" text-anchor="middle" font-size="9" font-weight="800" fill="#cfd8dc">卡</text></g>`,
     sprout: sub => `<g class="sprout"><path d="M110 64 v-14" stroke="#5cc485" stroke-width="3.5" stroke-linecap="round"/><path d="M110 54 c-14 0 -16 -12 -15 -16 c9 -1 15 5 15 16z" fill="#8ce0a8"/>${sub >= 1 ? '<path d="M110 52 c12 0 15 -10 14 -14 c-8 -1 -14 4 -14 14z" fill="#b8f0c8"/>' : ''}${sub >= 2 ? '<circle cx="110" cy="44" r="6" fill="#ffb3c1"/><circle cx="110" cy="44" r="2.5" fill="#ffe066"/>' : ''}</g>`,
     antenna: c => `<path d="M110 64 L110 54" stroke="${INK}" stroke-width="3.5" stroke-linecap="round"/><circle cx="110" cy="51" r="5" fill="${c}"/>`,
     coin: () => `<g class="held">${Icon.coin(110, 140, 13)}</g>`,
@@ -289,7 +368,7 @@ const UI = (() => {
   }
 
   function mascotSVG(L, opts = {}) {
-    const look = LOOK[L.tier] || LOOK[0];
+    const look = lookOf(L);
     const pw = power(L, 'p' + Math.random().toString(36).slice(2, 8));
     const c = L.color;
     const behind = ['wings', 'cape'].filter(a => look.acc.includes(a)).map(a => ACC[a]()).join('');
@@ -304,7 +383,7 @@ const UI = (() => {
       ${pw.defs ? `<defs>${pw.defs}</defs>` : ''}
       ${pw.back}${pre}
       <ellipse class="shadow" cx="110" cy="160" rx="46" ry="6" fill="rgba(0,0,0,.12)"/>
-      <g class="body ${look.anim}" data-anim="${opts.still ? '' : look.anim}">
+      <g class="body ${look.anim}" data-anim="${opts.still ? '' : look.anim}" data-q="${L.sub || 0}" data-lv="${L.lv}">
         ${behind}
         <g fill="${c}">${ARMS[look.arms]}<ellipse cx="94" cy="155" rx="12" ry="6"/><ellipse cx="126" cy="155" rx="12" ry="6"/></g>
         <path d="M110 64 C152 64 168 92 168 118 C168 144 144 156 110 156 C76 156 52 144 52 118 C52 92 68 64 110 64 Z" fill="${c}"/>
@@ -337,7 +416,25 @@ const UI = (() => {
     document.querySelectorAll('svg.mascot.js:not(.still) g.body[data-anim]').forEach(g => {
       const f = MOTION[g.dataset.anim];
       if (!f) return;
-      const m = f(now);
+      // 同一階段：越高級動作越快越大；負的越深越沉
+      const q = +g.dataset.q || 0, lv = +g.dataset.lv || 0;
+      const sp = lv > 0 ? 1 + q * .14 : 1 - q * .1;
+      const m = f(now * sp);
+      const amp = lv > 0 ? 1 + q * .22 : 1 + q * .3;
+      if (m.ty) m.ty *= amp; if (m.r) m.r *= amp; if (m.tx) m.tx *= amp;
+      if (q === 2 && lv >= 7) {                         // 每階最高級：每 5 秒轉一圈
+        const ph = (now % 5000) / 5000;
+        if (ph > .88) { const u = (ph - .88) / .12, e = u * u * (3 - 2 * u), c = Math.cos(e * TAU); m.sx = (m.sx || 1) * (Math.abs(c) < .12 ? .12 * Math.sign(c || 1) : c); m.ty = (m.ty || 0) - 8 * Math.sin(u * Math.PI); }
+      } else if (q === 1 && lv >= 4) {                  // 中間級：每 4 秒左右歪頭
+        const ph = (now % 4000) / 4000;
+        if (ph > .8) m.r = (m.r || 0) + 10 * Math.sin((ph - .8) / .2 * Math.PI) * (lv % 2 ? 1 : -1);
+      } else if (q === 2 && lv <= -3) {                 // 負的每階最低級：每 5 秒嘆一口氣（被壓扁）
+        const ph = (now % 5000) / 5000;
+        if (ph > .82) { const u = Math.sin((ph - .82) / .18 * Math.PI); m.sy = (m.sy || 1) * (1 - .1 * u); m.sx = (m.sx || 1) * (1 + .08 * u); m.ty = (m.ty || 0) + 3 * u; }
+      } else if (q === 1 && lv <= -2) {                 // 負的中間級：偶爾左右張望
+        const ph = (now % 4500) / 4500;
+        if (ph > .75) m.tx = (m.tx || 0) + 4 * Math.sin((ph - .75) / .25 * Math.PI * 2);
+      }
       const pk = +(g.dataset.poke || 0);
       if (pk && now - pk < 520) {                      // 被戳一下：跳起來再彈回
         const q = (now - pk) / 520, up = Math.sin(q * Math.PI);

@@ -300,11 +300,11 @@ const UI = (() => {
     const front = look.acc.filter(a => !['sprout', 'cape', 'wings', 'tophat', 'crown', 'bigcrown'].includes(a)).map(a => ACC[a](L.sub)).join('');
     const stress = opts.stress && L.lv > 0 ? FX.sweat1() : '';
     const blush = L.tier <= -3 ? .25 : .6;
-    return `<svg viewBox="0 -12 220 182" class="mascot ${opts.still ? 'still' : ''} ${L.lv >= 3 ? 'powered' : ''}" role="img" aria-label="${esc(L.name)}">
+    return `<svg viewBox="0 -12 220 182" class="mascot js ${opts.still ? 'still' : ''} ${L.lv >= 3 ? 'powered' : ''}" role="img" aria-label="${esc(L.name)}">
       ${pw.defs ? `<defs>${pw.defs}</defs>` : ''}
       ${pw.back}${pre}
       <ellipse class="shadow" cx="110" cy="160" rx="46" ry="6" fill="rgba(0,0,0,.12)"/>
-      <g class="body ${look.anim}">
+      <g class="body ${look.anim}" data-anim="${opts.still ? '' : look.anim}">
         ${behind}
         <g fill="${c}">${ARMS[look.arms]}<ellipse cx="94" cy="155" rx="12" ry="6"/><ellipse cx="126" cy="155" rx="12" ry="6"/></g>
         <path d="M110 64 C152 64 168 92 168 118 C168 144 144 156 110 156 C76 156 52 144 52 118 C52 92 68 64 110 64 Z" fill="${c}"/>
@@ -318,6 +318,47 @@ const UI = (() => {
       ${post}${pw.front}${subMarks(L)}${stress}
     </svg>`;
   }
+
+  // ---------- 主體動作：由 JS 每一格計算（不依賴 CSS 動畫，手機瀏覽器也不會停） ----------
+  const TAU = Math.PI * 2;
+  const ease = x => .5 - .5 * Math.cos(x * TAU);          // 0→1→0
+  const MOTION = {
+    'm-bounce': t => { const ph = (t / 900) % 1, up = Math.sin(ph * Math.PI); return { ty: -20 * up, sx: 1 + .08 * (1 - up) - .05 * up, sy: 1 - .08 * (1 - up) + .06 * up }; },
+    'm-bounce-big': t => { const ph = (t / 800) % 1, up = Math.sin(ph * Math.PI); return { ty: -28 * up, sx: 1.1 - .16 * up, sy: .9 + .18 * up, r: -3 * up }; },
+    'm-hop': t => { const ph = (t / 1300) % 1; if (ph < .6) return {}; const q = (ph - .6) / .4, up = Math.sin(q * Math.PI); return { ty: -10 * up, sx: 1 + .05 * Math.sin(q * TAU), sy: 1 - .05 * Math.sin(q * TAU) }; },
+    'm-sway': t => { const ph = (t / 2400) % 1; return { r: 5 * Math.sin(ph * TAU), ty: -3 * ease(ph * 2 % 1) }; },
+    'm-breathe': t => { const e = ease((t / 3000) % 1); return { sx: 1 + .03 * e, sy: 1 - .03 * e }; },
+    'm-fidget': t => { const ph = (t / 2200) % 1; return { r: ph < .6 ? 3 * Math.sin(ph / .6 * TAU * 1.5) * (1 - ph / .6) : 0 }; },
+    'm-shake': t => { const ph = (t / 1600) % 1; return { tx: ph > .6 && ph < .82 ? 3 * Math.sin((ph - .6) * 90) : 0 }; },
+    'm-droop': t => { const e = ease((t / 3200) % 1); return { sx: 1.04 + .03 * e, sy: .94 - .04 * e, ty: 2 * e }; },
+    'm-shiver': t => { const e = ease((t / 3200) % 1); return { tx: 1.5 * Math.sin(t / 40), sx: 1.04 + .03 * e, sy: .94 - .04 * e, ty: 2 * e }; },
+  };
+  function tick(now) {
+    document.querySelectorAll('svg.mascot.js:not(.still) g.body[data-anim]').forEach(g => {
+      const f = MOTION[g.dataset.anim];
+      if (!f) return;
+      const m = f(now);
+      const pk = +(g.dataset.poke || 0);
+      if (pk && now - pk < 520) {                      // 被戳一下：跳起來再彈回
+        const q = (now - pk) / 520, up = Math.sin(q * Math.PI);
+        m.ty = (m.ty || 0) - 24 * up; m.sx = (m.sx || 1) * (1 - .08 * up + .1 * Math.max(0, q - .6)); m.sy = (m.sy || 1) * (1 + .1 * up);
+      }
+      g.setAttribute('transform', `translate(${(110 + (m.tx || 0)).toFixed(2)} ${(156 + (m.ty || 0)).toFixed(2)}) rotate(${(m.r || 0).toFixed(2)}) scale(${(m.sx || 1).toFixed(3)} ${(m.sy || 1).toFixed(3)}) translate(-110 -156)`);
+    });
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  function poke(svg) { const g = svg && svg.querySelector('g.body'); if (g) g.dataset.poke = performance.now(); }
+
+  // 看門狗：其他特效若被瀏覽器暫停就繼續播放
+  function wake(root = document) {
+    root.querySelectorAll('svg.mascot:not(.still)').forEach(svg => {
+      try { if (svg.animationsPaused && svg.animationsPaused()) svg.unpauseAnimations(); } catch (e) { /* ignore */ }
+      try { svg.getAnimations({ subtree: true }).forEach(a => { if (a.playState === 'paused' || a.playState === 'idle') a.play(); }); } catch (e) { /* ignore */ }
+    });
+  }
+  setInterval(() => { if (document.visibilityState === 'visible') wake(); }, 2000);
+  ['pageshow', 'focus', 'touchend', 'scroll'].forEach(ev => window.addEventListener(ev, () => wake(), { passive: true }));
 
   // ---------- 數字跳動 ----------
   const lastVals = new WeakMap();
@@ -354,5 +395,5 @@ const UI = (() => {
     setTimeout(() => box.remove(), 1100);
   }
 
-  return { esc, bankIcon, carSVG, carIcon, sparkline, openPicker, levelOf, mascotSVG, countTo, burst };
+  return { esc, bankIcon, carSVG, carIcon, sparkline, openPicker, levelOf, mascotSVG, countTo, burst, poke, wake };
 })();

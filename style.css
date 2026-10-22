@@ -619,3 +619,20 @@ body.privacy .big { color: var(--muted); }
 .mascot .rim { animation: rim 2s ease-in-out infinite; }
 @keyframes rim { 50% { opacity: .35; } }
 .mascot.still .streak { display: none; }
+
+/* ===== v5.3 主體動作改由 JS 驅動 ===== */
+.mascot.js .body { animation: none !important; transform-box: view-box; transform-origin: 0 0; }
+
+.lv-row { cursor: pointer; transition: background .2s; }
+.lv-row.sel { background: #fff7e0; outline: 2px solid #ffca28; }
+.lv-row.sel.cur { background: var(--accent-soft); }
+@media (prefers-color-scheme: dark) { .lv-row.sel { background: #3a3218; } }
+.lv-row.sel .lv-mini { width: 96px; }
+.lv-gap { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; animation: slideUp .3s ease; }
+.lv-gap small { font-size: 11.5px; line-height: 1.45; }
+.lv-gap .muted { margin-top: 2px; }
+.lv-track.sm { height: 7px; margin: 3px 0; }
+.lv-hint { font-size: 11px; color: var(--muted); opacity: .7; margin-top: 2px; }
+.lv-row.cur .lv-hint { display: none; }
+.data-line { font-size: 12px; color: var(--muted); margin: -4px 2px 10px; display: flex; gap: 4px; align-items: center; }
+#stockStatus, #lvrStatus { line-height: 1.7; }

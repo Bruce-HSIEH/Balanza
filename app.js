@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.2.0';
+const APP_VERSION = '5.3.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -216,6 +216,17 @@ function render() {
   growBars();
 }
 
+// --- 資料日期 ---
+const md = iso => { if (!iso) return '—'; const d = new Date(iso.length <= 10 ? iso + 'T00:00:00+08:00' : iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
+const ago = iso => { if (!iso) return Infinity; return Math.floor((Date.now() - new Date(iso.length <= 10 ? iso + 'T14:00:00+08:00' : iso)) / 86400000); };
+function stockDataLine() {
+  const m = Stocks.info();
+  if (!m) return '股價資料讀取中…';
+  const tw = m.tw?.date, us = m.us?.date;
+  const stale = Math.min(ago(tw), ago(us)) > 4;
+  return `股價：台股 ${md(tw)} 收盤、美股 ${md(us)} 收盤 · 每個交易日收盤後自動更新${stale ? '（資料超過 4 天沒更新，可能排程暫停了）' : ''}`;
+}
+
 // --- 資產：依大項分組 ---
 function stockRow(a, i) {
   const si = stockInfo(a);
@@ -248,7 +259,8 @@ function renderAssets(s) {
     return { c, items, total: items.reduce((t, x) => t + x.v, 0) };
   }).filter(g => g.items.length).sort((x, y) => y.total - x.total);
   let i = 0;
-  $('assetList').innerHTML = groups.map(g => {
+  const hasStock = state.assets.some(a => mktOf(a));
+  $('assetList').innerHTML = (hasStock ? `<div class="data-line">${Icon.svg('clock', 16)} ${esc(stockDataLine())}</div>` : '') + groups.map(g => {
     const open = openGroups.has(g.c.v);
     const share = s.totalAssets ? g.total / s.totalAssets * 100 : 0;
     let extra = '';
@@ -303,6 +315,7 @@ function levelProgress(L, nw, k) {
 }
 const lvBadge = L => L.lv === 0 ? 'Zzz' : `Lv.${L.lv}`;
 let levelsKey = '';
+let selLv = null;
 function renderLevels(s, L) {
   const k = twdK();
   const nw = s.netWorth;
@@ -323,22 +336,33 @@ function renderLevels(s, L) {
     $('homeProgText').textContent = `距離 Lv.${next.lv} ${next.name} 還差 ${fmt(need)}`;
   }
 
-  const key = `${L.lv}|${state.currency}|${k.toFixed(6)}`;
+  const key = `${L.lv}|${state.currency}|${k.toFixed(6)}|${selLv}|${hidden}|${Math.round(nw)}`;
   if (key === levelsKey) return;
   levelsKey = key;
+  const gap = X => {
+    const lo = X.min === -Infinity ? -Infinity : X.min * k, hi = X.max === Infinity ? Infinity : X.max * k;
+    if (L.lv === 0) return { txt: `需要淨資產 ${rangeText(X, k).replace('淨資產 ', '')}`, cls: '' };
+    if (nw >= lo && nw < hi) return { txt: '你就在這一級', cls: 'pos', prog: 1 };
+    if (nw < lo) return { txt: `還差 ${fmt(lo - nw)}`, sub: X.lv > 0 ? '淨資產再增加這麼多就能到達' : '負債再減少（或資產增加）這麼多就能回到這一級', cls: 'neg', prog: L.lv >= 0 && X.lv > 0 && lo > 0 ? Math.max(0, nw) / lo : null };
+    return { txt: `已超過 ${fmt(nw - (hi === Infinity ? lo : hi))}`, sub: '要是淨資產減少這麼多就會掉到這一級', cls: 'pos' };
+  };
   const row = X => {
-    const cur = X.lv === L.lv;
+    const cur = X.lv === L.lv, sel = X.lv === selLv;
     const reached = L.lv > 0 && X.lv > 0 && X.lv < L.lv;
     const tag = cur ? '<span class="lv-tag cur">你在這裡</span>' : reached ? '<span class="lv-tag ok">已達成</span>' : (X.lv > 0 && X.lv > L.lv) ? `<span class="lv-tag lock">${Icon.svg('lock', 13)}</span>` : '';
-    return `<li class="lv-row ${cur ? 'cur' : ''} ${X.lv < 0 ? 'negative' : ''}" ${cur ? 'id="lvCurRow"' : ''}>
-      <div class="lv-mini">${UI.mascotSVG(X, { still: !cur })}</div>
+    const g = sel ? gap(X) : null;
+    return `<li class="lv-row ${cur ? 'cur' : ''} ${sel ? 'sel' : ''} ${X.lv < 0 ? 'negative' : ''}" data-lvsel="${X.lv}" ${cur ? 'id="lvCurRow"' : ''}>
+      <div class="lv-mini">${UI.mascotSVG(X, { still: !cur && !sel })}</div>
       <div class="grow"><div class="lv-name"><b>Lv.${X.lv}</b> ${esc(X.name)} ${tag}</div>
-      <div class="lv-range">${rangeText(X, k)}</div></div></li>`;
+      <div class="lv-range">${rangeText(X, k)}</div>
+      ${g ? `<div class="lv-gap"><b class="${g.cls}">${g.txt}</b>${g.sub ? `<small>${g.sub}</small>` : ''}
+        ${g.prog != null && g.prog < 1 ? `<div class="lv-track sm"><div class="lv-fill" style="width:${(g.prog * 100).toFixed(1)}%"></div></div>` : ''}
+        <small class="muted">${esc(X.msg)}</small></div>` : '<div class="lv-hint">點我看這一級</div>'}</div></li>`;
   };
   const tierBlock = (list, title, desc) => `<li class="lv-tier"><b>${esc(title)}</b><small>${esc(desc)}</small></li>${list.map(row).join('')}`;
   const pos = [], neg = [];
-  for (let t = 10; t >= 1; t--) { const g = LEVELS.filter(x => x.tier === t); pos.push(tierBlock(g, `${g[0].tierName} · Lv.${g.at(-1).lv}–${g[0].lv}`, g[0].desc)); }
-  for (let t = -1; t >= -10; t--) { const g = LEVELS.filter(x => x.tier === t); neg.push(tierBlock(g, `${g[0].tierName} · Lv.${g[0].lv}–${g.at(-1).lv}`, g[0].desc)); }
+  for (let t = 10; t >= 1; t--) { const g = LEVELS.filter(x => x.tier === t); pos.push(tierBlock(g, `${g[0].tierName} · Lv.${g.at(-1).lv} ～ ${g[0].lv}`, g[0].desc)); }
+  for (let t = -1; t >= -10; t--) { const g = LEVELS.filter(x => x.tier === t); neg.push(tierBlock(g, `${g[0].tierName} · Lv.${g[0].lv} ～ ${g.at(-1).lv}`, g[0].desc)); }
   $('lvList').innerHTML = `<li class="lv-sep pos-sep">${Icon.svg('star', 18)} 正資產 30 級</li>${pos.join('')}
     <li class="lv-sep neg-sep">${Icon.svg('warn', 18)} 負資產 30 級</li>${neg.join('')}`;
   $('lvNoteCcy').textContent = state.currency === 'TWD' ? '每 3 級是一個階段，造型會變；同階段用星星數區分。' : `門檻以新台幣設定，依目前匯率換算成 ${state.currency}。`;
@@ -393,6 +417,17 @@ function showView(name) {
 document.querySelectorAll('.tabs button, .top-btn').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 $('toLevels').addEventListener('click', () => showView('levels'));
 document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) showView(g.dataset.goto); });
+document.addEventListener('click', e => {
+  const r = e.target.closest('[data-lvsel]');
+  if (!r) return;
+  const lv = +r.dataset.lvsel;
+  selLv = selLv === lv ? null : lv;
+  const y = r.getBoundingClientRect().top;
+  render();
+  const n = document.querySelector(`[data-lvsel="${lv}"]`);
+  if (n) window.scrollBy(0, n.getBoundingClientRect().top - y);   // 維持在原本的位置
+  if (selLv !== null && n) UI.poke(n.querySelector('svg'));
+});
 
 // ---------- 表單欄位定義 ----------
 const opt = (v, label, icon, sub, extra = {}) => ({ value: v, label, icon, sub, ...extra });
@@ -664,7 +699,7 @@ function drawStockPanel() {
   const cost = num(vals.cost);
   const tw = mkt === 'tw';
   const chgCls = q ? (q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : '') : '';
-  el.innerHTML = (q ? `<div class="stock-head"><div><b>${esc(q.sym)} ${esc(q.name)}</b><div class="small muted">${esc(q.date || '')} 收盤</div></div>
+  el.innerHTML = (q ? `<div class="stock-head"><div><b>${esc(q.sym)} ${esc(q.name)}</b><div class="small muted">${esc(q.date || '')} 收盤 · 每個交易日自動更新</div></div>
       <div class="r"><b class="big-px">${price(q.price, ccy)}</b><div class="chg ${chgCls}">${q.chg >= 0 ? '+' : ''}${q.chg.toFixed(2)}（${q.chgPct >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%）</div></div></div>
       <div class="chart-box">${UI.sparkline(q.series, 280, 60, { tw, dot: true, sw: 2 })}</div>`
     : `<div class="hint-row">${Icon('search')}<span>找不到「${esc(vals.sym)}」的自動報價，請在下方手動填目前股價</span></div>`) +
@@ -767,7 +802,7 @@ async function drawLvrPanel() {
       ${r.value ? `<div class="estimate"><div><small>估算價值（${vals.ping} 坪）</small><b>${fmt(r.value)}</b><small>${fmt(r.low)} ～ ${fmt(r.high)}</small></div>
         <button type="button" class="btn mini primary" data-apply="${r.value}" data-lvr="1">套用</button></div>` : '<div class="muted small">填入坪數即可估算總價</div>'}
       ${tx ? `<details><summary>最近成交 ${Math.min(6, r.tx.length)} 筆</summary><ul class="tx">${tx}</ul></details>` : ''}
-      <div class="muted small">資料：內政部實價登錄（${esc(r.seasons?.[0] || '')}～${esc(r.seasons?.at(-1) || '')}），單價已扣除車位，僅供參考。</div>`;
+      <div class="muted small">資料：內政部實價登錄（${esc(r.seasons?.[0] || '')}～${esc(r.seasons?.at(-1) || '')}），資料更新於 ${esc((r.updated || '').slice(0, 10))}，每週一自動更新。單價已扣除車位，僅供參考。</div>`;
   } catch (err) {
     if (tk !== lvrToken) return;
     el.innerHTML = `<div class="hint-row">${Icon('warn')}<span>${esc(err.message)}。資料每週自動更新，也可以先手動輸入目前價值。</span></div>`;
@@ -1114,11 +1149,7 @@ $('clearBtn').addEventListener('click', () => {
   save();
 });
 
-$('mascot').addEventListener('click', () => {
-  const m = $('mascot');
-  m.classList.remove('poke'); void m.offsetWidth; m.classList.add('poke');
-});
-$('mascot').addEventListener('animationend', e => { if (e.animationName === 'poke') $('mascot').classList.remove('poke'); });
+$('mascot').addEventListener('click', () => UI.poke($('mascot').querySelector('svg')));
 // 回到 App 時重新開始動畫（有些手機在背景會暫停 SVG 動畫）
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { lastLv = null; levelsKey = ''; render(); }
@@ -1144,9 +1175,11 @@ Stocks.load().then(() => {
   levelsKey = '';
   render();
   const m = Stocks.info();
-  $('stockStatus').textContent = m ? `股價資料：台股 ${m.tw?.date || '—'}、美股 ${m.us?.date || '—'} 收盤（${m.tw?.n || 0} + ${m.us?.n || 0} 檔）` : '股價資料：尚未產生（GitHub Action 每天收盤後自動更新）';
+  const upd = m && m.updated ? new Date(m.updated).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
+  $('stockStatus').innerHTML = m ? `<b>台股 ${esc(m.tw?.date || '—')} 收盤</b>（${m.tw?.n || 0} 檔）、<b>美股 ${esc(m.us?.date || '—')} 收盤</b>（${m.us?.n || 0} 檔）<br>最後更新：${upd}<br>自動更新：週一～五 14:23（台股收盤後）、05:41（美股收盤後）` : '股價資料：尚未產生（GitHub Action 每天收盤後自動更新）';
+  if ($('view-assets').classList.contains('active')) renderAssets(summary());
 });
-LVR.loadIndex().then(ix => { $('lvrStatus').textContent = `實價登錄資料：${ix.seasons[0]}～${ix.seasons.at(-1)}，更新於 ${ix.updated.slice(0, 10)}`; })
+LVR.loadIndex().then(ix => { $('lvrStatus').innerHTML = `<b>成交資料：${esc(ix.seasons[0])}～${esc(ix.seasons.at(-1))}</b><br>最後更新：${esc(ix.updated.slice(0, 10))}<br>自動更新：每週一 03:17（內政部約每 10 天發布一批新成交）`; })
   .catch(() => { $('lvrStatus').textContent = '實價登錄資料：尚未產生（GitHub Action 會自動下載）'; });
 
 if ('serviceWorker' in navigator) {

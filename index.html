@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Balanza">
+  <title>Balanza</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Balanza</h1>
+    <span class="ver" id="ver"></span>
+  </header>
+
+  <main>
+    <!-- 總覽 -->
+    <section class="view active" id="view-home">
+      <div class="networth card">
+        <div class="label">淨資產</div>
+        <div class="big" id="netWorth">0</div>
+        <div class="row3">
+          <div><div class="label">總資產</div><div class="pos" id="totalAssets">0</div></div>
+          <div><div class="label">總負債</div><div class="neg" id="totalDebts">0</div></div>
+          <div><div class="label">負債比</div><div id="debtRatio">0%</div></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card stat"><div class="label">每月還款</div><div class="mid" id="monthlyPay">0</div></div>
+        <div class="card stat"><div class="label">加權平均利率</div><div class="mid" id="avgRate">0%</div></div>
+        <div class="card stat"><div class="label">每月利息估算</div><div class="mid neg" id="monthlyInterest">0</div></div>
+        <div class="card stat"><div class="label">還款中本金</div><div class="mid pos" id="monthlyPrincipal">0</div></div>
+      </div>
+
+      <div class="card">
+        <h2>負債來源</h2>
+        <div id="debtBySource" class="bars"></div>
+      </div>
+
+      <div class="card">
+        <h2>資產分布</h2>
+        <div id="assetByCat" class="bars"></div>
+      </div>
+
+      <div class="card">
+        <h2>還款時程預估</h2>
+        <div id="payoffList"></div>
+      </div>
+    </section>
+
+    <!-- 資產 -->
+    <section class="view" id="view-assets">
+      <div class="listhead"><h2>資產</h2><span id="assetsSum" class="pos"></span></div>
+      <ul class="list" id="assetList"></ul>
+      <button class="fab" data-add="asset" aria-label="新增資產">＋</button>
+    </section>
+
+    <!-- 負債 -->
+    <section class="view" id="view-debts">
+      <div class="listhead"><h2>負債</h2><span id="debtsSum" class="neg"></span></div>
+      <ul class="list" id="debtList"></ul>
+      <button class="fab" data-add="debt" aria-label="新增負債">＋</button>
+    </section>
+
+    <!-- 設定 -->
+    <section class="view" id="view-settings">
+      <h2>設定</h2>
+      <div class="card">
+        <label class="field">幣別
+          <select id="currency">
+            <option value="TWD">TWD 新台幣</option>
+            <option value="USD">USD 美元</option>
+            <option value="JPY">JPY 日圓</option>
+            <option value="EUR">EUR 歐元</option>
+          </select>
+        </label>
+      </div>
+      <div class="card">
+        <h3>備份與還原</h3>
+        <p class="muted">資料只存在這支手機的瀏覽器裡，不會上傳到 GitHub。換手機或清除瀏覽器資料前請先匯出備份。</p>
+        <div class="btnrow">
+          <button id="exportBtn" class="btn">匯出 JSON</button>
+          <label class="btn">匯入 JSON<input type="file" id="importFile" accept="application/json" hidden></label>
+        </div>
+      </div>
+      <div class="card">
+        <h3>危險區</h3>
+        <button id="clearBtn" class="btn danger">清除所有資料</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-view="home" class="active"><span>📊</span>總覽</button>
+    <button data-view="assets"><span>💰</span>資產</button>
+    <button data-view="debts"><span>💳</span>負債</button>
+    <button data-view="settings"><span>⚙️</span>設定</button>
+  </nav>
+
+  <!-- 編輯表單 -->
+  <dialog id="editor">
+    <form method="dialog" id="editForm">
+      <h2 id="editTitle">新增</h2>
+      <div id="editFields"></div>
+      <div class="btnrow">
+        <button type="button" class="btn danger" id="delBtn">刪除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="cancelBtn">取消</button>
+        <button type="submit" class="btn primary">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

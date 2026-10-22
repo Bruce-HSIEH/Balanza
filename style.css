@@ -720,3 +720,40 @@ main {
 /* 狀態列（black-translucent 下時間、電池固定白字）：淺色模式墊一條主題色確保看得清楚 */
 .statusbar-band { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: #0f766e; z-index: 300; pointer-events: none; }
 @media (prefers-color-scheme: dark) { .statusbar-band { background: var(--bg); } }
+
+/* ===== v5.6 語音新增 ===== */
+.mic-btn { position: relative; }
+.mic-btn::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; box-shadow: 0 0 0 0 rgba(255, 143, 163, .5); animation: micHint 2.6s ease-out infinite; pointer-events: none; }
+@keyframes micHint { 0% { box-shadow: 0 0 0 0 rgba(255, 143, 163, .45); } 70%, 100% { box-shadow: 0 0 0 12px rgba(255, 143, 163, 0); } }
+.voice-sheet { max-height: 88vh; overflow-y: auto; }
+.voice-sheet[open] { display: block; }
+.vc-head { display: flex; gap: 10px; align-items: center; }
+.vc-head h3 { margin: 0 0 2px; }
+.vc-head p { margin: 0; line-height: 1.5; }
+.vc-mascot { width: 92px; flex: none; position: relative; }
+.vc-mascot svg { width: 100%; display: block; }
+.voice-sheet.listening .vc-mascot::before { content: ''; position: absolute; inset: 8% 10% 10%; border-radius: 50%; border: 3px solid #ff8fa3; animation: listenRing 1.2s ease-out infinite; }
+@keyframes listenRing { from { transform: scale(.8); opacity: .9; } to { transform: scale(1.35); opacity: 0; } }
+.vc-state { font-size: 12.5px; color: #e9637c; font-weight: 700; margin-top: 4px; min-height: 1em; }
+#vcText { width: 100%; margin-top: 10px; padding: 12px; font-size: 16px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--soft); color: var(--text); resize: vertical; font-family: inherit; }
+#vcText:focus { outline: none; border-color: var(--accent); }
+.vc-mic { display: inline-flex; align-items: center; gap: 6px; }
+.vc-mic[hidden] { display: none; }
+.rec-dot { width: 12px; height: 12px; border-radius: 50%; background: #fff; animation: recBlink 1s steps(1) infinite; }
+@keyframes recBlink { 50% { opacity: .3; } }
+.voice-sheet.listening .vc-mic { background: #e9637c; border-color: #e9637c; }
+.vc-results { margin-top: 10px; }
+.vc-card { display: flex; gap: 10px; align-items: flex-start; background: var(--soft); border-radius: 16px; padding: 10px 12px; margin-bottom: 8px; animation: slideUp .3s ease backwards; animation-delay: calc(var(--i) * 60ms); border: 1.5px solid transparent; }
+.vc-card.need { border-color: #ffd166; }
+.vc-card.added { opacity: .6; }
+.vc-card .ico { background: var(--card); }
+.vc-title { font-size: 13.5px; line-height: 1.4; }
+.vc-chips { margin-top: 4px; }
+.vc-chips .chip { margin: 0 4px 4px 0; display: inline-block; }
+.vc-miss { font-size: 12px; color: #b7791f; font-weight: 700; }
+.vc-src { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.vc-btns { display: flex; flex-direction: column; gap: 6px; flex: none; align-items: flex-end; font-size: 13px; font-weight: 700; }
+.vc-all { width: 100%; margin-bottom: 8px; }
+.vc-ex-title { margin: 10px 0 6px; }
+#vcExamples .chip-btn { font-size: 12px; text-align: left; }
+.vc-card .ico-bank { background: var(--bc); }

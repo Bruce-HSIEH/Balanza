@@ -19,6 +19,7 @@
     <h1>Balanza</h1>
     <button type="button" class="ver" id="ver" title="看更新紀錄"></button>
     <span class="spacer"></span>
+    <button type="button" class="top-btn mic-btn" id="micBtn" aria-label="用說的新增"><i data-ic="mic" data-size="28"></i></button>
     <button type="button" class="top-btn" data-view="levels" aria-label="等級"><i data-ic="trophy" data-size="28"></i></button>
     <button type="button" class="top-btn" data-view="settings" aria-label="設定"><i data-ic="gear" data-size="28"></i></button>
   </header>
@@ -242,6 +243,17 @@
     </div>
   </div>
 
+  <dialog id="voiceDialog" class="sheet voice-sheet">
+    <div class="sheet-grip"></div>
+    <div class="vc-head"><div class="vc-mascot" id="vcMascot"></div>
+      <div><h3>用說的新增</h3><p class="small muted" id="vcHint"></p><div class="vc-state" id="vcState"></div></div></div>
+    <textarea id="vcText" rows="2" placeholder="例：國泰房貸 800 萬 利率 2.1% 30 年；0050 三張 均價 95"></textarea>
+    <div class="btnrow"><button type="button" class="btn primary vc-mic" id="vcMic"></button><span class="spacer"></span><button type="button" class="btn" id="vcClose">關閉</button></div>
+    <div id="vcResults" class="vc-results"></div>
+    <div class="small muted vc-ex-title">可以這樣說（一次說好幾筆也可以，用「還有」隔開）</div>
+    <div class="chips" id="vcExamples"></div>
+  </dialog>
+
   <div class="toast" id="toast" role="status"></div>
 
   <script src="data/catalog.js"></script>
@@ -255,6 +267,7 @@
   <script src="ui.js"></script>
   <script src="lvr.js"></script>
   <script src="stocks.js"></script>
+  <script src="voice.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.5.5';
+const APP_VERSION = '5.6.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -654,11 +654,12 @@ function fieldHTML(f) {
     ${f.action ? `<button type="button" class="btn mini" id="${f.action.id}">${Icon.svg('search', 18)} ${f.action.text}</button>` : ''}</span>${hint}</label>`;
 }
 
-function openEditor(kind, id) {
+function openEditor(kind, id, preset) {
   const list = state[KEY[kind]];
   const item = id ? list.find(x => x.id === id) : null;
   editing = { kind, id };
   vals = item ? { ...item } : {};
+  if (preset) Object.assign(vals, preset);
   FIELDS[kind].forEach(f => { if (f.k && vals[f.k] == null && f.def != null) vals[f.k] = typeof f.def === 'function' ? f.def() : f.def; });
   $('editTitle').innerHTML = `${Icon(KIND_ICON[kind])} ${id ? '編輯' : '新增'}${KIND_NAME[kind]}`;
   $('delBtn').style.display = id ? '' : 'none';
@@ -1342,6 +1343,153 @@ $('bkSave').addEventListener('click', () => {
   save();
   toast(`新增 ${added} 檔${merged ? `、${merged} 筆歸到原有股票` : ''}`);
 });
+
+
+// ================= 語音／一句話快速新增 =================
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, vcResults = [];
+const fmtRaw = (n, ccy = state.currency) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: ccy, maximumFractionDigits: ccy === 'TWD' || ccy === 'JPY' ? 0 : 2 }).format(n || 0);
+const MISS_ZH = { startYM: '撥款年月', rate: '利率', bank: '銀行', balance: '剩餘本金', monthly: '每月還款', limit: '額度', shares: '股數', amount: '金額' };
+const VC_EXAMPLES = ['玉山活存 50 萬', '0050 三張 均價 95', '國泰房貸 800 萬 利率 2.1% 30 年 寬限期 3 年', '信用卡 欠 3 萬 每月繳 5000', '房子 1800 萬 30 坪', '車子 豐田 RAV4 價值 70 萬'];
+
+function openVoice() {
+  if (locked) return;
+  vcResults = [];
+  $('vcText').value = '';
+  $('vcResults').innerHTML = '';
+  $('vcMascot').innerHTML = UI.mascotSVG(UI.levelOf(summary(), twdK()));
+  $('vcMic').hidden = !SR;
+  $('vcHint').innerHTML = SR ? '按下麥克風開始說，說完會自動整理；也可以直接打字。'
+    : `這個模式不支援 App 內語音辨識。點下面的輸入框，按<b>鍵盤上的麥克風</b>用聽寫說話，效果一樣。`;
+  $('vcExamples').innerHTML = VC_EXAMPLES.map(x => `<button type="button" class="chip-btn" data-vcx="${esc(x)}">${esc(x)}</button>`).join('');
+  setListening(false);
+  $('voiceDialog').showModal();
+  Stocks.load().then(vcParse);
+  if (SR) setTimeout(startListening, 250);
+}
+function setListening(on) {
+  listening = on;
+  $('voiceDialog').classList.toggle('listening', on);
+  $('vcMic').innerHTML = on ? `<span class="rec-dot"></span> 停止` : `${Icon.svg('mic', 26)} 開始說話`;
+  $('vcState').textContent = on ? '正在聽…' : '';
+}
+function startListening() {
+  if (!SR || listening) return;
+  try {
+    rec = new SR();
+    rec.lang = 'zh-TW'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+    const base = $('vcText').value ? $('vcText').value.trim() + '，' : '';
+    rec.onresult = e => {
+      let txt = '';
+      for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
+      $('vcText').value = base + txt;
+      vcParse();
+    };
+    rec.onerror = e => {
+      $('vcState').textContent = e.error === 'not-allowed' || e.error === 'service-not-allowed'
+        ? '沒有麥克風或語音辨識權限，可以改用鍵盤上的麥克風聽寫' : e.error === 'no-speech' ? '沒有聽到聲音，再試一次' : '語音辨識發生問題：' + e.error;
+    };
+    rec.onend = () => { setListening(false); vcParse(); };
+    rec.start();
+    setListening(true);
+  } catch (err) { setListening(false); $('vcState').textContent = '無法開始語音辨識，可以改用鍵盤聽寫'; }
+}
+function stopListening() { try { rec && rec.stop(); } catch (e) { /* ignore */ } setListening(false); }
+
+function vcCardHTML(r, i) {
+  const v = r.vals;
+  const chips = [];
+  let icon, title;
+  if (r.stock) {
+    icon = Icon(v.category === '美股' ? 'us' : 'tw');
+    title = `${v.category} · <b>${esc(v.sym)} ${esc(r.name)}</b>`;
+    if (v.shares) chips.push(unitTxt(v.category === '美股' ? 'us' : 'tw', +v.shares));
+    if (v.cost) chips.push(`均價 ${v.cost}`);
+    if (findHolding(v.category, v.sym)) chips.push('已持有，會歸到同一檔');
+  } else if (r.kind === 'asset') {
+    icon = v.category === '車輛' ? UI.carIcon(brandOf(v.brand), v.model) : Icon(catOf(v.category).ic);
+    title = `資產 · ${esc(v.category)} · <b>${esc(v.name)}</b>`;
+    if (v.amount) chips.push(fmtRaw(v.amount));
+    if (v.ping) chips.push(`${v.ping} 坪`);
+  } else {
+    const b = bankOf(v.bank);
+    icon = v.bank ? UI.bankIcon(b) : Icon(typeOf(v.type).ic);
+    title = `負債 · ${esc(v.type)} · <b>${esc(v.name)}</b>`;
+    if (b && b.code !== '—') chips.push(`${b.code} ${shortBank(b)}`);
+    const amt = v.principal || v.balance || v.limit;
+    if (amt) chips.push((v.mode === 'revolving' ? '額度 ' : v.mode === 'auto' ? '貸款 ' : '剩餘 ') + fmtRaw(amt));
+    if (v.rate !== '' && v.rate != null) chips.push(`利率 ${v.rate}%`);
+    if (v.years) chips.push(`${v.years} 年`);
+    if (+v.grace) chips.push(`寬限期 ${v.grace} 個月`);
+    if (v.method === 'interest') chips.push('只繳息到期還本');
+    if (v.monthly) chips.push(`月付 ${fmtRaw(v.monthly)}`);
+    if (v.startYM) chips.push(`${v.startYM.replace('-', '/')} 撥款`);
+  }
+  const ok = !r.missing.length;
+  return `<div class="vc-card ${ok ? '' : 'need'}" style="--i:${i}">${icon}
+    <div class="grow"><div class="vc-title">${title}</div>
+      <div class="vc-chips">${chips.map(c => `<span class="chip blue">${esc(c)}</span>`).join('')}</div>
+      ${ok ? '' : `<div class="vc-miss">還缺：${r.missing.map(m => MISS_ZH[m] || m).join('、')}</div>`}
+      <div class="vc-src">「${esc(r.text)}」</div></div>
+    <div class="vc-btns">${ok ? `<button type="button" class="btn mini primary" data-vcadd="${i}">新增</button>` : ''}
+      <button type="button" class="btn mini" data-vcform="${i}">${ok ? '修改' : '補資料'}</button></div></div>`;
+}
+let vcTimer;
+function vcParse() {
+  clearTimeout(vcTimer);
+  vcTimer = setTimeout(() => {
+    const txt = $('vcText').value.trim();
+    vcResults = txt ? Voice.parse(txt) : [];
+    $('vcResults').innerHTML = vcResults.length ? vcResults.map(vcCardHTML).join('') + (vcResults.filter(r => !r.missing.length).length > 1 ? `<button type="button" class="btn primary vc-all" data-vcall="1">全部新增（${vcResults.filter(r => !r.missing.length).length} 筆）</button>` : '')
+      : txt ? '<div class="empty">聽不太懂，換個說法試試，例如「玉山活存 50 萬」</div>' : '';
+  }, 250);
+}
+function vcAdd(r) {
+  const v = { ...r.vals };
+  if (r.stock) {
+    addLot(v.category, v.sym, { id: uid(), type: 'buy', date: '', shares: +v.shares, price: v.cost === '' ? '' : +v.cost });
+    return;
+  }
+  const kind = r.kind;
+  for (const k of Object.keys(v)) if (NUMERIC.has(k) && v[k] !== '' && v[k] != null) v[k] = num(v[k]);
+  v.updatedAt = new Date().toISOString();
+  state[KEY[kind]].push({ id: uid(), ...v });
+  if (kind === 'asset') openGroups.add(v.category);
+}
+document.addEventListener('click', e => {
+  const x = e.target.closest('[data-vcx]');
+  if (x) { $('vcText').value = x.dataset.vcx; vcParse(); return; }
+  const a = e.target.closest('[data-vcadd]');
+  if (a) {
+    const r = vcResults[+a.dataset.vcadd];
+    vcAdd(r); save(); UI.burst('coin');
+    a.closest('.vc-card').classList.add('added'); a.closest('.vc-btns').innerHTML = '<span class="pos">已新增</span>';
+    toast(`已新增：${r.stock ? r.vals.sym + ' ' + r.name : r.vals.name}`);
+    return;
+  }
+  if (e.target.closest('[data-vcall]')) {
+    const ok = vcResults.filter(r => !r.missing.length);
+    ok.forEach(vcAdd); save(); UI.burst('coin');
+    $('voiceDialog').close();
+    toast(`已新增 ${ok.length} 筆`);
+    return;
+  }
+  const f = e.target.closest('[data-vcform]');
+  if (f) {
+    const r = vcResults[+f.dataset.vcform];
+    stopListening();
+    $('voiceDialog').close();
+    const preset = { ...r.vals };
+    if (r.stock) { preset.cost = r.vals.cost; preset.shares = r.vals.shares; }
+    showView(r.kind === 'asset' ? 'assets' : 'debts');
+    openEditor(r.kind, null, preset);
+  }
+});
+$('vcText').addEventListener('input', vcParse);
+$('vcMic').addEventListener('click', () => listening ? stopListening() : startListening());
+$('vcClose').addEventListener('click', () => { stopListening(); $('voiceDialog').close(); });
+$('voiceDialog').addEventListener('close', stopListening);
+$('micBtn').addEventListener('click', openVoice);
 
 // ---------- 小提示 ----------
 let toastT;

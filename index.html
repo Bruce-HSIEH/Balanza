@@ -27,6 +27,7 @@
   <main>
     <!-- 總覽 -->
     <section class="view active" id="view-home">
+      <div id="bkNag"></div>
       <div class="card mascot-card" id="mascotCard">
         <div id="mascot" class="mascot-wrap" title="戳我"></div>
         <div class="mascot-text">
@@ -133,13 +134,8 @@
       </div>
       <button type="button" class="pickbtn" id="currencyBtn" style="display:none"></button>
       <div class="set-page" data-page="backup" hidden>
-        <div class="card">
-          <p class="muted">資料只存在這支手機的瀏覽器裡，不會上傳到 GitHub。換手機或清除瀏覽器資料前請先匯出備份。</p>
-          <div class="btnrow">
-            <button id="exportBtn" class="btn"><i data-ic="export" data-size="18"></i> 匯出 JSON</button>
-            <label class="btn"><i data-ic="import" data-size="18"></i> 匯入 JSON<input type="file" id="importFile" accept="application/json" hidden></label>
-          </div>
-        </div>
+        <div id="bkSet"></div>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
       </div>
       <div class="set-page" data-page="stocks" hidden>
         <div class="card">
@@ -234,6 +230,29 @@
     <div class="btnrow"><span class="spacer"></span><button type="button" class="btn" id="bkCancel">取消</button><button type="button" class="btn primary" id="bkSave">全部加入</button></div>
   </dialog>
 
+  <dialog id="keyDialog" class="cl-dialog">
+    <h2><i data-ic="lock" data-size="24"></i> 你的恢復金鑰</h2>
+    <p class="muted small" id="kdMsg"></p>
+    <div class="rkey" id="kdKey"></div>
+    <div class="btnrow"><button type="button" class="btn" id="kdCopy">複製</button></div>
+    <ol class="kd-steps small">
+      <li>打開 iPhone 的「密碼」App → 右下「＋」</li>
+      <li>網站或標籤填 <b>Balanza 恢復金鑰</b>，密碼欄貼上這組金鑰 → 儲存</li>
+      <li>也可以另外抄在紙上收好</li>
+    </ol>
+    <label class="kd-ok" id="kdOkRow"><input type="checkbox" id="kdOk"> 我已經把恢復金鑰存好了</label>
+    <div class="btnrow"><span class="spacer"></span><button type="button" class="btn primary" id="kdDone">完成</button></div>
+  </dialog>
+
+  <dialog id="restoreDialog" class="cl-dialog">
+    <h2><i data-ic="import" data-size="24"></i> 從雲端還原</h2>
+    <label class="field"><span class="flabel">GitHub token</span><input id="rsToken" type="password" autocomplete="off" placeholder="ghp_..."></label>
+    <label class="field"><span class="flabel">恢復金鑰</span><input id="rsKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"></label>
+    <div class="btnrow"><button type="button" class="btn primary" id="rsFind">找備份</button><span class="small muted" id="rsMsg"></span></div>
+    <div id="rsList"></div>
+    <div class="btnrow"><span class="spacer"></span><button type="button" class="btn" id="rsCancel">關閉</button></div>
+  </dialog>
+
   <dialog id="pinDialog" class="cl-dialog pin-dialog">
     <h2 id="psTitle">設定 PIN</h2>
     <p class="pin-msg" id="psMsg"></p>
@@ -270,6 +289,7 @@
   <script src="data/catalog.js"></script>
   <script src="changelog.js"></script>
   <script src="lock.js"></script>
+  <script src="backup.js"></script>
   <script src="icons.js"></script>
   <script src="cars.js"></script>
   <script src="loan.js"></script>

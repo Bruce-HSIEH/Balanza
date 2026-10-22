@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.8.1';
+const APP_VERSION = '5.9.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -12,6 +12,7 @@ const CAT_MIGRATE = { '股票': '台股', 'ETF/基金': '基金' };
 function migrate(d) {
   d = { currency: 'TWD', assets: [], debts: [], plans: [], ...d };
   d.ai = { on: true, provider: 'claude', key: '', model: 'claude-haiku-5-5', gkey: '', gmodel: 'gemini-3.1-flash-lite', ...(d.ai || {}) };
+  d.backup = { on: false, token: '', gistId: '', login: '', key: '', salt: '', ...(d.backup || {}) };
   d.plans = d.plans || [];
   d.assets = d.assets.map(a => {
     let category = CAT_MIGRATE[a.category] || a.category;
@@ -49,13 +50,17 @@ function load() {
   return migrate({});
 }
 let state = load();
-function save() {
+function store() {
   if (Vault.enabled()) {
     if (Vault.unlocked()) Vault.store(JSON.stringify(state)).catch(e => alert('加密儲存失敗：' + e.message));
   } else {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { alert('儲存失敗：' + e.message); }
   }
+}
+function save() {
+  store();
   render();
+  if (typeof scheduleBackup === 'function') scheduleBackup();
 }
 
 // ---------- 隱藏金額 ----------
@@ -63,6 +68,7 @@ const EYE_ON = '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M2 12s3
 const EYE_OFF = '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="#f1f3f5" stroke="#90a4ae" stroke-width="1.8"/><path d="M4 4l16 16" stroke="#90a4ae" stroke-width="2" stroke-linecap="round"/></svg><span>顯示</span>';
 const PREFS_KEY = 'balanza.prefs';
 const prefs = (() => { try { return { autoHide: true, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch (e) { return { autoHide: true }; } })();
+prefs.bk = { at: 0, err: '', hash: '', exportAt: 0, snooze: 0, ...(prefs.bk || {}) };
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
 let hidden = !!prefs.autoHide;
 const MASK = '••••••';
@@ -1672,25 +1678,171 @@ $('currencyBtn').addEventListener('click', async () => {
   if (o) { state.currency = o.value; levelsKey = ''; save(); renderSetMenu(); }
 });
 
-$('exportBtn').addEventListener('click', () => {
-  const { ai, ...rest } = state;   // API 金鑰不放進備份檔
-  const blob = new Blob([JSON.stringify({ app: 'Balanza', version: APP_VERSION, exportedAt: new Date().toISOString(), ...rest }, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `balanza-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-});
+// ---------- 備份 ----------
+function backupPayload() {
+  const { ai, backup, ...rest } = state;   // API 金鑰、GitHub token、恢復金鑰都不放進備份
+  return { app: 'Balanza', version: APP_VERSION, ...rest };
+}
+async function sha256(str) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(h), x => x.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+function since(t) {
+  if (!t) return '從未';
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return '剛剛';
+  if (m < 60) return `${m} 分鐘前`;
+  if (m < 1440) return `${Math.round(m / 60)} 小時前`;
+  return `${Math.round(m / 1440)} 天前`;
+}
+const bkReady = () => !locked && state.backup.on && state.backup.token && state.backup.key;
+let bkTimer = null, bkBusy = false, bkAgain = false;
+function scheduleBackup(delay = 8000) {
+  if (!bkReady()) return;
+  clearTimeout(bkTimer);
+  bkTimer = setTimeout(() => { bkTimer = null; runBackup(); }, delay);
+}
+async function runBackup(force) {
+  if (!bkReady()) return false;
+  if (bkBusy) { bkAgain = true; return false; }
+  const p = backupPayload();
+  const empty = !p.assets.length && !p.debts.length && !(p.plans || []).length;
+  if (empty && !force) return false;                 // 不拿空資料蓋掉雲端備份
+  const h = await sha256(JSON.stringify(p) + state.backup.gistId + state.backup.salt);
+  if (!force && h === prefs.bk.hash) return false;   // 沒變就不上傳
+  bkBusy = true; refreshBackupUI('uploading');
+  let ok = false;
+  try {
+    const b = state.backup;
+    const file = await Backup.encrypt({ ...p, exportedAt: new Date().toISOString() }, b.key, b.salt);
+    const id = await Backup.upload(b.token, b.gistId, file);
+    if (id !== b.gistId) { b.gistId = id; store(); }
+    prefs.bk = { ...prefs.bk, at: Date.now(), err: '', hash: await sha256(JSON.stringify(p) + id + b.salt) };
+    ok = true;
+  } catch (e) {
+    prefs.bk.err = e.message || String(e);
+  } finally {
+    bkBusy = false; savePrefs(); refreshBackupUI();
+    if (bkAgain) { bkAgain = false; scheduleBackup(1500); }
+  }
+  return ok;
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && bkTimer) { clearTimeout(bkTimer); bkTimer = null; runBackup(); } });
+window.addEventListener('online', () => scheduleBackup(2000));
 
+function refreshBackupUI(st) {
+  if (currentView === 'settings' && setPage === 'backup') renderBackupSettings(st);
+  if (currentView === 'settings' && !setPage) renderSetMenu();
+  renderBkNag();
+}
+function backupSummary() {
+  const b = state.backup;
+  if (!b.on) return b.key ? '已有恢復金鑰・未開自動備份' : '尚未設定自動備份';
+  if (prefs.bk.err) return '⚠️ 備份失敗：' + prefs.bk.err;
+  return '自動備份到 GitHub・' + since(prefs.bk.at);
+}
+let persisted = null;
+function renderBackupSettings(st) {
+  const b = state.backup;
+  const status = st === 'uploading' || bkBusy ? '<span class="muted">上傳中…</span>'
+    : prefs.bk.err ? `<span class="neg">上次失敗：${esc(prefs.bk.err)}</span>`
+    : `上次備份：<b>${since(prefs.bk.at)}</b>`;
+  $('bkSet').innerHTML = `
+  <div class="card">
+    <h3>${Icon.svg('lock', 22)} 恢復金鑰</h3>
+    ${b.key
+      ? `<p class="muted small">已建立。所有備份都用它加密；換手機或資料不見時，用它才能還原。請確認已存在「密碼」App 或抄在紙上。</p>
+         <div class="btnrow"><button type="button" class="btn mini" id="bkShowKey">顯示恢復金鑰</button><button type="button" class="btn mini" id="bkNewKey">換一組新的</button></div>`
+      : `<p class="muted small">隨機產生的 25 碼金鑰，強度遠高於自己想的密碼。備份檔用它加密，就算檔案被別人拿到也打不開。<br><b>弄丟恢復金鑰又同時丟了手機，備份就救不回來。</b></p>
+         <div class="btnrow"><button type="button" class="btn primary" id="bkMakeKey">產生恢復金鑰</button></div>`}
+  </div>
+  <div class="card">
+    <h3>${Icon.svg('export', 22)} 自動備份到 GitHub</h3>
+    ${!b.key ? '<p class="muted small">先產生恢復金鑰，才能開啟自動備份。</p>'
+    : b.on
+      ? `<div class="bk-status">${Icon('lock')}<div><b>已開啟</b><small>帳號 ${esc(b.login || '—')}・秘密 Gist（只存密文）</small><small>${status}</small></div></div>
+         <p class="muted small">資料有變動約 8 秒後、或離開 App 時自動上傳。GitHub 會保留每一次的歷史版本，可以還原到任一個。</p>
+         <div class="btnrow"><button type="button" class="btn mini primary" id="bkNow">立即備份</button><button type="button" class="btn mini" id="bkRestore">從雲端還原</button><button type="button" class="btn mini danger" id="bkOff">停用</button></div>`
+      : `<p class="muted small">每次資料變動就自動把<b>加密後</b>的備份存到你 GitHub 帳號的秘密 Gist，不用自己按。</p>
+         <ol class="kd-steps small">
+           <li>點 <a href="https://github.com/settings/tokens/new?scopes=gist&description=Balanza%20backup" target="_blank" rel="noopener">這個連結</a>（已預先勾好只有 <b>gist</b> 權限）</li>
+           <li>Expiration 選 <b>No expiration</b> → 最下面 Generate token</li>
+           <li>複製 ghp_ 開頭的 token 貼到下面</li>
+         </ol>
+         <div class="inrow"><input id="bkToken" type="password" autocomplete="off" placeholder="ghp_..." class="ai-key"><button type="button" class="btn mini primary" id="bkConnect">開啟</button></div>
+         <p class="small" id="bkMsg"></p>`}
+  </div>
+  <div class="card">
+    <h3>${Icon.svg('import', 22)} 手動備份與還原</h3>
+    <p class="muted small">匯出的檔案也是加密的，可以放心存到 iCloud 雲碟或傳給自己。上次匯出：${since(prefs.bk.exportAt)}</p>
+    <div class="btnrow">
+      <button type="button" class="btn" id="exportBtn">${Icon.svg('export', 18)} 匯出加密備份</button>
+      <button type="button" class="btn" id="importBtn">${Icon.svg('import', 18)} 匯入備份檔</button>
+      ${b.on ? '' : '<button type="button" class="btn" id="bkRestore">從雲端還原</button>'}
+    </div>
+  </div>
+  <div class="card">
+    <h3>${Icon.svg('piggy', 22)} 系統永久保存</h3>
+    <p class="muted small">${persisted === true ? '<b class="pos">已開啟</b>：手機空間不足時，系統不會自動清掉這個 App 的資料。'
+      : persisted === false ? '系統目前沒有同意永久保存（iPhone 加到主畫面使用時通常不會被清除）。仍建議開啟自動備份。'
+      : '這個瀏覽器不支援查詢。'}</p>
+  </div>`;
+}
+
+function showKey(first) {
+  $('kdKey').textContent = state.backup.key;
+  $('kdMsg').textContent = first ? '這是唯一能解開備份的鑰匙，請現在就存好。之後也可以在這裡再看到。' : '請確認這組金鑰已經存在「密碼」App 或紙上。';
+  $('kdOkRow').hidden = !first; $('kdOk').checked = !first;
+  $('keyDialog').showModal();
+}
+$('kdCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(state.backup.key); toast('已複製恢復金鑰'); } catch (e) { toast('無法複製，請手動抄下'); }
+});
+$('kdDone').addEventListener('click', () => {
+  if (!$('kdOk').checked) return toast('請先勾選「我已經把恢復金鑰存好了」');
+  $('keyDialog').close();
+});
+$('keyDialog').addEventListener('cancel', e => { if (!$('kdOk').checked) e.preventDefault(); });
+
+async function exportBackup() {
+  if (!state.backup.key) { toast('先產生恢復金鑰'); return; }
+  const file = await Backup.encrypt({ ...backupPayload(), exportedAt: new Date().toISOString() }, state.backup.key, state.backup.salt);
+  const name = `balanza-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const blob = new Blob([JSON.stringify(file)], { type: 'application/json' });
+  const f = new File([blob], name, { type: 'application/json' });
+  let done = false;
+  if (navigator.canShare && navigator.canShare({ files: [f] })) {
+    try { await navigator.share({ files: [f], title: 'Balanza 加密備份' }); done = true; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  if (!done) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  prefs.bk.exportAt = Date.now(); savePrefs(); refreshBackupUI();
+}
+function applyRestore(d) {
+  if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
+  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], ai: state.ai, backup: state.backup });
+  lastLv = null; levelsKey = '';
+  save();
+}
+async function askKeyAndDecrypt(file) {
+  if (state.backup.key) { try { return await Backup.decrypt(file, state.backup.key); } catch (e) { /* 試使用者輸入的 */ } }
+  const k = Backup.normKey(prompt('這是加密備份，請輸入恢復金鑰（25 碼）'));
+  if (!k) throw new Error('恢復金鑰格式不對');
+  return Backup.decrypt(file, k);
+}
 $('importFile').addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const d = JSON.parse(await file.text());
+    let d = JSON.parse(await file.text());
+    if (Backup.isEncrypted(d)) d = await askKeyAndDecrypt(d);
     if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
     if (!confirm(`匯入 ${d.assets.length} 筆資產、${d.debts.length} 筆負債？目前資料將被取代。`)) return;
-    state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], ai: state.ai });
-    save();
+    applyRestore(d);
     toast('匯入完成');
   } catch (err) {
     alert('匯入失敗：' + err.message);
@@ -1699,9 +1851,105 @@ $('importFile').addEventListener('change', async e => {
   }
 });
 
+// 從雲端還原
+function openRestore() {
+  $('rsToken').value = state.backup.token || '';
+  $('rsKey').value = state.backup.key || '';
+  $('rsMsg').textContent = ''; $('rsList').innerHTML = '';
+  $('restoreDialog').showModal();
+}
+let rsCtx = null;
+$('rsFind').addEventListener('click', async () => {
+  const token = $('rsToken').value.trim(), key = Backup.normKey($('rsKey').value);
+  if (!token) return toast('請輸入 GitHub token');
+  if (!key) return toast('恢復金鑰格式不對（25 碼英數字）');
+  $('rsMsg').textContent = '尋找中…'; $('rsList').innerHTML = '';
+  try {
+    const login = await Backup.whoami(token);
+    const gistId = state.backup.token === token && state.backup.gistId ? state.backup.gistId : await Backup.findGist(token);
+    if (!gistId) throw new Error(`帳號 ${login} 裡找不到 Balanza 備份`);
+    const hist = await Backup.history(token, gistId);
+    rsCtx = { token, key, gistId, login };
+    $('rsMsg').textContent = `找到 ${hist.length} 個版本`;
+    $('rsList').innerHTML = `<div class="rs-list">${hist.map((h, i) => `<button type="button" class="rs-row" data-sha="${esc(h.sha)}"><b>${new Date(h.at).toLocaleString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</b><small>${i === 0 ? '最新' : ''}</small><i>還原 ›</i></button>`).join('')}</div>`;
+  } catch (e) { $('rsMsg').innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+});
+$('rsList').addEventListener('click', async e => {
+  const r = e.target.closest('[data-sha]');
+  if (!r || !rsCtx) return;
+  $('rsMsg').textContent = '下載並解密中…';
+  try {
+    const file = await Backup.download(rsCtx.token, rsCtx.gistId, r.dataset.sha);
+    const d = await Backup.decrypt(file, rsCtx.key);
+    if (!confirm(`還原 ${r.querySelector('b').textContent} 的備份：${d.assets.length} 筆資產、${d.debts.length} 筆負債？目前這支手機的資料會被取代。`)) { $('rsMsg').textContent = ''; return; }
+    state.backup = { ...state.backup, on: true, token: rsCtx.token, key: rsCtx.key, salt: file.salt, gistId: rsCtx.gistId, login: rsCtx.login };
+    prefs.bk.hash = ''; savePrefs();
+    applyRestore(d);
+    $('restoreDialog').close();
+    toast('還原完成，自動備份已開啟');
+    refreshBackupUI();
+  } catch (err) { $('rsMsg').innerHTML = `<span class="neg">${esc(err.message)}</span>`; }
+});
+$('rsCancel').addEventListener('click', () => $('restoreDialog').close());
+
+document.addEventListener('click', async e => {
+  const t = e.target.closest('#bkMakeKey, #bkNewKey, #bkShowKey, #bkConnect, #bkNow, #bkOff, #bkRestore, #exportBtn, #importBtn, #bkNagGo, #bkNagLater');
+  if (!t) return;
+  const b = state.backup;
+  switch (t.id) {
+    case 'bkMakeKey':
+    case 'bkNewKey': {
+      if (t.id === 'bkNewKey' && !confirm('換新的恢復金鑰？之後的備份改用新金鑰加密；以前匯出的檔案和雲端的舊版本仍然要用舊金鑰才能打開。')) return;
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      b.key = Backup.newKey(); b.salt = btoa(String.fromCharCode(...salt));
+      prefs.bk.hash = ''; savePrefs();
+      store(); renderBackupSettings(); showKey(true);
+      scheduleBackup(1000);
+      break;
+    }
+    case 'bkShowKey': showKey(false); break;
+    case 'bkConnect': {
+      const token = $('bkToken').value.trim();
+      if (!/^(ghp_|github_pat_|gho_)[A-Za-z0-9_]{20,}$/.test(token)) return toast('token 應該是 ghp_ 開頭');
+      $('bkMsg').textContent = '連線中…';
+      try {
+        const login = await Backup.whoami(token);
+        const gistId = await Backup.findGist(token);
+        if (gistId && !confirm(`帳號 ${login} 裡已經有一份 Balanza 備份。要用這支手機的資料繼續備份到同一個地方嗎？（舊版本會保留在歷史裡；要拿舊資料回來請選取消，再按「從雲端還原」）`)) { $('bkMsg').textContent = ''; return; }
+        Object.assign(b, { on: true, token, login, gistId });
+        prefs.bk = { ...prefs.bk, hash: '', err: '' }; savePrefs();
+        store(); renderBackupSettings('uploading');
+        const ok = await runBackup(true);
+        toast(ok ? '自動備份已開啟，第一次備份完成' : '自動備份已開啟');
+      } catch (err) { $('bkMsg').innerHTML = `<span class="neg">${esc(err.message)}</span>`; }
+      break;
+    }
+    case 'bkNow': { const ok = await runBackup(true); toast(ok ? '已備份' : '備份失敗：' + prefs.bk.err); break; }
+    case 'bkOff':
+      if (!confirm('停用自動備份？雲端已有的備份會保留（要刪除請到 gist.github.com）。')) return;
+      Object.assign(b, { on: false, token: '' }); store(); refreshBackupUI(); break;
+    case 'bkRestore': openRestore(); break;
+    case 'exportBtn': try { await exportBackup(); } catch (err) { alert('匯出失敗：' + err.message); } break;
+    case 'importBtn': $('importFile').click(); break;
+    case 'bkNagGo': showView('settings'); openSetPage('backup'); break;
+    case 'bkNagLater': prefs.bk.snooze = Date.now(); savePrefs(); renderBkNag(); break;
+  }
+});
+
+// 總覽的備份提醒：有資料、沒開自動備份、超過 14 天沒匯出
+function renderBkNag() {
+  const el = $('bkNag'); if (!el) return;
+  const hasData = state.assets.length || state.debts.length;
+  const DAY = 864e5;
+  const show = !locked && hasData && !state.backup.on && Date.now() - prefs.bk.exportAt > 14 * DAY && Date.now() - prefs.bk.snooze > 7 * DAY;
+  const fail = !locked && state.backup.on && prefs.bk.err && Date.now() - prefs.bk.at > 2 * DAY;
+  el.innerHTML = show || fail ? `<div class="bk-nag">${Icon('warn')}<div><b>${fail ? '自動備份失敗' : '資料還沒有備份'}</b><small>${fail ? esc(prefs.bk.err) : '手機遺失或清除資料就會不見，開啟自動備份就不用再手動按'}</small></div>
+    <button type="button" class="btn mini primary" id="bkNagGo">${fail ? '查看' : '設定'}</button>${fail ? '' : '<button type="button" class="nag-x" id="bkNagLater" aria-label="稍後">×</button>'}</div>` : '';
+}
+
 $('clearBtn').addEventListener('click', () => {
   if (!confirm('確定清除所有資料？建議先匯出備份。')) return;
-  state = migrate({ currency: state.currency, ai: state.ai });
+  state = migrate({ currency: state.currency, ai: state.ai, backup: state.backup });
   save();
 });
 
@@ -1768,6 +2016,8 @@ function finishUnlock(plain) {
   setTimeout(() => { $('lockScreen').hidden = true; $('lockScreen').classList.remove('opening'); document.body.classList.remove('is-locked'); }, 350);
   lastLv = null; levelsKey = '';
   render();
+  renderBkNag();
+  scheduleBackup(3000);
   afterUnlock.splice(0).forEach(f => f());
 }
 function lockNow() {
@@ -1776,6 +2026,7 @@ function lockNow() {
   Vault.lock();
   state = migrate({});
   locked = true;
+  clearTimeout(bkTimer); bkTimer = null;
   lastLv = null; levelsKey = '';
   render();
   showLock(false);
@@ -1888,7 +2139,7 @@ const SET_GROUPS = [
     { p: 'currency', ic: () => (CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0]).ic, t: '幣別', s: () => (CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0]).label },
   ]],
   ['資料', [
-    { p: 'backup', ic: 'export', t: '備份與還原', s: () => '匯出／匯入 JSON' },
+    { p: 'backup', ic: 'export', t: '備份與還原', s: backupSummary },
     { p: 'stocks', ic: 'chart', t: '股價資料', s: () => { const m = Stocks.info(); return m ? `台股 ${m.tw?.date || '—'}・美股 ${m.us?.date || '—'}` : '尚未載入'; } },
     { p: 'lvr', ic: 'townhouse', t: '實價登錄資料', s: () => lvrSummary },
   ]],
@@ -1918,6 +2169,7 @@ function openSetPage(p) {
   $('setBack').hidden = !p;
   $('setTitle').innerHTML = p ? `<span class="ic-inline">${Icon.svg(typeof it.ic === 'function' ? it.ic() : it.ic, 26)}</span> ${esc(it.t)}` : `<span class="ic-inline">${Icon.svg('gear', 26)}</span> 設定`;
   if (!p) renderSetMenu();
+  if (p === 'backup') { renderBackupSettings(); Backup.persist().then(v => { persisted = v; if (setPage === 'backup') renderBackupSettings(); }); }
   const v = $('view-settings'); v.classList.remove('set-in'); void v.offsetWidth; if (p) v.classList.add('set-in');
   document.querySelector('main').scrollTo(0, 0);
 }
@@ -1926,6 +2178,9 @@ $('setBack').addEventListener('click', () => openSetPage(''));
 
 showView('home');
 render();
+renderBkNag();
+if (!locked) scheduleBackup(4000);
+Backup.persist().then(v => { persisted = v; });
 Stocks.load().then(() => {
   levelsKey = '';
   render();

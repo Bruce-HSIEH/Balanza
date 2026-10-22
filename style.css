@@ -791,3 +791,24 @@ main {
 .set-row.danger b { color: #e53935; }
 #view-settings.set-in .set-page:not([hidden]) { animation: setIn .28s ease both; }
 @keyframes setIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+
+/* ===== v5.9 加密備份 ===== */
+#bkSet h3 { display: flex; align-items: center; gap: 6px; }
+.bk-status { display: flex; gap: 10px; align-items: center; background: var(--accent-soft); border-radius: 14px; padding: 10px 12px; margin-bottom: 8px; }
+.bk-status small { display: block; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.kd-steps { padding-left: 20px; margin: 8px 0; line-height: 1.7; color: var(--muted); }
+.kd-steps a { color: var(--accent); font-weight: 700; }
+.rkey { font: 700 clamp(13px, 4.1vw, 19px)/1.4 ui-monospace, Menlo, monospace; white-space: nowrap; overflow-x: auto; text-align: center; background: var(--soft); border: 2px dashed var(--line); border-radius: 14px; padding: 14px 8px; margin: 10px 0 4px; user-select: all; -webkit-user-select: all; word-break: break-all; }
+.kd-ok { display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: 14px; margin-top: 8px; }
+.kd-ok input { width: 20px; height: 20px; accent-color: var(--accent); }
+.rs-list { margin-top: 10px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; max-height: 40vh; overflow-y: auto; }
+.rs-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 11px 12px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.rs-row + .rs-row { border-top: 1px solid var(--line); }
+.rs-row small { color: var(--accent); font-weight: 700; flex: 1; }
+.rs-row i { font-style: normal; color: var(--muted); font-size: 13px; }
+.bk-nag { display: flex; align-items: center; gap: 10px; background: #fff4e0; border: 1px solid #ffd9a0; border-radius: var(--r); padding: 10px 12px; margin-bottom: 12px; position: relative; }
+.bk-nag > div { flex: 1; min-width: 0; }
+.bk-nag small { display: block; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.bk-nag .ico { width: 34px; height: 34px; background: #fff; }
+.nag-x { border: 0; background: none; color: var(--muted); font-size: 20px; padding: 0 2px; cursor: pointer; }
+@media (prefers-color-scheme: dark) { .bk-nag { background: #2e2616; border-color: #5a4520; } .bk-nag .ico { background: #3a301c; } }

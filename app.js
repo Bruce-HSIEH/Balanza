@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.5.0';
+const APP_VERSION = '5.5.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -485,7 +485,7 @@ function showView(name) {
   if (name === 'levels') setTimeout(() => { const r = $('lvCurRow'); r && r.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 450);
   document.querySelectorAll('.fill[data-w]').forEach(f => { f.style.width = '0'; });
   growBars();
-  if (name !== 'levels') window.scrollTo(0, 0);
+  if (name !== 'levels') document.querySelector('main').scrollTo(0, 0);
 }
 document.querySelectorAll('.tabs button, .top-btn').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 $('toLevels').addEventListener('click', () => showView('levels'));
@@ -498,7 +498,7 @@ document.addEventListener('click', e => {
   const y = r.getBoundingClientRect().top;
   render();
   const n = document.querySelector(`[data-lvsel="${lv}"]`);
-  if (n) window.scrollBy(0, n.getBoundingClientRect().top - y);   // 維持在原本的位置
+  if (n) document.querySelector('main').scrollBy(0, n.getBoundingClientRect().top - y);   // 維持在原本的位置
   if (selLv !== null && n) UI.poke(n.querySelector('svg'));
 });
 

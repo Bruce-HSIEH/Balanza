@@ -358,7 +358,8 @@ const UI = (() => {
     });
   }
   setInterval(() => { if (document.visibilityState === 'visible') wake(); }, 2000);
-  ['pageshow', 'focus', 'touchend', 'scroll'].forEach(ev => window.addEventListener(ev, () => wake(), { passive: true }));
+  ['pageshow', 'focus', 'touchend'].forEach(ev => window.addEventListener(ev, () => wake(), { passive: true }));
+  document.addEventListener('scroll', () => wake(), { passive: true, capture: true });
 
   // ---------- 數字跳動 ----------
   const lastVals = new WeakMap();

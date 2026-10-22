@@ -875,3 +875,57 @@ main {
 .py small { color: var(--muted); }
 .paid-year span:first-child { white-space: nowrap; }
 .paid-year { font-size: 13.5px; }
+
+/* ===== v5.14 圖表 ===== */
+:root {
+  --viz-1: #2a78d6; --viz-2: #eb6834; --viz-3: #1baf7a; --viz-4: #eda100;
+  --viz-5: #e87ba4; --viz-6: #008300; --viz-7: #6250d6; --viz-8: #e34948; --viz-other: #a3aaa6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --viz-1: #3987e5; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500;
+    --viz-5: #d55181; --viz-6: #008300; --viz-7: #9085e9; --viz-8: #e66767; --viz-other: #6b746f;
+  }
+}
+.donut-wrap { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; align-items: center; }
+.donut-box { position: relative; width: 150px; height: 150px; }
+.donut { width: 100%; height: 100%; display: block; overflow: visible; }
+.donut .slice { stroke: var(--card); stroke-width: 2; cursor: pointer; transition: opacity .2s; }
+.donut .slice.dim { opacity: .3; }
+.donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; text-align: center; padding: 0 34px; }
+.donut-center small { font-size: 11px; color: var(--muted); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.donut-center b { font-size: 17px; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.donut-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; min-width: 0; }
+.donut-legend li { display: flex; align-items: center; gap: 7px; padding: 4px 4px; border-radius: 10px; cursor: pointer; font-size: 13px; transition: opacity .2s, background .2s; }
+.donut-legend li.on { background: var(--soft); }
+.donut-legend li.dim { opacity: .45; }
+.donut-legend .sw { flex: none; width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+.donut-legend .ico { width: 24px; height: 24px; border-radius: 8px; }
+.donut-legend .ico svg { width: 20px; height: 20px; }
+.dl-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-name small { display: block; font-size: 11px; }
+.dl-v { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dl-v b { display: block; font-size: 13px; }
+.dl-v small { font-size: 11px; color: var(--muted); }
+@media (max-width: 360px) { .donut-wrap { grid-template-columns: 1fr; justify-items: center; } .donut-legend { width: 100%; } }
+.line-chart .area { fill: var(--lc); opacity: .12; }
+.line-chart .ln { fill: none; stroke: var(--lc); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.line-chart .xhair { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.line-chart .grid.zero { stroke: var(--muted); }
+.nw-delta { font-size: 13px; color: var(--muted); margin: 6px 0 2px; }
+.nw-delta b { font-size: 15px; }
+.pf-sub { font-size: 14px; margin: 16px 0 6px; }
+.pl-list { display: grid; gap: 6px; }
+.pl-row { display: grid; grid-template-columns: 58px 1fr 64px; gap: 8px; align-items: center; font-size: 12.5px; }
+.pl-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-track { position: relative; height: 12px; }
+.pl-mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line); }
+.pl-bar { position: absolute; top: 0; height: 100%; border-radius: 4px; }
+.pl-bar.up { background: #e53935; }
+.pl-bar.down { background: #2e9e4f; }
+.pl-v { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+#debtCurve .card { margin-top: 4px; }
+.dc-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); margin: 6px 0; }
+#debtCurve { padding-bottom: 72px; }
+#portfolio .pf-card { margin-bottom: 12px; }
+.donut-legend li { min-width: 0; }

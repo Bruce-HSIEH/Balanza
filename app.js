@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.13.0';
+const APP_VERSION = '5.14.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -251,7 +251,9 @@ function render() {
   $('debtBySource').innerHTML = barsHTML(balByBank, k => UI.bankIcon(bankOf(k)),
     k => { const b = bankOf(k); return b && b.code !== '—' ? `${shortBank(b)} (${b.code})` : (b ? b.name : k); },
     k => payByBank.get(k) ? `<small class="sub">月付 ${fmt(payByBank.get(k))}</small>` : '');
-  $('assetByCat').innerHTML = barsHTML(groupSum(state.assets, a => a.category, assetValue), icCat);
+  renderAssetDonut();
+  recordHistory(s);
+  renderNwTrend();
 
   // 還款時程
   const pl = s.st.filter(x => x.s.balance > 0).sort((a, b) => a.s.monthsLeft - b.s.monthsLeft);
@@ -333,7 +335,127 @@ function stockRow(a, i) {
     </div></li>`;
 }
 
+// ================= 圖表 =================
+// 資產類別固定配色（顏色跟著類別走，不跟排名）
+const CAT_SLOT = { '不動產': 1, '台股': 2, '現金/存款': 3, '美股': 4, '基金': 5, '車輛': 6, '保險': 7, '債券': 8 };
+const catColor = c => CAT_SLOT[c] ? `var(--viz-${CAT_SLOT[c]})` : Charts.OTHER;
+const donutSel = {};
+// slices: [{key, label, icon, value, color, sub}]
+function donutHTML(id, slices, centerTop) {
+  const total = slices.reduce((t, x) => t + x.value, 0);
+  const sel = slices.find(x => x.key === donutSel[id]);
+  const c = sel ? { t: sel.label, b: short(sel.value), s: total ? `${(sel.value / total * 100).toFixed(1)}%` : '' } : { t: centerTop, b: short(total), s: `${slices.length} 項` };
+  return `<div class="donut-wrap" data-donut="${id}">
+    <div class="donut-box">${Charts.donut(slices, { selected: sel ? sel.key : null })}
+      <div class="donut-center"><small>${esc(c.t)}</small><b>${c.b}</b><small>${c.s}</small></div></div>
+    <ul class="donut-legend">${slices.map(x => `<li data-dk="${esc(x.key)}" class="${sel ? (sel === x ? 'on' : 'dim') : ''}"><span class="sw" style="--c:${x.color}"></span>${x.icon || ''}<span class="dl-name">${esc(x.label)}${x.sub ? `<small>${x.sub}</small>` : ''}</span><span class="dl-v"><b>${total ? (x.value / total * 100).toFixed(x.value / total < 0.1 ? 1 : 0) : 0}%</b><small>${short(x.value)}</small></span></li>`).join('')}</ul></div>`;
+}
+document.addEventListener('click', e => {
+  const k = e.target.closest('[data-dk]'), w = k && k.closest('[data-donut]');
+  if (!w) return;
+  const id = w.dataset.donut;
+  donutSel[id] = donutSel[id] === k.dataset.dk ? null : k.dataset.dk;
+  if (id === 'cat') renderAssetDonut(); else if (id === 'pf') renderPortfolio();
+});
+function renderAssetDonut() {
+  const rows = groupSum(state.assets, a => a.category, assetValue).filter(r => r[1] > 0);
+  $('assetByCat').innerHTML = rows.length ? donutHTML('cat', rows.map(([k, v]) => ({ key: k, label: k, icon: icCat(k), value: v, color: catColor(k) })), '總資產')
+    : `<div class="empty">${Icon('sleep', 'ico-lg')}<p>尚無資料</p></div>`;
+}
+
+// 淨資產走勢：每天記一筆（同一天覆蓋），超過 400 天的只留每月第一筆
+function recordHistory(s) {
+  if (locked || (!state.assets.length && !state.debts.length)) return;
+  const d = new Date(), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const h = state.history = Array.isArray(state.history) ? state.history : [];
+  const rec = { d: day, a: Math.round(s.totalAssets), l: Math.round(s.totalDebts) };
+  const last = h[h.length - 1];
+  if (last && last.d === day) { if (last.a === rec.a && last.l === rec.l) return; h[h.length - 1] = rec; }
+  else h.push(rec);
+  if (h.length > 400) {
+    const cut = h.length - 400, keep = [], seen = new Set();
+    h.slice(0, cut).forEach(x => { const m = x.d.slice(0, 7); if (!seen.has(m)) { seen.add(m); keep.push(x); } });
+    state.history = keep.concat(h.slice(cut));
+  }
+  store();
+}
+let nwRange = 0, nwSel = -1;   // 0 = 全部
+function renderNwTrend() {
+  const h = (state.history || []).slice();
+  const el = $('nwTrend'); if (!el) return;
+  if (h.length < 2) { el.innerHTML = `<div class="hint-row">${Icon('sprout')}<span>從今天開始每天記錄一次淨資產，過幾天這裡就會長出走勢圖</span></div>`; return; }
+  const cut = nwRange ? (() => { const d = new Date(); d.setDate(d.getDate() - nwRange); return d.toISOString().slice(0, 10); })() : '';
+  const pts = h.filter(x => !cut || x.d >= cut).map(x => ({ label: x.d, v: x.a - x.l, a: x.a, l: x.l }));
+  if (pts.length < 2) pts.unshift(...h.slice(-2, -1).map(x => ({ label: x.d, v: x.a - x.l, a: x.a, l: x.l })));
+  if (nwSel >= pts.length) nwSel = -1;
+  const first = pts[0], last = pts[pts.length - 1], diff = last.v - first.v;
+  const s = nwSel >= 0 ? pts[nwSel] : last;
+  el.innerHTML = `<div class="chips">${[[30, '1 月'], [90, '3 月'], [365, '1 年'], [0, '全部']].map(([v, t]) => `<button type="button" class="chip-btn ${nwRange === v ? 'on' : ''}" data-nwr="${v}">${t}</button>`).join('')}</div>
+    <div class="nw-delta">${first.label.slice(5).replace('-', '/')} 起 <b class="${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '+' : '−'}${fmt(Math.abs(diff))}</b></div>
+    <div class="chart-wrap" id="nwChart">${Charts.line(pts, { selected: nwSel, color: diff >= 0 ? 'var(--viz-3)' : 'var(--viz-2)', hideAxis: hidden, fmtX: l => l.slice(5).replace('-', '/') })}</div>
+    <div class="sel-box"><div class="sel-head"><b>${s.label.replace(/-/g, '/')}</b><b>${fmt(s.v)}</b></div>
+      <div class="kv"><span>總資產</span><span class="pos">${fmt(s.a)}</span></div><div class="kv"><span>總負債</span><span class="neg">${fmt(s.l)}</span></div>
+      <div class="small muted">點圖上的日期看那天的數字</div></div>`;
+}
+document.addEventListener('click', e => {
+  const r = e.target.closest('[data-nwr]');
+  if (r) { nwRange = +r.dataset.nwr; nwSel = -1; renderNwTrend(); return; }
+  const k = e.target.closest('#nwChart [data-lk]');
+  if (k) { nwSel = +k.dataset.lk; renderNwTrend(); return; }
+  const c = e.target.closest('#dcChart [data-lk]');
+  if (c) { dcSel = +c.dataset.lk; renderDebtCurve(); }
+});
+
+// 資產頁：投資組合（持股比重＋各檔損益）
+function renderPortfolio() {
+  const el = $('portfolio'); if (!el) return;
+  const hs = state.assets.map(a => ({ a, i: stockInfo(a) })).filter(x => x.i && x.i.value > 0);
+  if (hs.length < 2) { el.innerHTML = ''; return; }
+  const byV = hs.slice().sort((x, y) => y.i.value - x.i.value);
+  const top = byV.slice(0, hs.length > 8 ? 7 : 8), rest = byV.slice(top.length);
+  const order = top.slice().sort((x, y) => state.assets.indexOf(x.a) - state.assets.indexOf(y.a));   // 依加入順序配色
+  const color = new Map(order.map((x, k) => [x.a.id, Charts.PALETTE[k]]));
+  const nm = a => a.sym ? `${a.sym} ${(a.name && a.name !== a.sym) ? a.name : ''}`.trim() : a.name;
+  const slices = top.map(x => ({ key: x.a.id, label: nm(x.a), value: x.i.value, color: color.get(x.a.id), sub: x.i.plPct != null ? `<span class="chg ${plCls(x.i.pl)}">${x.i.pl >= 0 ? '+' : ''}${x.i.plPct.toFixed(1)}%</span>` : '' }));
+  if (rest.length) slices.push({ key: '__rest', label: `其他 ${rest.length} 檔`, value: rest.reduce((t, x) => t + x.i.value, 0), color: Charts.OTHER });
+  const withPL = hs.filter(x => x.i.pl != null).sort((x, y) => y.i.pl - x.i.pl);
+  const maxPL = Math.max(1, ...withPL.map(x => Math.abs(x.i.pl)));
+  const plRows = withPL.map(x => { const w = Math.abs(x.i.pl) / maxPL * 50; return `<div class="pl-row"><span class="pl-name">${esc(x.a.sym || x.a.name)}</span>
+      <div class="pl-track"><span class="pl-mid"></span><span class="pl-bar ${plCls(x.i.pl)}" style="${x.i.pl >= 0 ? 'left:50%' : `left:${(50 - w).toFixed(1)}%`};width:${Math.max(0.6, w).toFixed(1)}%"></span></div>
+      <span class="pl-v chg ${plCls(x.i.pl)}">${x.i.pl >= 0 ? '+' : '−'}${short(Math.abs(x.i.pl))}</span></div>`; }).join('');
+  el.innerHTML = `<div class="card pf-card"><h2>${Icon.svg('chart', 24)} 投資組合</h2>
+    ${donutHTML('pf', slices, '股票市值')}
+    ${withPL.length ? `<h3 class="pf-sub">各檔未實現損益</h3><div class="pl-list">${plRows}</div>` : ''}</div>`;
+}
+
+// 負債頁：負債餘額預測（到全部還清）
+let dcSel = -1;
+function renderDebtCurve() {
+  const el = $('debtCurve'); if (!el) return;
+  const debts = state.debts.filter(d => d.mode === 'auto' || d.mode === 'revolving');
+  if (!debts.length) { el.innerHTML = ''; return; }
+  const all = Plan.horizonAll(state.debts);
+  const P = projection(all);
+  // 每 3 個月取一點，避免太密
+  const step = all > 240 ? 6 : all > 60 ? 3 : 1;
+  const balAt = m => Object.values(m.items).reduce((t, it) => t + (it.balance || 0), 0);
+  const pts = [];
+  P.months.forEach((m, k) => { if (k % step === 0 || k === P.months.length - 1) pts.push({ label: m.ym, v: balAt(m), k }); });
+  // 還清事件標點
+  P.events.filter(e => e.type === 'payoff').forEach(e => { let best = 0; pts.forEach((p, i) => { if (Loan.ymDiff(p.label, e.ym) >= 0) best = i; }); pts[best].mark = debtColor(e.debt); pts[best].ev = (pts[best].ev || []).concat(e.debt.name); });
+  if (pts.length < 2) { el.innerHTML = ''; return; }
+  if (dcSel >= pts.length) dcSel = -1;
+  const s = dcSel >= 0 ? pts[dcSel] : null;
+  const payoffs = P.events.filter(e => e.type === 'payoff').sort((a, b) => Loan.ymDiff(b.ym, a.ym));
+  el.innerHTML = `<div class="card"><h2>${Icon.svg('down', 24)} 負債餘額會怎麼下降</h2>
+    <div class="chart-wrap" id="dcChart">${Charts.line(pts, { selected: dcSel, color: 'var(--viz-1)', hideAxis: hidden, fmtX: l => `'${l.slice(2, 4)}` })}</div>
+    ${s ? `<div class="sel-box"><div class="sel-head"><b>${s.label.replace('-', '/')}</b><b>${fmt(s.v)}</b></div>${s.ev ? `<div class="small">${s.ev.map(esc).join('、')} 還清</div>` : ''}</div>`
+      : `<div class="dc-legend">${payoffs.map(e => `<span><span class="dot" style="--c:${debtColor(e.debt)}"></span>${esc(e.debt.name)} ${e.ym.replace('-', '/')} 還清</span>`).join('')}</div>`}
+    <div class="small muted">只含自動試算與理財型額度；點圖看那個時間點還欠多少</div></div>`;
+}
+
 function renderAssets(s) {
+  renderPortfolio();
   $('assetsSum').textContent = fmt(s.totalAssets);
   if (!state.assets.length) { $('assetList').innerHTML = `<div class="empty big-empty">${Icon('piggy', 'ico-xl')}<p>點右下角 ＋ 新增第一筆資產</p></div>`; return; }
   const groups = ASSET_CATS.map(c => {
@@ -378,6 +500,7 @@ function renderAssets(s) {
 }
 
 function renderDebts(s) {
+  renderDebtCurve();
   const rt = x => x.s.rate ?? num(x.d.rate);
   const ds = [...s.st].sort((a, b) => rt(b) - rt(a));
   $('debtsSum').textContent = fmt(s.totalDebts);
@@ -2114,7 +2237,7 @@ async function exportBackup() {
 }
 function applyRestore(d) {
   if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
-  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], ai: state.ai, backup: state.backup });
+  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], ai: state.ai, backup: state.backup });
   lastLv = null; levelsKey = '';
   save();
 }

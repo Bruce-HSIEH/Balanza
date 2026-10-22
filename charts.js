@@ -2,7 +2,9 @@
 // 自繪 SVG 圖表：逐月還款堆疊長條、投入進度環、累計投入與利息
 
 const Charts = (() => {
-  const PALETTE = ['#7cb7ff', '#ff8a80', '#ffc46b', '#8ce0a8', '#b39dfa', '#80deea', '#f48fb1', '#c5e1a5', '#ffab91', '#9fa8da'];
+  // 色票：CSS 變數（style.css 定義淺色／深色兩組，已驗證色盲可分辨）
+  const PALETTE = [1, 2, 3, 4, 5, 6, 7, 8].map(i => `var(--viz-${i})`);
+  const OTHER = 'var(--viz-other)';
   const niceMax = v => {
     if (v <= 0) return 1;
     const p = Math.pow(10, Math.floor(Math.log10(v)));
@@ -80,5 +82,58 @@ const Charts = (() => {
       <polyline class="iline" points="${pts.join(' ')}" fill="none"/>${pts.map(p => `<circle cx="${p.split(',')[0]}" cy="${p.split(',')[1]}" r="2.6" class="idot"/>`).join('')}${lab}</svg>`;
   }
 
-  return { PALETTE, stacked, ring, invest, wanLabel };
+
+  // ---- 甜甜圈圖 ----
+  // slices: [{key, value, color}]；selected: key
+  function donut(slices, { size = 168, thick = 26, selected = null } = {}) {
+    const total = slices.reduce((t, x) => t + Math.max(0, x.value), 0);
+    const c = size / 2, r = c - 6, ri = r - thick;
+    if (total <= 0) return `<svg viewBox="0 0 ${size} ${size}" class="donut"><circle cx="${c}" cy="${c}" r="${(r + ri) / 2}" fill="none" stroke="var(--soft)" stroke-width="${thick}"/></svg>`;
+    let a0 = -Math.PI / 2, out = '';
+    const pt = (rad, a) => `${(c + rad * Math.cos(a)).toFixed(2)} ${(c + rad * Math.sin(a)).toFixed(2)}`;
+    for (const x of slices) {
+      if (x.value <= 0) continue;
+      const frac = x.value / total, a1 = a0 + frac * Math.PI * 2;
+      const on = selected === x.key, dim = selected != null && !on;
+      const ro = on ? r + 4 : r, rin = on ? ri - 2 : ri;
+      let d;
+      if (frac >= 0.9999) d = `M${pt(ro, a0)} A${ro} ${ro} 0 1 1 ${pt(ro, a0 + Math.PI * 1.9999)} L${pt(rin, a0 + Math.PI * 1.9999)} A${rin} ${rin} 0 1 0 ${pt(rin, a0)}Z`;
+      else { const big = a1 - a0 > Math.PI ? 1 : 0; d = `M${pt(ro, a0)} A${ro} ${ro} 0 ${big} 1 ${pt(ro, a1)} L${pt(rin, a1)} A${rin} ${rin} 0 ${big} 0 ${pt(rin, a0)}Z`; }
+      out += `<path d="${d}" fill="${x.color}" class="slice${dim ? ' dim' : ''}" data-dk="${String(x.key).replace(/"/g, '&quot;')}"/>`;
+      a0 = a1;
+    }
+    return `<svg viewBox="0 0 ${size} ${size}" class="donut">${out}</svg>`;
+  }
+
+  // ---- 折線（面積）圖 ----
+  // pts: [{label, v, mark?}]；單一數列，selected = 索引
+  function line(pts, { width = 340, height = 150, selected = -1, color = 'var(--viz-1)', hideAxis = false, xEvery = 0, fmtX = l => l } = {}) {
+    const L = hideAxis ? 8 : 40, R = 10, T = 12, B = 22;
+    const pw = width - L - R, ph = height - T - B, n = pts.length;
+    if (n < 2) return '';
+    const vs = pts.map(p => p.v);
+    let lo = Math.min(...vs), hi = Math.max(...vs);
+    if (lo > 0 && lo > hi * 0.6) lo = hi * 0.6; else if (lo > 0) lo = 0;
+    if (hi === lo) hi = lo + 1;
+    const span = hi - lo, step = niceMax(span / 2);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    const x = k => L + (n === 1 ? pw / 2 : k / (n - 1) * pw), y = v => T + ph - (v - lo) / (hi - lo) * ph;
+    let grid = '';
+    for (let v = lo; v <= hi + 1e-6; v += step) grid += `<line x1="${L}" y1="${y(v).toFixed(1)}" x2="${width - R}" y2="${y(v).toFixed(1)}" class="grid${v === 0 ? ' zero' : ''}"/>${hideAxis ? '' : `<text x="${L - 4}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end" class="ax ay">${v < 0 ? '-' : ''}${wanLabel(Math.abs(v))}</text>`}`;
+    const d = pts.map((p, k) => `${k ? 'L' : 'M'}${x(k).toFixed(1)} ${y(p.v).toFixed(1)}`).join('');
+    const base = y(Math.max(lo, Math.min(hi, 0)));
+    const area = `${d}L${x(n - 1).toFixed(1)} ${base.toFixed(1)}L${x(0).toFixed(1)} ${base.toFixed(1)}Z`;
+    const every = xEvery || Math.max(1, Math.ceil(n / 5));
+    let xl = '', marks = '', hits = '';
+    pts.forEach((p, k) => {
+      if (k % every === 0 || k === n - 1) { if (!(k === n - 1 && k % every !== 0 && (n - 1) % every < every / 2)) xl += `<text x="${x(k).toFixed(1)}" y="${height - 6}" text-anchor="${k === 0 ? 'start' : k === n - 1 ? 'end' : 'middle'}" class="ax">${fmtX(p.label)}</text>`; }
+      if (p.mark) marks += `<circle cx="${x(k).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="4.5" fill="${p.mark}" stroke="var(--card)" stroke-width="2"/>`;
+      const hw = pw / Math.max(1, n - 1);
+      hits += `<rect x="${(x(k) - hw / 2).toFixed(1)}" y="${T}" width="${hw.toFixed(1)}" height="${ph}" fill="transparent" data-lk="${k}"/>`;
+    });
+    const sel = selected >= 0 && selected < n ? `<line x1="${x(selected).toFixed(1)}" y1="${T}" x2="${x(selected).toFixed(1)}" y2="${T + ph}" class="xhair"/><circle cx="${x(selected).toFixed(1)}" cy="${y(pts[selected].v).toFixed(1)}" r="5" fill="${color}" stroke="var(--card)" stroke-width="2"/>` : '';
+    return `<svg class="chart line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="--lc:${color}">${grid}<path d="${area}" class="area"/><path d="${d}" class="ln"/>${marks}${sel}${xl}${hits}</svg>`;
+  }
+
+  return { PALETTE, OTHER, stacked, ring, invest, donut, line, wanLabel };
 })();

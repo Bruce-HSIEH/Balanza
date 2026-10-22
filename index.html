@@ -50,6 +50,11 @@
         <div class="ratio-track"><div class="ratio-fill" id="ratioFill"></div></div>
       </div>
 
+      <div class="card" id="nwTrendCard">
+        <h2><i data-ic="chart" data-size="24"></i> 淨資產走勢</h2>
+        <div id="nwTrend"></div>
+      </div>
+
       <div class="card home-repay" id="homeRepay" hidden>
         <div class="hr-head"><h2><i data-ic="repay" data-size="24"></i> 本月還款</h2><button type="button" class="link-btn" data-goto="repay">還款計畫 ›</button></div>
         <div id="homeRepayBody"></div>
@@ -69,7 +74,7 @@
 
       <div class="card">
         <h2><i data-ic="basket" data-size="24"></i> 資產分布</h2>
-        <div id="assetByCat" class="bars"></div>
+        <div id="assetByCat"></div>
       </div>
 
       <div class="card">
@@ -82,6 +87,7 @@
     <section class="view" id="view-assets">
       <div class="listhead"><h2><i data-ic="piggy" data-size="26"></i> 資產</h2><span id="assetsSum" class="pos"></span></div>
       <button type="button" class="btn bulk-btn" id="bulkOpen"><i data-ic="tw" data-size="22"></i> 一次輸入股票持股（可用截圖）</button>
+      <div id="portfolio"></div>
       <div id="assetList"></div>
     </section>
 
@@ -89,6 +95,7 @@
     <section class="view" id="view-debts">
       <div class="listhead"><h2><i data-ic="card" data-size="26"></i> 負債</h2><span id="debtsSum" class="neg"></span></div>
       <ul class="list" id="debtList"></ul>
+      <div id="debtCurve"></div>
     </section>
 
     <!-- 還款計畫 -->

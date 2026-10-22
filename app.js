@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.10.0';
+const APP_VERSION = '5.11.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -362,9 +362,11 @@ function renderAssets(s) {
       let sub = '';
       if (a.category === '車輛' && a.brand) { const b = brandOf(a.brand); sub = `${b ? b.zh : a.brand}${a.model ? ' ' + a.model : ''}${a.buyYear ? ' · ' + a.buyYear : ''}`; }
       if (a.category === '不動產' && a.district) sub = `${a.district}${a.road || ''}${a.ping ? ' · ' + a.ping + ' 坪' : ''}${a.lvrAt ? ' · 實價估' : ''}`;
+      let eq = '';
+      if (isRE(a)) { const L = loansOn(a.id, s.st); if (L.list.length) eq = `<div class="sub eq-line">貸款 <span class="neg">${short(L.debt)}</span> · 淨值 <b class="${v - L.debt >= 0 ? 'pos' : 'neg'}">${short(v - L.debt)}</b> · 成數 ${v ? Math.round(L.debt / v * 100) : '—'}%</div>`; }
       if (a.note) sub += (sub ? ' · ' : '') + a.note;
       return `<li data-edit="asset" data-id="${a.id}" style="--i:${i++}">${assetIcon(a)}
-        <div class="grow"><div class="name">${esc(a.name)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>
+        <div class="grow"><div class="name">${esc(a.name)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}${eq}</div>
         <div class="amt pos">${fmt(v)}</div></li>`;
     }).join('');
     return `<div class="group ${open ? 'open' : ''}">
@@ -379,13 +381,29 @@ function renderDebts(s) {
   const rt = x => x.s.rate ?? num(x.d.rate);
   const ds = [...s.st].sort((a, b) => rt(b) - rt(a));
   $('debtsSum').textContent = fmt(s.totalDebts);
-  $('debtList').innerHTML = ds.length ? ds.map(({ d, s: x }, i) => {
+  if (!ds.length) { $('debtList').innerHTML = `<div class="empty big-empty">${Icon('heart', 'ico-xl')}<p>點右下角 ＋ 新增負債</p></div>`; return; }
+  let i = 0;
+  const row = ({ d, s: x }, linked) => {
     const b = bankOf(d.bank);
-    return `<li data-edit="debt" data-id="${d.id}" style="--i:${i}"><span class="stack">${UI.bankIcon(b)}<span class="badge">${Icon.svg(typeOf(d.type).ic === 'car' ? 'loan' : typeOf(d.type).ic, 18)}</span></span>
+    return `<li data-edit="debt" data-id="${d.id}" class="${linked ? 'linked' : ''}" style="--i:${i++}"><span class="stack">${UI.bankIcon(b)}<span class="badge">${Icon.svg(typeOf(d.type).ic === 'car' ? 'loan' : typeOf(d.type).ic, 18)}</span></span>
       <div class="grow"><div class="name">${esc(d.name)}${x.inGrace ? ` <span class="chip">寬限期剩 ${x.graceLeft} 月</span>` : ''}</div>
-      <div class="sub">${esc(b && b.code !== '—' ? b.code + ' ' + shortBank(b) : (b ? b.name : '—'))} · 年利率 ${pct(x.rate ?? num(d.rate))}${d.mode === 'auto' ? ((d.changes || []).length ? ` · 歷程 ${d.changes.length} 筆` : ' · 自動試算') : d.mode === 'revolving' ? ` · 額度 ${short(x.limit)}` : ''}</div></div>
+      <div class="sub">${esc(b && b.code !== '—' ? b.code + ' ' + shortBank(b) : (b ? b.name : '—'))} · 年利率 ${pct(rt({ d, s: x }))}${d.mode === 'auto' ? ((d.changes || []).length ? ` · 歷程 ${d.changes.length} 筆` : ' · 自動試算') : d.mode === 'revolving' ? ` · 額度 ${short(x.limit)}` : ''}</div></div>
       <div class="amt neg">${fmt(x.balance)}<div class="sub">${x.revolving ? '利息' : '月付'} ${fmt(x.monthly)}</div></div></li>`;
-  }).join('') : `<div class="empty big-empty">${Icon('heart', 'ico-xl')}<p>點右下角 ＋ 新增負債</p></div>`;
+  };
+  // 依抵押的房子分組
+  const props = state.assets.filter(isRE).map(a => ({ a, v: assetValue(a), items: ds.filter(x => x.d.collateral === a.id) })).filter(p => p.items.length);
+  const used = new Set(props.flatMap(p => p.items.map(x => x.d.id)));
+  const groups = props.map(p => {
+    const debt = p.items.reduce((t, x) => t + x.s.balance, 0), monthly = p.items.reduce((t, x) => t + x.s.monthly, 0), eq = p.v - debt;
+    const ltv = p.v ? debt / p.v * 100 : 0;
+    return `<li class="prop-group" style="--i:${i++}">
+      <button type="button" class="prop-head" data-edit="asset" data-id="${p.a.id}">${assetIcon(p.a)}
+        <div class="grow"><div class="name">${esc(p.a.name)}</div><div class="sub">估值 ${short(p.v)} · ${p.items.length} 筆貸款 · 月付合計 ${fmt(monthly)}</div></div>
+        <div class="amt"><div class="${eq >= 0 ? 'pos' : 'neg'}">淨值 ${short(eq)}</div><div class="sub">貸款 ${short(debt)}</div></div></button>
+      <div class="ltv"><div class="ltv-bar"><span style="width:${Math.min(100, ltv).toFixed(1)}%"></span></div><small>貸款成數 ${ltv.toFixed(0)}%</small></div>
+      <ul class="list linked-list">${p.items.map(x => row(x, true)).join('')}</ul></li>`;
+  }).join('');
+  $('debtList').innerHTML = groups + ds.filter(x => !used.has(x.d.id)).map(x => row(x)).join('');
 }
 
 // --- 等級 ---
@@ -545,6 +563,11 @@ const OPTS = {
   road: async vals => { if (!vals.county || !vals.district) return []; const d = await LVR.loadCounty(vals.county); const r = d.d[vals.district]?.r || {}; return Object.keys(r).sort((a, b) => r[b].s.all[3] - r[a].s.all[3]).map(k => opt(k, k, Icon('road'), `${r[k].s.all[3]} 筆 · 中位 ${wan(r[k].s.all[0])}/坪`)); },
   btype: () => BUILDING_TYPES.map(c => opt(c.v, c.v, Icon(c.ic), c.d)),
   planSource: () => [opt('self', '自有資金', Icon('wallet'), '不產生利息'), ...state.debts.filter(isRev).map(d => opt(d.id, d.name, UI.bankIcon(bankOf(d.bank)), `理財型額度 ${short(num(d.limit))} · ${pct(num(d.rate))}`))],
+  property: () => {
+    const ps = state.assets.filter(isRE);
+    if (!ps.length) throw new Error('還沒有不動產資產，先到「資產」新增這間房子');
+    return [opt('', '不指定', Icon('other'), '不和任何房子連結'), ...ps.map(a => opt(a.id, a.name, assetIcon(a), `估值 ${short(assetValue(a))}${a.district ? ' · ' + a.district + (a.road || '') : ''}`))];
+  },
   grace: () => [0, 6, 12, 24, 36, 48, 60].map(m => opt(String(m), m ? `${m} 個月${m % 12 === 0 ? `（${m / 12} 年）` : ''}` : '沒有寬限期', Icon(m ? 'pause' : 'play'), m ? '期間只繳利息、不還本金' : '一撥款就開始還本金')),
   stock: async vals => {
     await Stocks.load();
@@ -563,6 +586,7 @@ const PICK_LABEL = {
   mode: v => (CALC_MODES.find(c => c.v === v) || {}).label || '',
   brand: v => { const b = brandOf(v); return b ? (b.zh === b.v ? b.v : `${b.zh} ${b.v}`) : v; },
   grace: v => +v ? `${v} 個月` : '沒有寬限期',
+  property: v => { const a = propOf(v); return a ? a.name : v ? '（已刪除的房子）' : '不指定'; },
   stock: (v, vals) => { const q = v && Stocks.quote(mktOf(vals), v); return q ? `${q.sym} ${q.name}` : v; },
 };
 const PICK_ICON = {
@@ -578,10 +602,19 @@ const PICK_ICON = {
   county: () => Icon('pin'), district: () => Icon('city'), road: () => Icon('road'),
   btype: v => Icon((BUILDING_TYPES.find(c => c.v === v) || {}).ic || 'tower'),
   grace: v => Icon(+v ? 'pause' : 'play'),
+  property: v => { const a = propOf(v); return a ? assetIcon(a) : Icon('other'); },
   stock: (v, vals) => Icon(mktOf(vals) === 'us' ? 'us' : 'tw'),
 };
 
 const isRE = v => v.category === '不動產';
+const isMortgage = v => ['房貸', '理財型房貸'].includes(v.type) || !!v.collateral;
+const propOf = id => id && state.assets.find(a => a.id === id && isRE(a));
+// 這間房子背的貸款
+function loansOn(assetId, st = summary().st) {
+  const list = st.filter(x => x.d.collateral === assetId);
+  const debt = list.reduce((t, x) => t + x.s.balance, 0), monthly = list.reduce((t, x) => t + x.s.monthly, 0);
+  return { list, debt, monthly };
+}
 const isCar = v => v.category === '車輛';
 const isStock = v => !!mktOf(v);
 const isAuto = v => v.mode === 'auto';
@@ -609,6 +642,7 @@ const FIELDS = {
     { k: 'btype', label: '建物型態', type: 'pick', opts: 'btype', def: '住宅大樓', show: isRE, half: true },
     { k: 'ping', label: '建物坪數（不含車位）', type: 'number', show: isRE, half: true },
     { panel: 'lvrPanel', show: isRE },
+    { panel: 'propLoanPanel', show: v => isRE(v) && !!v.id },
     { sec: ['car', '車輛資訊'], show: isCar },
     { panel: 'carPreview', show: isCar },
     { k: 'brand', label: '廠牌', type: 'pick', opts: 'brand', show: isCar },
@@ -625,6 +659,7 @@ const FIELDS = {
     { k: 'type', label: '類型', type: 'pick', opts: 'debtType', def: '房貸' },
     { k: 'name', label: '名稱', type: 'text', req: true, ph: '例：自住房貸' },
     { k: 'bank', label: '負債來源（銀行）', type: 'pick', opts: 'bank', search: true },
+    { k: 'collateral', label: '抵押的房子', type: 'pick', opts: 'property', show: v => isMortgage(v) },
     { k: 'mode', label: '計算方式', type: 'pick', opts: 'mode', def: 'auto' },
     { k: 'principal', label: '原始貸款金額（撥款時）', type: 'number', req: true, show: isAuto },
     { k: 'limit', label: '核准額度', type: 'number', req: true, show: isRev },
@@ -713,9 +748,26 @@ function refreshForm() {
   if (editing.kind === 'debt') { drawLoanPanel(); drawChgPanel(); }
   if (editing.kind === 'asset' && isCar(vals)) drawCarPanels();
   if (editing.kind === 'asset' && isRE(vals)) drawLvrPanel();
+  if (editing.kind === 'asset' && isRE(vals) && vals.id) drawPropLoanPanel();
   if (editing.kind === 'asset' && isStock(vals)) drawStockPanel();
   if (editing.kind === 'plan') drawPlanPanel();
 }
+function drawPropLoanPanel() {
+  const el = $('propLoanPanel'); if (!el) return;
+  const L = loansOn(vals.id);
+  const v = num(vals.amount);
+  if (!L.list.length) { el.innerHTML = `<div class="hint-row">${Icon('mortgage')}<span>這間房子有房貸的話，到那筆貸款的「抵押的房子」選這間，就會在這裡看到貸款與淨值</span></div>`; return; }
+  el.innerHTML = `<div class="panel-title">${Icon('mortgage')} 這間房子的貸款</div>
+    ${L.list.map(x => `<button type="button" class="kv kv-btn" data-jump="${x.d.id}"><span>${esc(x.d.name)}</span><span>${fmt(x.s.balance)} ›</span></button>`).join('')}
+    <div class="kv"><span>貸款合計</span><b class="neg">${fmt(L.debt)}</b></div>
+    <div class="kv"><span>每月合計還款</span><span>${fmt(L.monthly)}</span></div>
+    <div class="kv"><span>淨值（價值 − 貸款）</span><b class="${v - L.debt >= 0 ? 'pos' : 'neg'}">${fmt(v - L.debt)}</b></div>
+    <div class="kv"><span>貸款成數</span><span>${v ? (L.debt / v * 100).toFixed(1) + '%' : '—'}</span></div>`;
+}
+$('editFields').addEventListener('click', e => {
+  const j = e.target.closest('[data-jump]');
+  if (j) openEditor('debt', j.dataset.jump);
+});
 
 function readInputs() {
   $('editFields').querySelectorAll('input[name]').forEach(i => { vals[i.name] = i.value; });
@@ -728,6 +780,7 @@ $('editFields').addEventListener('input', e => {
   if (editing.kind === 'plan') drawPlanPanel();
   if (editing.kind === 'asset' && isCar(vals) && ['buyYear', 'buyPrice', 'model'].includes(e.target.name)) drawCarPanels();
   if (editing.kind === 'asset' && isRE(vals) && e.target.name === 'ping') drawLvrPanel();
+  if (editing.kind === 'asset' && isRE(vals) && vals.id && e.target.name === 'amount') drawPropLoanPanel();
   if (editing.kind === 'asset' && isStock(vals) && ['shares', 'cost', 'manualPrice'].includes(e.target.name)) drawStockPanel();
 });
 

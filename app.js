@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.6.1';
+const APP_VERSION = '5.7.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -11,6 +11,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const CAT_MIGRATE = { '股票': '台股', 'ETF/基金': '基金' };
 function migrate(d) {
   d = { currency: 'TWD', assets: [], debts: [], plans: [], ...d };
+  d.ai = { on: true, key: '', model: 'claude-haiku-5-5', ...(d.ai || {}) };
   d.plans = d.plans || [];
   d.assets = d.assets.map(a => {
     let category = CAT_MIGRATE[a.category] || a.category;
@@ -257,6 +258,7 @@ function render() {
   renderRepay();
   renderInvest();
 
+  if (!document.activeElement || document.activeElement.id !== 'aiKey') renderAISettings();
   const cur = CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0];
   $('currencyBtn').innerHTML = `${Icon(cur.ic)}<span>${cur.label}</span><i>›</i>`;
   growBars();
@@ -1349,7 +1351,7 @@ $('bkSave').addEventListener('click', () => {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false, vcResults = [];
 const fmtRaw = (n, ccy = state.currency) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: ccy, maximumFractionDigits: ccy === 'TWD' || ccy === 'JPY' ? 0 : 2 }).format(n || 0);
-const MISS_ZH = { startYM: '撥款年月', rate: '利率', bank: '銀行', balance: '剩餘本金', monthly: '每月還款', limit: '額度', shares: '股數', amount: '金額' };
+const MISS_ZH = { principal: '貸款金額', years: '年限', startYM: '撥款年月', rate: '利率', bank: '銀行', balance: '剩餘本金', monthly: '每月還款', limit: '額度', shares: '股數', amount: '金額' };
 const VC_EXAMPLES = ['玉山活存 50 萬', '0050 三張 均價 95', '國泰房貸 800 萬 利率 2.1% 30 年 寬限期 3 年', '信用卡 欠 3 萬 每月繳 5000', '房子 1800 萬 30 坪', '車子 豐田 RAV4 價值 70 萬'];
 
 function openVoice() {
@@ -1359,6 +1361,9 @@ function openVoice() {
   $('vcResults').innerHTML = '';
   $('vcMascot').innerHTML = UI.mascotSVG(UI.levelOf(summary(), twdK()));
   $('vcMic').hidden = !SR;
+  aiLast = '';
+  $('vcAI').hidden = !aiReady();
+  $('vcBadge').hidden = !aiReady();
   $('vcHint').innerHTML = SR ? '按下麥克風開始說，說完會自動整理；也可以直接打字。'
     : `這個模式不支援 App 內語音辨識。點下面的輸入框，按<b>鍵盤上的麥克風</b>用聽寫說話，效果一樣。`;
   $('vcExamples').innerHTML = VC_EXAMPLES.map(x => `<button type="button" class="chip-btn" data-vcx="${esc(x)}">${esc(x)}</button>`).join('');
@@ -1415,7 +1420,7 @@ function stopListening() {
     try { r.stop(); } catch (e) { /* ignore */ }
     setTimeout(() => { try { r.abort(); } catch (e) { /* ignore */ } }, 400);   // iOS 不理 stop() 時強制中斷
   }
-  if (listening) { setListening(false); vcParse(); }
+  if (listening) { setListening(false); vcParse(); if (aiReady()) setTimeout(() => vcAI(), 300); }
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') stopListening(); });
 
@@ -1457,14 +1462,84 @@ function vcCardHTML(r, i) {
     <div class="vc-btns">${ok ? `<button type="button" class="btn mini primary" data-vcadd="${i}">新增</button>` : ''}
       <button type="button" class="btn mini" data-vcform="${i}">${ok ? '修改' : '補資料'}</button></div></div>`;
 }
+// AI 結果 → 與規則解析相同的格式
+const aiReady = () => !!(state.ai && state.ai.on && state.ai.key);
+function debtMissing(v) {
+  const m = [];
+  if (!v.bank) m.push('bank');
+  if (v.mode === 'auto') { if (!v.principal) m.push('principal'); if (!v.years) m.push('years'); if (!v.startYM) m.push('startYM'); if (v.rate === '' || v.rate == null) m.push('rate'); }
+  if (v.mode === 'manual') { if (!v.balance) m.push('balance'); if (!v.monthly) m.push('monthly'); if (v.rate === '' || v.rate == null) m.push('rate'); }
+  if (v.mode === 'revolving') { if (!v.limit) m.push('limit'); if (v.rate === '' || v.rate == null) m.push('rate'); }
+  return m;
+}
+function fromAI(it) {
+  const text = it.source_text || '';
+  const z = v => v == null ? '' : v;
+  if (it.kind === 'stock') {
+    const mkt = it.market === 'us' ? 'us' : 'tw';
+    let sym = String(it.symbol || '').toUpperCase().replace(/\.TWO?$/, '');
+    if (!Stocks.quote(mkt, sym)) { const f = Voice.findStock(`${it.name || ''} ${sym}`); if (f) sym = f.sym; }
+    const q = Stocks.quote(mkt, sym);
+    const vals = { category: mkt === 'us' ? '美股' : '台股', sym: Stocks.norm(mkt, sym), shares: z(it.shares), cost: z(it.price) };
+    return { kind: 'asset', stock: true, ai: true, vals, name: q ? q.name : (it.name || sym), missing: it.shares ? [] : ['shares'], text };
+  }
+  if (it.kind === 'debt') {
+    const type = DEBT_TYPES.some(t => t.v === it.debt_type) ? it.debt_type : '其他';
+    const b = it.bank_code && BANKS.find(x => x.code === String(it.bank_code).padStart(3, '0'));
+    const mode = it.mode || (type === '理財型房貸' ? 'revolving' : it.years ? 'auto' : 'manual');
+    const vals = { type, name: it.name || type, bank: b ? `${b.code}|${b.name}` : type === '親友借款' ? '—|親友' : '', mode, rate: z(it.rate ?? (type === '親友借款' ? 0 : '')),
+      principal: z(it.principal), balance: z(it.balance), monthly: z(it.monthly), limit: z(it.limit), drawn: z(it.drawn ?? (mode === 'revolving' ? 0 : '')),
+      years: z(it.years), grace: String(it.grace_months || 0), graceYM: z(it.grace_start), startYM: z(it.start), method: it.method || 'annuity', payDay: z(it.pay_day), note: z(it.note) };
+    if (mode === 'auto' && !vals.principal && vals.balance) vals.principal = vals.balance;
+    return { kind: 'debt', ai: true, vals, missing: debtMissing(vals), text };
+  }
+  const cat = ASSET_CATS.some(c => c.v === it.category) ? it.category : '其他';
+  const brand = it.car_brand && CAR_BRANDS.find(c => c.v.toLowerCase() === String(it.car_brand).toLowerCase() || c.zh === it.car_brand);
+  const vals = { category: cat, name: it.name || cat, amount: z(it.amount), note: z(it.note) };
+  if (cat === '車輛') Object.assign(vals, { brand: brand ? brand.v : '', model: z(it.car_model), buyYear: z(it.buy_year), buyPrice: z(it.buy_price) });
+  if (cat === '不動產' && it.ping) vals.ping = it.ping;
+  return { kind: 'asset', ai: true, vals, missing: vals.amount ? [] : ['amount'], text };
+}
+let aiCtl = null, aiLast = '';
+async function vcAI(force) {
+  const txt = $('vcText').value.trim();
+  if (!aiReady() || !txt || (!force && txt === aiLast)) return;
+  aiLast = txt;
+  if (aiCtl) aiCtl.abort();
+  aiCtl = new AbortController();
+  const ctl = aiCtl;
+  clearTimeout(vcTimer);
+  $('vcResults').innerHTML = `<div class="vc-thinking">${Icon('star')}<span>AI 整理中…</span></div>`;
+  try {
+    await Stocks.load();
+    const r = await AI.call(state.ai.key, state.ai.model, txt, ctl.signal);
+    if (ctl !== aiCtl) return;
+    vcResults = r.items.map(fromAI);
+    renderVc(true);
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+    vcResults = Voice.parse(txt);
+    renderVc(false, e.message);
+  }
+}
+function renderVc(byAI, err) {
+  const txt = $('vcText').value.trim();
+  const okN = vcResults.filter(r => !r.missing.length).length;
+  $('vcResults').innerHTML = (err ? `<div class="vc-err">${Icon('warn')}<span>${esc(err)}，先用內建規則整理</span></div>` : '')
+    + (byAI && vcResults.length ? `<div class="vc-by">${Icon.svg('star', 16)} 由 AI 整理</div>` : '')
+    + (vcResults.length ? vcResults.map(vcCardHTML).join('') + (okN > 1 ? `<button type="button" class="btn primary vc-all" data-vcall="1">全部新增（${okN} 筆）</button>` : '')
+      : txt ? `<div class="empty">${byAI ? 'AI 沒有找到可以新增的項目' : '聽不太懂，換個說法試試，例如「玉山活存 50 萬」'}</div>` : '');
+}
+
 let vcTimer;
 function vcParse() {
   clearTimeout(vcTimer);
   vcTimer = setTimeout(() => {
     const txt = $('vcText').value.trim();
+    if (aiReady() && txt && txt === aiLast) return;   // 已有 AI 結果就不要被規則覆蓋
     vcResults = txt ? Voice.parse(txt) : [];
-    $('vcResults').innerHTML = vcResults.length ? vcResults.map(vcCardHTML).join('') + (vcResults.filter(r => !r.missing.length).length > 1 ? `<button type="button" class="btn primary vc-all" data-vcall="1">全部新增（${vcResults.filter(r => !r.missing.length).length} 筆）</button>` : '')
-      : txt ? '<div class="empty">聽不太懂，換個說法試試，例如「玉山活存 50 萬」</div>' : '';
+    renderVc(false);
+    if (aiReady() && txt) $('vcResults').insertAdjacentHTML('afterbegin', `<div class="vc-by muted">即時預覽（內建規則）· 按「AI 整理」或說完會由 AI 重新整理</div>`);
   }, 250);
 }
 function vcAdd(r) {
@@ -1508,7 +1583,8 @@ document.addEventListener('click', e => {
     openEditor(r.kind, null, preset);
   }
 });
-$('vcText').addEventListener('input', vcParse);
+$('vcText').addEventListener('input', () => { aiLast = ''; vcParse(); });
+$('vcAI').addEventListener('click', () => vcAI(true));
 $('vcMic').addEventListener('click', () => listening ? stopListening() : startListening());
 $('vcClose').addEventListener('click', () => { stopListening(); $('voiceDialog').close(); });
 $('voiceDialog').addEventListener('close', stopListening);
@@ -1524,6 +1600,43 @@ function toast(msg) {
   toastT = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+// ---------- AI 設定 ----------
+function renderAISettings() {
+  const a = state.ai || {};
+  const masked = a.key ? a.key.slice(0, 10) + '••••' + a.key.slice(-4) : '';
+  $('aiSet').innerHTML = `
+    <label class="switch-row"><span><b>用 AI 整理語音輸入</b><small class="muted">聽得懂比較口語的說法；沒有金鑰或連不上時會自動改用內建規則</small></span>
+      <input type="checkbox" class="switch" id="aiOn" ${a.on ? 'checked' : ''}></label>
+    <span class="flabel" style="margin-top:12px">Anthropic API 金鑰${a.key ? `（目前：${esc(masked)}）` : ''}</span>
+    <div class="inrow"><input id="aiKey" type="password" autocomplete="off" placeholder="${a.key ? '輸入新的金鑰可取代' : 'sk-ant-...'}" class="ai-key">
+      <button type="button" class="btn mini primary" id="aiSave">儲存</button></div>
+    <span class="flabel" style="margin-top:12px">模型</span>
+    <div class="seg" id="aiModel">${AI.MODELS.map(m => `<button type="button" data-m="${m.v}" class="${a.model === m.v ? 'on' : ''}">${m.label}<small>${m.d}</small></button>`).join('')}</div>
+    <div class="btnrow"><button type="button" class="btn mini" id="aiTest">測試連線</button>${a.key ? '<button type="button" class="btn mini danger" id="aiDel">刪除金鑰</button>' : ''}<span class="small muted" id="aiMsg"></span></div>
+    <p class="muted small">金鑰到 <b>platform.claude.com</b> 建立（API Keys），費用記在你的 Anthropic 帳號。使用 Haiku 5.5 每句大約不到新台幣 0.1 元。<br>
+    會送出的只有你說的那句話和選單清單（類別、銀行代碼、車廠），不會送出你的資產負債資料。金鑰存在這支手機裡，開啟 Face ID 鎖時會一起加密；匯出備份不會包含金鑰。</p>`;
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest('#aiSave, #aiTest, #aiDel, #aiModel [data-m]');
+  if (!t) return;
+  if (t.id === 'aiSave') {
+    const k = $('aiKey').value.trim();
+    if (!/^sk-ant-/.test(k)) return toast('金鑰應該是 sk-ant- 開頭');
+    state.ai.key = k; save(); renderAISettings(); toast('已儲存金鑰');
+  } else if (t.id === 'aiDel') {
+    if (!confirm('刪除 API 金鑰？')) return;
+    state.ai.key = ''; save(); renderAISettings();
+  } else if (t.dataset.m) {
+    state.ai.model = t.dataset.m; save(); renderAISettings();
+  } else if (t.id === 'aiTest') {
+    if (!state.ai.key) return toast('先輸入並儲存金鑰');
+    $('aiMsg').textContent = '測試中…';
+    try { await AI.test(state.ai.key, state.ai.model); $('aiMsg').innerHTML = '<span class="pos">連線成功</span>'; }
+    catch (err) { $('aiMsg').innerHTML = `<span class="neg">${esc(err.message)}</span>`; }
+  }
+});
+document.addEventListener('change', e => { if (e.target.id === 'aiOn') { state.ai.on = e.target.checked; save(); } });
+
 // ---------- 設定 ----------
 $('eyeBtn').addEventListener('click', () => setHidden(!hidden));
 $('autoHide').checked = !!prefs.autoHide;
@@ -1536,7 +1649,8 @@ $('currencyBtn').addEventListener('click', async () => {
 });
 
 $('exportBtn').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify({ app: 'Balanza', version: APP_VERSION, exportedAt: new Date().toISOString(), ...state }, null, 2)], { type: 'application/json' });
+  const { ai, ...rest } = state;   // API 金鑰不放進備份檔
+  const blob = new Blob([JSON.stringify({ app: 'Balanza', version: APP_VERSION, exportedAt: new Date().toISOString(), ...rest }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `balanza-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -1551,7 +1665,7 @@ $('importFile').addEventListener('change', async e => {
     const d = JSON.parse(await file.text());
     if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
     if (!confirm(`匯入 ${d.assets.length} 筆資產、${d.debts.length} 筆負債？目前資料將被取代。`)) return;
-    state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [] });
+    state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], ai: state.ai });
     save();
     toast('匯入完成');
   } catch (err) {
@@ -1563,7 +1677,7 @@ $('importFile').addEventListener('change', async e => {
 
 $('clearBtn').addEventListener('click', () => {
   if (!confirm('確定清除所有資料？建議先匯出備份。')) return;
-  state = migrate({ currency: state.currency });
+  state = migrate({ currency: state.currency, ai: state.ai });
   save();
 });
 

@@ -1,5 +1,5 @@
 'use strict';
-// 選單資料：每個選項都有小圖（emoji 或自繪頭像）
+// 選單資料：每個選項都有自繪小圖（見 icons.js）
 
 // 臺灣金融機構（銀行代碼 3 碼）。c = 頭像主色，s = 頭像上顯示的字
 const BANKS = [
@@ -42,91 +42,108 @@ const BANKS = [
   { code: '824', name: '連線商業銀行', s: '連', c: '#2e7d32' },
   { code: '826', name: '樂天國際商業銀行', s: '樂', c: '#b71c1c' },
   // 非銀行
-  { code: '—', name: '融資／租賃公司', s: '融', c: '#795548', emoji: '🏢' },
-  { code: '—', name: '親友', s: '友', c: '#ef6c00', emoji: '🤝' },
-  { code: '—', name: '其他', s: '他', c: '#757575', emoji: '📦' },
+  { code: '—', name: '融資／租賃公司', s: '融', c: '#795548', ic: 'bank' },
+  { code: '—', name: '親友', s: '友', c: '#ef6c00', ic: 'friends' },
+  { code: '—', name: '其他', s: '他', c: '#757575', ic: 'other' },
 ];
 
 const ASSET_CATS = [
-  { v: '現金/存款', e: '💵' },
-  { v: '股票', e: '📈' },
-  { v: 'ETF/基金', e: '🧺' },
-  { v: '債券', e: '📜' },
-  { v: '加密貨幣', e: '🪙' },
-  { v: '保險', e: '🛡️' },
-  { v: '不動產', e: '🏠' },
-  { v: '車輛', e: '🚗' },
-  { v: '其他', e: '📦' },
+  { v: '現金/存款', ic: 'cash' },
+  { v: '台股', ic: 'tw', stock: 'tw' },
+  { v: '美股', ic: 'us', stock: 'us' },
+  { v: '基金', ic: 'fund' },
+  { v: '債券', ic: 'bond' },
+  { v: '加密貨幣', ic: 'crypto' },
+  { v: '保險', ic: 'insurance' },
+  { v: '不動產', ic: 'property' },
+  { v: '車輛', ic: 'car' },
+  { v: '其他', ic: 'other' },
 ];
 
 const DEBT_TYPES = [
-  { v: '房貸', e: '🏠' },
-  { v: '信貸', e: '💸' },
-  { v: '車貸', e: '🚗' },
-  { v: '學貸', e: '🎓' },
-  { v: '信用卡', e: '💳' },
-  { v: '親友借款', e: '🤝' },
-  { v: '其他', e: '📦' },
+  { v: '房貸', ic: 'mortgage' },
+  { v: '信貸', ic: 'loan' },
+  { v: '車貸', ic: 'car' },
+  { v: '學貸', ic: 'student' },
+  { v: '信用卡', ic: 'card' },
+  { v: '親友借款', ic: 'friends' },
+  { v: '其他', ic: 'other' },
 ];
 
 const REPAY_METHODS = [
-  { v: 'annuity', label: '本息平均攤還', e: '⚖️', d: '每月繳一樣多' },
-  { v: 'principal', label: '本金平均攤還', e: '📉', d: '每月本金固定，越繳越少' },
-  { v: 'interest', label: '只繳利息到期還本', e: '⏳', d: '例如理財型、股票質押' },
+  { v: 'annuity', label: '本息平均攤還', ic: 'scale', d: '每月繳一樣多' },
+  { v: 'principal', label: '本金平均攤還', ic: 'stairs', d: '每月本金固定，越繳越少' },
+  { v: 'interest', label: '只繳利息到期還本', ic: 'hourglass', d: '例如理財型、股票質押' },
 ];
 
 const CALC_MODES = [
-  { v: 'auto', label: '依貸款條件自動計算', e: '🧮', d: '輸入貸款金額、年限、寬限期' },
-  { v: 'manual', label: '手動輸入剩餘本金與月付', e: '✍️', d: '信用卡、親友借款等' },
+  { v: 'auto', label: '依貸款條件自動計算', ic: 'calc', d: '輸入貸款金額、年限、寬限期' },
+  { v: 'manual', label: '手動輸入剩餘本金與月付', ic: 'pencil', d: '信用卡、親友借款等' },
 ];
 
 const CURRENCIES = [
-  { v: 'TWD', label: 'TWD 新台幣', e: '🇹🇼' },
-  { v: 'USD', label: 'USD 美元', e: '🇺🇸' },
-  { v: 'JPY', label: 'JPY 日圓', e: '🇯🇵' },
-  { v: 'EUR', label: 'EUR 歐元', e: '🇪🇺' },
+  { v: 'TWD', label: 'TWD 新台幣', ic: 'twd' },
+  { v: 'USD', label: 'USD 美元', ic: 'usd' },
+  { v: 'JPY', label: 'JPY 日圓', ic: 'jpy' },
+  { v: 'EUR', label: 'EUR 歐元', ic: 'eur' },
 ];
 
 const BUILDING_TYPES = [
-  { v: '住宅大樓', e: '🏢', d: '11 層以上有電梯' },
-  { v: '華廈', e: '🏬', d: '10 層以下有電梯' },
-  { v: '公寓', e: '🏘️', d: '5 層以下無電梯' },
-  { v: '透天厝', e: '🏡', d: '' },
-  { v: '套房', e: '🛏️', d: '' },
-  { v: '店面', e: '🏪', d: '' },
-  { v: '全部', e: '🔎', d: '不分型態' },
+  { v: '住宅大樓', ic: 'tower', d: '11 層以上有電梯' },
+  { v: '華廈', ic: 'midrise', d: '10 層以下有電梯' },
+  { v: '公寓', ic: 'apartment', d: '5 層以下無電梯' },
+  { v: '透天厝', ic: 'townhouse', d: '' },
+  { v: '套房', ic: 'studio', d: '' },
+  { v: '店面', ic: 'shop', d: '' },
+  { v: '全部', ic: 'search', d: '不分型態' },
 ];
 
-// 車輛：c = 代表色，f = 國別旗，t = 車型（決定小車造型）
+// 小秤等級（門檻為新台幣淨資產；其他幣別依匯率換算）
+const LEVELS = [
+  { lv: 6, name: '傳說富豪', min: 3e7, max: Infinity, color: '#ffd54f', msg: '戴上皇冠披上披風，小秤已經是傳說了', desc: '皇冠、披風、彩虹與煙火' },
+  { lv: 5, name: '財富自由', min: 1e7, max: 3e7, color: '#ffe066', msg: '墨鏡一戴，誰都不愛，小秤財富自由啦', desc: '墨鏡、錢袋、金幣雨' },
+  { lv: 4, name: '富足', min: 5e6, max: 1e7, color: '#ffe08a', msg: '金幣嘩啦啦下，小秤開心到跳起來', desc: '跳舞、揮手、金幣雨' },
+  { lv: 3, name: '穩健', min: 2e6, max: 5e6, color: '#9be3c7', msg: '抱著金幣小跳步，日子越過越穩', desc: '抱金幣、小跳步、太陽' },
+  { lv: 2, name: '小康', min: 5e5, max: 2e6, color: '#b5e8b8', msg: '曬著太陽搖來搖去，小確幸滿滿', desc: '曬太陽、左右搖擺' },
+  { lv: 1, name: '起步新芽', min: 0, max: 5e5, color: '#d6f5d6', msg: '頭上冒出新芽，一步一步長大', desc: '頭頂小芽、輕輕呼吸' },
+  { lv: -1, name: '差一點', min: -1e5, max: 0, color: '#ffe3b3', msg: '只差一點就轉正了，小秤有點緊張', desc: '緊張微笑、一滴汗' },
+  { lv: -2, name: '小赤字', min: -5e5, max: -1e5, color: '#ffd1a1', msg: '錢長翅膀飛走了，小秤急得冒汗', desc: '冒汗、錢飛走' },
+  { lv: -3, name: '苦哈哈', min: -2e6, max: -5e5, color: '#c9d3dc', msg: '頭上一朵小雨雲，小秤苦哈哈', desc: '小雨雲、掉眼淚' },
+  { lv: -4, name: '債台高築', min: -5e6, max: -2e6, color: '#aab6c1', msg: '大雨下不停，還貼了OK繃，撐住啊小秤', desc: '大雨、OK繃、淚流不止' },
+  { lv: -5, name: '債務深淵', min: -Infinity, max: -5e6, color: '#8f9aa5', msg: '雷雨交加錢包空空，小秤需要一個擁抱', desc: '雷雨、空錢包、蒼蠅飛' },
+];
+const LEVEL_EMPTY = { lv: 0, name: '還在睡', color: '#e3e9ee', msg: '還沒有資料，小秤在睡覺', desc: '新增資產或負債叫醒牠' };
+
+// 車輛：c = 代表色，f = 產地，t = 車型（決定小車造型）
 const CAR_BRANDS = [
-  { v: 'Toyota', zh: '豐田', f: '🇯🇵', c: '#e53935', t: 'sedan' },
-  { v: 'Lexus', zh: '凌志', f: '🇯🇵', c: '#455a64', t: 'sedan' },
-  { v: 'Honda', zh: '本田', f: '🇯🇵', c: '#d32f2f', t: 'hatch' },
-  { v: 'Nissan', zh: '日產', f: '🇯🇵', c: '#9e9e9e', t: 'sedan' },
-  { v: 'Mazda', zh: '馬自達', f: '🇯🇵', c: '#b71c1c', t: 'hatch' },
-  { v: 'Mitsubishi', zh: '三菱', f: '🇯🇵', c: '#c62828', t: 'suv' },
-  { v: 'Subaru', zh: '速霸陸', f: '🇯🇵', c: '#1565c0', t: 'suv' },
-  { v: 'Suzuki', zh: '鈴木', f: '🇯🇵', c: '#fbc02d', t: 'hatch' },
-  { v: 'BMW', zh: '寶馬', f: '🇩🇪', c: '#1e88e5', t: 'sedan' },
-  { v: 'Mercedes-Benz', zh: '賓士', f: '🇩🇪', c: '#78909c', t: 'sedan' },
-  { v: 'Audi', zh: '奧迪', f: '🇩🇪', c: '#424242', t: 'sedan' },
-  { v: 'Volkswagen', zh: '福斯', f: '🇩🇪', c: '#1976d2', t: 'hatch' },
-  { v: 'Porsche', zh: '保時捷', f: '🇩🇪', c: '#ffb300', t: 'sport' },
-  { v: 'Volvo', zh: '富豪', f: '🇸🇪', c: '#3949ab', t: 'suv' },
-  { v: 'Tesla', zh: '特斯拉', f: '🇺🇸', c: '#e0e0e0', t: 'ev' },
-  { v: 'Ford', zh: '福特', f: '🇺🇸', c: '#0d47a1', t: 'suv' },
-  { v: 'Hyundai', zh: '現代', f: '🇰🇷', c: '#00897b', t: 'suv' },
-  { v: 'Kia', zh: '起亞', f: '🇰🇷', c: '#e53935', t: 'suv' },
-  { v: 'Luxgen', zh: '納智捷', f: '🇹🇼', c: '#5e35b1', t: 'suv' },
-  { v: 'Škoda', zh: '斯柯達', f: '🇨🇿', c: '#43a047', t: 'hatch' },
-  { v: 'Peugeot', zh: '寶獅', f: '🇫🇷', c: '#3f51b5', t: 'hatch' },
-  { v: 'MG', zh: 'MG', f: '🇬🇧', c: '#d32f2f', t: 'ev' },
-  { v: 'Land Rover', zh: '荒原路華', f: '🇬🇧', c: '#2e7d32', t: 'suv' },
-  { v: 'Gogoro', zh: 'Gogoro', f: '🇹🇼', c: '#26c6da', t: 'scooter' },
-  { v: 'KYMCO', zh: '光陽', f: '🇹🇼', c: '#ef5350', t: 'scooter' },
-  { v: 'SYM', zh: '三陽', f: '🇹🇼', c: '#42a5f5', t: 'scooter' },
-  { v: 'Yamaha', zh: '山葉', f: '🇯🇵', c: '#283593', t: 'scooter' },
-  { v: '其他', zh: '其他', f: '🌏', c: '#8d6e63', t: 'sedan' },
+  { v: 'Toyota', zh: '豐田', f: '日本', c: '#e53935', t: 'sedan' },
+  { v: 'Lexus', zh: '凌志', f: '日本', c: '#455a64', t: 'sedan' },
+  { v: 'Honda', zh: '本田', f: '日本', c: '#d32f2f', t: 'hatch' },
+  { v: 'Nissan', zh: '日產', f: '日本', c: '#9e9e9e', t: 'sedan' },
+  { v: 'Mazda', zh: '馬自達', f: '日本', c: '#b71c1c', t: 'hatch' },
+  { v: 'Mitsubishi', zh: '三菱', f: '日本', c: '#c62828', t: 'suv' },
+  { v: 'Subaru', zh: '速霸陸', f: '日本', c: '#1565c0', t: 'suv' },
+  { v: 'Suzuki', zh: '鈴木', f: '日本', c: '#fbc02d', t: 'hatch' },
+  { v: 'BMW', zh: '寶馬', f: '德國', c: '#1e88e5', t: 'sedan' },
+  { v: 'Mercedes-Benz', zh: '賓士', f: '德國', c: '#78909c', t: 'sedan' },
+  { v: 'Audi', zh: '奧迪', f: '德國', c: '#424242', t: 'sedan' },
+  { v: 'Volkswagen', zh: '福斯', f: '德國', c: '#1976d2', t: 'hatch' },
+  { v: 'Porsche', zh: '保時捷', f: '德國', c: '#ffb300', t: 'sport' },
+  { v: 'Volvo', zh: '富豪', f: '瑞典', c: '#3949ab', t: 'suv' },
+  { v: 'Tesla', zh: '特斯拉', f: '美國', c: '#e0e0e0', t: 'ev' },
+  { v: 'Ford', zh: '福特', f: '美國', c: '#0d47a1', t: 'suv' },
+  { v: 'Hyundai', zh: '現代', f: '韓國', c: '#00897b', t: 'suv' },
+  { v: 'Kia', zh: '起亞', f: '韓國', c: '#e53935', t: 'suv' },
+  { v: 'Luxgen', zh: '納智捷', f: '台灣', c: '#5e35b1', t: 'suv' },
+  { v: 'Škoda', zh: '斯柯達', f: '捷克', c: '#43a047', t: 'hatch' },
+  { v: 'Peugeot', zh: '寶獅', f: '法國', c: '#3f51b5', t: 'hatch' },
+  { v: 'MG', zh: 'MG', f: '英國', c: '#d32f2f', t: 'ev' },
+  { v: 'Land Rover', zh: '荒原路華', f: '英國', c: '#2e7d32', t: 'suv' },
+  { v: 'Gogoro', zh: 'Gogoro', f: '台灣', c: '#26c6da', t: 'scooter' },
+  { v: 'KYMCO', zh: '光陽', f: '台灣', c: '#ef5350', t: 'scooter' },
+  { v: 'SYM', zh: '三陽', f: '台灣', c: '#42a5f5', t: 'scooter' },
+  { v: 'Yamaha', zh: '山葉', f: '日本', c: '#283593', t: 'scooter' },
+  { v: '其他', zh: '其他', f: '其他', c: '#8d6e63', t: 'sedan' },
 ];
 
 // 實價登錄縣市代碼

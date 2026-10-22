@@ -25,8 +25,10 @@
       <div class="card mascot-card" id="mascotCard">
         <div id="mascot" class="mascot-wrap" title="戳我"></div>
         <div class="mascot-text">
+          <div class="mascot-lv" id="mascotLv"></div>
           <div class="mascot-msg" id="mascotMsg"></div>
           <div class="mascot-tip" id="mascotTip"></div>
+          <button type="button" class="link-btn" id="toLevels">看所有等級 ›</button>
         </div>
       </div>
 
@@ -34,96 +36,111 @@
         <div class="label">淨資產</div>
         <div class="big" id="netWorth">0</div>
         <div class="row3">
-          <div><div class="label">💰 總資產</div><div class="pos" id="totalAssets">0</div></div>
-          <div><div class="label">💳 總負債</div><div class="neg" id="totalDebts">0</div></div>
-          <div><div class="label">⚖️ 負債比</div><div id="debtRatio">0%</div></div>
+          <div><div class="label"><i data-ic="piggy" data-size="16"></i> 總資產</div><div class="pos" id="totalAssets">0</div></div>
+          <div><div class="label"><i data-ic="card" data-size="16"></i> 總負債</div><div class="neg" id="totalDebts">0</div></div>
+          <div><div class="label"><i data-ic="scale" data-size="16"></i> 負債比</div><div id="debtRatio">0%</div></div>
         </div>
         <div class="ratio-track"><div class="ratio-fill" id="ratioFill"></div></div>
       </div>
 
       <div class="grid2">
-        <div class="card stat"><div class="label">📅 每月還款</div><div class="mid" id="monthlyPay">0</div></div>
-        <div class="card stat"><div class="label">📈 加權平均利率</div><div class="mid" id="avgRate">0%</div></div>
-        <div class="card stat"><div class="label">🔥 每月利息</div><div class="mid neg" id="monthlyInterest">0</div></div>
-        <div class="card stat"><div class="label">🧱 每月還本金</div><div class="mid pos" id="monthlyPrincipal">0</div></div>
+        <div class="card stat"><div class="label"><i data-ic="calendar" data-size="18"></i> 每月還款</div><div class="mid" id="monthlyPay">0</div></div>
+        <div class="card stat"><div class="label"><i data-ic="percent" data-size="18"></i> 加權平均利率</div><div class="mid" id="avgRate">0%</div></div>
+        <div class="card stat"><div class="label"><i data-ic="fire" data-size="18"></i> 每月利息</div><div class="mid neg" id="monthlyInterest">0</div></div>
+        <div class="card stat"><div class="label"><i data-ic="brick" data-size="18"></i> 每月還本金</div><div class="mid pos" id="monthlyPrincipal">0</div></div>
       </div>
 
       <div class="card grace-card" id="graceCard" hidden>
-        <h2>⏸️ 寬限期提醒</h2>
+        <h2><i data-ic="pause" data-size="24"></i> 寬限期提醒</h2>
         <div id="graceInfo"></div>
       </div>
 
       <div class="card">
-        <h2>🏦 負債來源</h2>
+        <h2><i data-ic="bank" data-size="24"></i> 負債來源</h2>
         <div id="debtBySource" class="bars"></div>
       </div>
 
       <div class="card">
-        <h2>🧺 資產分布</h2>
+        <h2><i data-ic="basket" data-size="24"></i> 資產分布</h2>
         <div id="assetByCat" class="bars"></div>
       </div>
 
       <div class="card">
-        <h2>🗓️ 還款時程</h2>
+        <h2><i data-ic="clock" data-size="24"></i> 還款時程</h2>
         <div id="payoffList"></div>
       </div>
     </section>
 
     <!-- 資產 -->
     <section class="view" id="view-assets">
-      <div class="listhead"><h2>💰 資產</h2><span id="assetsSum" class="pos"></span></div>
-      <ul class="list" id="assetList"></ul>
-      <button class="fab" data-add="asset" aria-label="新增資產">＋</button>
+      <div class="listhead"><h2><i data-ic="piggy" data-size="26"></i> 資產</h2><span id="assetsSum" class="pos"></span></div>
+      <div id="assetList"></div>
     </section>
 
     <!-- 負債 -->
     <section class="view" id="view-debts">
-      <div class="listhead"><h2>💳 負債</h2><span id="debtsSum" class="neg"></span></div>
+      <div class="listhead"><h2><i data-ic="card" data-size="26"></i> 負債</h2><span id="debtsSum" class="neg"></span></div>
       <ul class="list" id="debtList"></ul>
-      <button class="fab" data-add="debt" aria-label="新增負債">＋</button>
+    </section>
+
+    <!-- 等級 -->
+    <section class="view" id="view-levels">
+      <div class="card lv-now" id="lvNow"></div>
+      <div class="card">
+        <h2><i data-ic="trophy" data-size="24"></i> 小秤的所有型態</h2>
+        <p class="muted" id="lvNoteCcy"></p>
+        <ul class="lv-list" id="lvList"></ul>
+      </div>
     </section>
 
     <!-- 設定 -->
     <section class="view" id="view-settings">
-      <h2>⚙️ 設定</h2>
+      <h2><i data-ic="gear" data-size="26"></i> 設定</h2>
       <div class="card">
         <span class="flabel">幣別</span>
         <button type="button" class="pickbtn" id="currencyBtn"></button>
       </div>
       <div class="card">
-        <h3>💾 備份與還原</h3>
+        <h3><i data-ic="export" data-size="22"></i> 備份與還原</h3>
         <p class="muted">資料只存在這支手機的瀏覽器裡，不會上傳到 GitHub。換手機或清除瀏覽器資料前請先匯出備份。</p>
         <div class="btnrow">
-          <button id="exportBtn" class="btn">📤 匯出 JSON</button>
-          <label class="btn">📥 匯入 JSON<input type="file" id="importFile" accept="application/json" hidden></label>
+          <button id="exportBtn" class="btn"><i data-ic="export" data-size="18"></i> 匯出 JSON</button>
+          <label class="btn"><i data-ic="import" data-size="18"></i> 匯入 JSON<input type="file" id="importFile" accept="application/json" hidden></label>
         </div>
       </div>
       <div class="card">
-        <h3>🏘️ 實價登錄</h3>
+        <h3><i data-ic="tw" data-size="22"></i> 股價</h3>
+        <p class="muted" id="stockStatus">讀取中…</p>
+        <p class="muted">台股（上市、上櫃、ETF）與美股（S&amp;P 500、熱門個股與 ETF）每天收盤後自動更新。你的持股只存在手機裡；App 下載的是整個市場的公開報價檔。</p>
+      </div>
+      <div class="card">
+        <h3><i data-ic="townhouse" data-size="22"></i> 實價登錄</h3>
         <p class="muted" id="lvrStatus">讀取中…</p>
         <p class="muted">資料來源：內政部不動產成交案件實際資訊（開放資料），每週自動更新。估價依路段成交單價中位數計算，僅供參考。</p>
       </div>
       <div class="card">
-        <h3>⚠️ 危險區</h3>
+        <h3><i data-ic="warn" data-size="22"></i> 危險區</h3>
         <button id="clearBtn" class="btn danger">清除所有資料</button>
       </div>
     </section>
   </main>
 
+  <button class="fab" id="fab" data-add="" aria-label="新增" hidden><svg viewBox="0 0 24 24" width="28" height="28"><path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg></button>
+
   <nav class="tabs">
-    <button data-view="home" class="active"><span>📊</span>總覽</button>
-    <button data-view="assets"><span>💰</span>資產</button>
-    <button data-view="debts"><span>💳</span>負債</button>
-    <button data-view="settings"><span>⚙️</span>設定</button>
+    <button data-view="home" class="active"><i data-ic="chart" data-size="26"></i>總覽</button>
+    <button data-view="assets"><i data-ic="piggy" data-size="26"></i>資產</button>
+    <button data-view="debts"><i data-ic="card" data-size="26"></i>負債</button>
+    <button data-view="levels"><i data-ic="trophy" data-size="26"></i>等級</button>
+    <button data-view="settings"><i data-ic="gear" data-size="26"></i>設定</button>
   </nav>
 
-  <!-- 編輯表單 -->
   <dialog id="editor">
     <form method="dialog" id="editForm">
       <h2 id="editTitle">新增</h2>
       <div id="editFields" class="fields"></div>
       <div class="btnrow sticky">
-        <button type="button" class="btn danger" id="delBtn">🗑️</button>
+        <button type="button" class="btn danger" id="delBtn" aria-label="刪除"><i data-ic="trash" data-size="20"></i></button>
         <span class="spacer"></span>
         <button type="button" class="btn" id="cancelBtn">取消</button>
         <button type="submit" class="btn primary">儲存</button>
@@ -134,9 +151,11 @@
   <div class="toast" id="toast" role="status"></div>
 
   <script src="data/catalog.js"></script>
+  <script src="icons.js"></script>
   <script src="loan.js"></script>
   <script src="ui.js"></script>
   <script src="lvr.js"></script>
+  <script src="stocks.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

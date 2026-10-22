@@ -1,0 +1,41 @@
+name: 更新股價
+
+on:
+  schedule:
+    - cron: '23 6 * * 1-5'    # 台股收盤後 14:23（台灣時間）
+    - cron: '41 21 * * 1-5'   # 美股收盤後 05:41（台灣時間）
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/build_stocks.py
+      - data/stocks/extra.txt
+      - .github/workflows/stocks.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-commit
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 下載股價
+        run: python scripts/build_stocks.py --days 30
+      - name: 提交資料
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/stocks
+          if git diff --cached --quiet; then echo "沒有變更"; exit 0; fi
+          git commit -m "chore: 更新股價 $(date -u +%Y-%m-%d)"
+          git pull --rebase origin main
+          git push

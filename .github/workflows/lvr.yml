@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: lvr
+  group: data-commit
   cancel-in-progress: false
 
 jobs:

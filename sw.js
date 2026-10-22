@@ -1,5 +1,5 @@
 // 網路優先：有網路時永遠拿最新版（GitHub 更新後立即看到），離線時用快取
-const CACHE = 'balanza-v5-5-2';
+const CACHE = 'balanza-v5-5-3';
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'ui.js', 'loan.js', 'lvr.js', 'icons.js', 'stocks.js', 'cars.js', 'changelog.js', 'lock.js', 'plan.js', 'charts.js', 'data/catalog.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

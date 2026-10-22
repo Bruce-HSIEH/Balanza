@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.5.2';
+const APP_VERSION = '5.5.3';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -1535,6 +1535,25 @@ function pinSetup(changing) {
 }
 $('psCancel').addEventListener('click', () => $('pinDialog').close());
 renderLockSettings();
+
+// ---------- iOS 主畫面 App 畫面高度修正 ----------
+// 部分 iOS 版本在主畫面 App 中，可用畫面會比螢幕短一個狀態列的高度，底部選單因此浮起來；
+// 偵測螢幕實際高度與畫面高度的差距，把 App 外框往下延伸補滿
+let vgap = 0;
+function fixViewport() {
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const portrait = innerHeight >= innerWidth;
+  const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  let gap = standalone ? Math.round(full - innerHeight) : 0;
+  if (gap < 2 || gap > 140) gap = 0;          // 只修正狀態列大小的差距，其他情況不動
+  vgap = gap;
+  document.documentElement.style.setProperty('--vgap', gap + 'px');
+  const d = $('vpDiag');
+  if (d) d.textContent = `畫面 ${innerWidth}×${innerHeight} · 螢幕 ${screen.width}×${screen.height} · ${standalone ? '主畫面 App' : '瀏覽器'} · 底部補償 ${gap}px`;
+}
+['resize', 'orientationchange', 'pageshow'].forEach(ev => window.addEventListener(ev, () => { fixViewport(); setTimeout(fixViewport, 350); }));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(fixViewport, 100); });
+fixViewport(); setTimeout(fixViewport, 500);
 
 // ---------- 啟動 ----------
 Icon.hydrate();

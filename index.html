@@ -276,22 +276,25 @@
   </dialog>
 
   <dialog id="keyDialog" class="cl-dialog">
-    <h2><i data-ic="lock" data-size="24"></i> 你的恢復金鑰</h2>
+    <h2 id="kdTitle"><i data-ic="lock" data-size="24"></i> 你的恢復金鑰</h2>
     <p class="muted small" id="kdMsg"></p>
+    <div class="kd-label">恢復金鑰（解開備份用，弄丟就救不回來）</div>
     <div class="rkey" id="kdKey"></div>
-    <div class="btnrow"><button type="button" class="btn" id="kdCopy">複製</button></div>
+    <div id="kdTokWrap" hidden><div class="kd-label">GitHub token（換手機時用來找備份）</div><div class="rkey rtok" id="kdTok"></div></div>
+    <div class="btnrow"><button type="button" class="btn primary" id="kdCopyAll" hidden>一起複製（存到備忘錄或「密碼」App）</button><button type="button" class="btn" id="kdCopy">只複製恢復金鑰</button></div>
     <ol class="kd-steps small">
-      <li>打開 iPhone 的「密碼」App → 右下「＋」</li>
-      <li>網站或標籤填 <b>Balanza 恢復金鑰</b>，密碼欄貼上這組金鑰 → 儲存</li>
-      <li>也可以另外抄在紙上收好</li>
+      <li>打開 iPhone 的「密碼」App → 右下「＋」，標籤填 <b>Balanza 備份</b>，把上面的內容貼進「備註」→ 儲存</li>
+      <li>或貼到「備忘錄」鎖定的筆記、也可以抄在紙上收好</li>
+      <li>這兩組只有你有：GitHub 只會顯示 token 一次，Balanza 也沒有辦法幫你找回</li>
     </ol>
-    <label class="kd-ok" id="kdOkRow"><input type="checkbox" id="kdOk"> 我已經把恢復金鑰存好了</label>
+    <label class="kd-ok" id="kdOkRow"><input type="checkbox" id="kdOk"> <span id="kdOkTxt">我已經把恢復金鑰存好了</span></label>
     <div class="btnrow"><span class="spacer"></span><button type="button" class="btn primary" id="kdDone">完成</button></div>
   </dialog>
 
   <dialog id="restoreDialog" class="cl-dialog">
     <h2><i data-ic="import" data-size="24"></i> 從雲端還原</h2>
     <label class="field"><span class="flabel">GitHub token</span><input id="rsToken" type="password" autocomplete="off" placeholder="ghp_..."></label>
+    <p class="small muted rs-hint">token 不見了沒關係：<a href="https://github.com/settings/tokens/new?scopes=gist&description=Balanza%20backup" target="_blank" rel="noopener">點這裡重建一個新的</a>（Expiration 選 No expiration → Generate token），舊的備份一樣找得到。<br>恢復金鑰一定要是原本那組，備份是用它加密的。</p>
     <label class="field"><span class="flabel">恢復金鑰</span><input id="rsKey" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"></label>
     <div class="btnrow"><button type="button" class="btn primary" id="rsFind">找備份</button><span class="small muted" id="rsMsg"></span></div>
     <div id="rsList"></div>

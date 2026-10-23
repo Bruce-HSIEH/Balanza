@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.26.3';
+const APP_VERSION = '5.26.4';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -3280,6 +3280,8 @@ function refreshBackupUI(st) {
   if (currentView === 'settings' && !setPage) renderSetMenu();
   renderBkNag();
 }
+// 從沒確認過、或超過半年沒確認「金鑰存好了」
+const keyStale = () => !!state.backup.key && (!prefs.bk.savedAt || Date.now() - prefs.bk.savedAt > 180 * 864e5);
 function backupSummary() {
   const b = state.backup;
   if (!b.on) return b.key ? '已有恢復金鑰・未開自動備份' : '尚未設定自動備份';
@@ -3296,8 +3298,9 @@ function renderBackupSettings(st) {
   <div class="card">
     <h3>${Icon.svg('lock', 22)} 恢復金鑰</h3>
     ${b.key
-      ? `<p class="muted small">已建立。所有備份都用它加密；換手機或資料不見時，用它才能還原。請確認已存在「密碼」App 或抄在紙上。</p>
-         <div class="btnrow"><button type="button" class="btn mini" id="bkShowKey">顯示恢復金鑰</button><button type="button" class="btn mini" id="bkNewKey">換一組新的</button></div>`
+      ? `<p class="muted small">已建立。所有備份都用它加密；換手機或資料不見時，用它${b.on ? '和 GitHub token ' : ''}才能還原。</p>
+         ${keyStale() ? `<div class="hint-row warn-row">${Icon('warn')}<span>${prefs.bk.savedAt ? '好一陣子沒確認了：' : ''}恢復金鑰${b.on ? '和 GitHub token ' : ''}存到「密碼」App 或備忘錄了嗎？換手機、刪掉 App 重裝時一定要用到。</span></div>` : `<p class="small pos">✓ ${new Date(prefs.bk.savedAt).toLocaleDateString('zh-TW')} 確認已存好</p>`}
+         <div class="btnrow"><button type="button" class="btn mini ${keyStale() ? 'primary' : ''}" id="bkShowKey">${b.on ? '顯示恢復金鑰與 token' : '顯示恢復金鑰'}</button><button type="button" class="btn mini" id="bkNewKey">換一組新的</button></div>`
       : `<p class="muted small">隨機產生的 25 碼金鑰，強度遠高於自己想的密碼。備份檔用它加密，就算檔案被別人拿到也打不開。<br><b>弄丟恢復金鑰又同時丟了手機，備份就救不回來。</b></p>
          <div class="btnrow"><button type="button" class="btn primary" id="bkMakeKey">產生恢復金鑰</button></div>`}
   </div>
@@ -3312,7 +3315,7 @@ function renderBackupSettings(st) {
          <ol class="kd-steps small">
            <li>點 <a href="https://github.com/settings/tokens/new?scopes=gist&description=Balanza%20backup" target="_blank" rel="noopener">這個連結</a>（已預先勾好只有 <b>gist</b> 權限）</li>
            <li>Expiration 選 <b>No expiration</b> → 最下面 Generate token</li>
-           <li>複製 ghp_ 開頭的 token 貼到下面</li>
+           <li>複製 ghp_ 開頭的 token 貼到下面（<b>GitHub 只顯示這一次</b>，開啟後 App 會提醒你連同恢復金鑰一起存好）</li>
          </ol>
          <div class="inrow"><input id="bkToken" type="password" autocomplete="off" placeholder="ghp_..." class="ai-key"><button type="button" class="btn mini primary" id="bkConnect">開啟</button></div>
          <p class="small" id="bkMsg"></p>`}
@@ -3334,20 +3337,31 @@ function renderBackupSettings(st) {
   </div>`;
 }
 
+// 顯示恢復金鑰（有開自動備份時連 GitHub token 一起），提醒存起來
 function showKey(first) {
+  const tok = state.backup.on && state.backup.token;
   $('kdKey').textContent = state.backup.key;
-  $('kdMsg').textContent = first ? '這是唯一能解開備份的鑰匙，請現在就存好。之後也可以在這裡再看到。' : '請確認這組金鑰已經存在「密碼」App 或紙上。';
-  $('kdOkRow').hidden = !first; $('kdOk').checked = !first;
+  $('kdTokWrap').hidden = !tok; $('kdTok').textContent = tok || '';
+  $('kdCopyAll').hidden = !tok;
+  $('kdTitle').innerHTML = `${Icon('lock')} ${tok ? '存好這兩組，換手機才還原得回來' : '你的恢復金鑰'}`;
+  $('kdMsg').textContent = first ? (tok ? 'GitHub token 只會在建立時顯示一次，恢復金鑰是唯一能解開備份的鑰匙。請現在就一起存好；之後也可以在「設定 → 備份與還原」再看到。' : '這是唯一能解開備份的鑰匙，請現在就存好。之後也可以在這裡再看到。')
+    : '請確認這些已經存在「密碼」App、備忘錄或紙上。換手機、刪掉 App 重裝時都要用到。';
+  $('kdOkTxt').textContent = tok ? '我已經把 token 和恢復金鑰都存好了' : '我已經把恢復金鑰存好了';
+  $('kdOkRow').hidden = false; $('kdOk').checked = false; kdFirst = !!first;
   $('keyDialog').showModal();
 }
-$('kdCopy').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(state.backup.key); toast('已複製恢復金鑰'); } catch (e) { toast('無法複製，請手動抄下'); }
-});
+let kdFirst = false;   // 第一次（剛建立）一定要勾「存好了」才能關；之後查看可以直接關
+const copyText = async (t, msg) => { try { await navigator.clipboard.writeText(t); toast(msg); } catch (e) { toast('無法複製，請手動抄下'); } };
+$('kdCopy').addEventListener('click', () => copyText(state.backup.key, '已複製恢復金鑰'));
+$('kdCopyAll').addEventListener('click', () => copyText(`Balanza 備份\n恢復金鑰：${state.backup.key}\nGitHub token：${state.backup.token}\nGitHub 帳號：${state.backup.login || ''}\n（換手機：設定 → 備份與還原 → 從雲端還原，貼上這兩組）`, '已複製，貼到備忘錄或「密碼」App 存好'));
 $('kdDone').addEventListener('click', () => {
-  if (!$('kdOk').checked) return toast('請先勾選「我已經把恢復金鑰存好了」');
+  if (!$('kdOk').checked && kdFirst) return toast(`請先勾選「${$('kdOkTxt').textContent}」`);
+  if ($('kdOk').checked) { prefs.bk.savedAt = Date.now(); savePrefs(); }
   $('keyDialog').close();
+  if (currentView === 'settings' && setPage === 'backup') renderBackupSettings();
+  renderBkNag();
 });
-$('keyDialog').addEventListener('cancel', e => { if (!$('kdOk').checked) e.preventDefault(); });
+$('keyDialog').addEventListener('cancel', e => { if (kdFirst && !$('kdOk').checked) e.preventDefault(); });
 
 async function exportBackup() {
   if (!state.backup.key) { toast('先產生恢復金鑰'); return; }
@@ -3438,7 +3452,7 @@ $('rsList').addEventListener('click', async e => {
 $('rsCancel').addEventListener('click', () => $('restoreDialog').close());
 
 document.addEventListener('click', async e => {
-  const t = e.target.closest('#bkMakeKey, #bkNewKey, #bkShowKey, #bkConnect, #bkNow, #bkOff, #bkRestore, #exportBtn, #importBtn, #bkNagGo, #bkNagLater');
+  const t = e.target.closest('#bkMakeKey, #bkNewKey, #bkShowKey, #bkConnect, #bkNow, #bkOff, #bkRestore, #exportBtn, #importBtn, #bkNagGo, #bkNagLater, #bkNagKey');
   if (!t) return;
   const b = state.backup;
   switch (t.id) {
@@ -3466,6 +3480,7 @@ document.addEventListener('click', async e => {
         store(); renderBackupSettings('uploading');
         const ok = await runBackup(true);
         toast(ok ? '自動備份已開啟，第一次備份完成' : '自動備份已開啟');
+        prefs.bk.savedAt = 0; savePrefs(); showKey(true);   // token 只會顯示一次：馬上請使用者連同恢復金鑰一起存好
       } catch (err) { $('bkMsg').innerHTML = `<span class="neg">${esc(err.message)}</span>`; }
       break;
     }
@@ -3477,6 +3492,7 @@ document.addEventListener('click', async e => {
     case 'exportBtn': try { await exportBackup(); } catch (err) { alert('匯出失敗：' + err.message); } break;
     case 'importBtn': $('importFile').click(); break;
     case 'bkNagGo': showView('settings'); openSetPage('backup'); break;
+    case 'bkNagKey': showKey(false); break;
     case 'bkNagLater': prefs.bk.snooze = Date.now(); savePrefs(); renderBkNag(); break;
   }
 });
@@ -3488,6 +3504,9 @@ function renderBkNag() {
   const DAY = 864e5;
   const show = !locked && hasData && !state.backup.on && Date.now() - prefs.bk.exportAt > 14 * DAY && Date.now() - prefs.bk.snooze > 7 * DAY;
   const fail = !locked && state.backup.on && prefs.bk.err && Date.now() - prefs.bk.at > 2 * DAY;
+  const keyNag = !locked && !show && !fail && state.backup.on && keyStale() && Date.now() - prefs.bk.snooze > 7 * DAY;
+  if (keyNag) { el.innerHTML = `<div class="bk-nag">${Icon('lock')}<div><b>備份金鑰存好了嗎？</b><small>換手機或重裝 App 時，要用恢復金鑰和 GitHub token 才能還原</small></div>
+    <button type="button" class="btn mini primary" id="bkNagKey">查看</button><button type="button" class="nag-x" id="bkNagLater" aria-label="稍後">×</button></div>`; return; }
   el.innerHTML = show || fail ? `<div class="bk-nag">${Icon('warn')}<div><b>${fail ? '自動備份失敗' : '資料還沒有備份'}</b><small>${fail ? esc(prefs.bk.err) : '手機遺失或清除資料就會不見，開啟自動備份就不用再手動按'}</small></div>
     <button type="button" class="btn mini primary" id="bkNagGo">${fail ? '查看' : '設定'}</button>${fail ? '' : '<button type="button" class="nag-x" id="bkNagLater" aria-label="稍後">×</button>'}</div>` : '';
 }

@@ -1274,3 +1274,7 @@ body.booted #netWorth, body.booted #totalAssets, body.booted #totalDebts, body.b
 .ask-log { overscroll-behavior: contain; }
 #clDialog.cl-dialog .cl-end { position: sticky; bottom: 0; margin: 0; padding: 12px 0 2px; background: linear-gradient(transparent, var(--card) 30%); }
 body.booting .mascot-lv { background: none !important; padding: 0; box-shadow: none !important; }
+
+.kd-label { font-size: 12px; color: var(--muted); margin: 10px 0 4px; font-weight: 700; }
+.rkey.rtok { font-size: 13px; white-space: normal; word-break: break-all; letter-spacing: 0; }
+.rs-hint { margin: -2px 0 10px; line-height: 1.6; }

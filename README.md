@@ -37,6 +37,12 @@
 台股取自證交所與櫃買中心每日收盤行情；美股（S&P 500＋熱門個股／ETF 存近 30 日走勢；其餘 NASDAQ／NYSE 全部上市股票與 ETF 存最近收盤於 `us-all.json`）與匯率取自 Yahoo Finance 日線。
 清單外的美股可加到 `data/stocks/extra.txt`（repo 公開，寫入的代號別人看得到）。
 
+## 基金淨值
+
+`.github/workflows/funds.yml` 每天 21:17、09:47 執行 `scripts/build_funds.py`：
+境內基金取自投信投顧公會「基金淨值（日）」（所有公司），境外基金取自集保結算所開放資料「境外基金淨值」。
+輸出 `data/funds/list.json`（名稱、幣別、最新淨值）與 `data/funds/hist/NN.json`（依代碼分 64 份的近 30 筆淨值，App 只下載用到的那幾份）。
+
 ## 安裝到手機
 
 - **iPhone（Safari）**：開啟網址 → 分享 → 加入主畫面
@@ -77,5 +83,6 @@
 | `data/catalog.js` | 銀行代碼、車廠、類別等選單資料 |
 | `scripts/build_lvr.py` | 實價登錄資料下載與彙整 |
 | `scripts/build_stocks.py` | 台股／美股收盤價與匯率下載 |
+| `scripts/build_funds.py` | 境內／境外基金每日淨值下載 |
 | `sw.js` | Service Worker（離線與更新） |
 | `manifest.json` / `icon*` | PWA 設定與圖示 |

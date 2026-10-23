@@ -51,7 +51,7 @@ const ASSET_CATS = [
   { v: '現金/存款', ic: 'cash' },
   { v: '台股', ic: 'tw', stock: 'tw' },
   { v: '美股', ic: 'us', stock: 'us' },
-  { v: '基金', ic: 'fund' },
+  { v: '基金', ic: 'fund', stock: 'fund' },
   { v: '債券', ic: 'bond' },
   { v: '加密貨幣', ic: 'crypto' },
   { v: '保險', ic: 'insurance' },

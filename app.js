@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.24.0';
+const APP_VERSION = '5.25.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -134,7 +134,16 @@ const shortBank = b => b ? b.name.replace(/(\(台灣\))?(國際)?商業(儲蓄)?
 const catOf = v => ASSET_CATS.find(c => c.v === v) || ASSET_CATS.at(-1);
 const typeOf = v => DEBT_TYPES.find(c => c.v === v) || DEBT_TYPES.at(-1);
 const brandOf = v => CAR_BRANDS.find(c => c.v === v);
-const mktOf = a => catOf(a.category).stock;   // 'tw' | 'us' | undefined
+// 'tw' | 'us' | 'fund' | undefined；基金可以選「自己填市值」（舊資料沒有基金代碼也是這種）
+const mktOf = a => { const m = catOf(a.category).stock; if (m !== 'fund') return m; return a.fmode === 'manual' || (a.id && !a.sym && a.fmode !== 'track') ? undefined : 'fund'; };
+const MKTS = { tw: { cat: '台股', ccy: 'TWD', unit: '股', ic: 'tw' }, us: { cat: '美股', ccy: 'USD', unit: '股', ic: 'us' }, fund: { cat: '基金', ccy: 'TWD', unit: '單位', ic: 'fund' } };
+const mktCat = m => (MKTS[m] || MKTS.tw).cat;
+const catMkt = c => c === '美股' ? 'us' : c === '基金' ? 'fund' : 'tw';
+const mktCcy = (m, q, a) => (q && q.ccy) || (a && a.ccy) || (MKTS[m] || MKTS.tw).ccy;
+const roundSh = (m, v) => m === 'tw' ? Math.floor(v) : Math.floor(v * 1e4) / 1e4;
+const unitOf = m => (MKTS[m] || MKTS.tw).unit;
+const pickType = t => (t || '股票') === '股票' || t === '基金';   // 投資計畫可以挑標的的類型
+const symName = x => { const q = x.sym && Stocks.quote(x.mkt, x.sym); return x.mkt === 'fund' ? (q ? q.name : x.sym) : x.sym; };
 const icCat = v => v === '車輛' ? UI.carIcon() : Icon(catOf(v).ic);
 const icDebt = v => v === '車貸' ? UI.carIcon() : Icon(typeOf(v).ic);
 
@@ -171,7 +180,7 @@ function stockInfo(a) {
   const mkt = mktOf(a);
   if (!mkt || !a.sym) return null;
   const q = Stocks.quote(mkt, a.sym);
-  const ccy = mkt === 'us' ? 'USD' : 'TWD';
+  const ccy = mktCcy(mkt, q, a);
   const px = q ? q.price : num(a.manualPrice);
   const k = Stocks.fx(ccy, state.currency);
   const L = a.lots ? lotsSummary(a.lots) : { shares: num(a.shares), cost: num(a.shares) * num(a.cost), avg: num(a.cost), realized: 0, unknown: !num(a.cost), rows: [] };
@@ -233,7 +242,17 @@ let lastLv = null, lastStress = null;
 const openGroups = new Set(ASSET_CATS.map(c => c.v));
 const openStocks = new Set();
 
+// 有基金持股或投資計畫選了基金，才下載基金淨值（清單＋用到的走勢分檔）
+let fundKey = '';
+function ensureFunds() {
+  const codes = [...state.assets.filter(a => mktOf(a) === 'fund' && a.sym).map(a => a.sym), ...state.plans.flatMap(p => planStocksOf(p).filter(x => x.mkt === 'fund').map(x => x.sym))];
+  const k = [...new Set(codes)].sort().join(',');
+  if (!k || k === fundKey) return;
+  fundKey = k;
+  Stocks.fundHist(codes).then(() => { if (!locked && syncPlanEstimates()) store(); levelsKey = ''; render(); });
+}
 function render() {
+  ensureFunds();
   const s = summary();
   const L = UI.levelOf(s, twdK());
   const stress = s.debtRatio >= 70 && s.netWorth >= 0;
@@ -317,26 +336,27 @@ function stockDataLine() {
 // --- 資產：依大項分組 ---
 const plCls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
 const plTxt = (v, p) => `${v >= 0 ? '+' : ''}${fmt(v)}${p != null ? `（${p >= 0 ? '+' : ''}${p.toFixed(2)}%）` : ''}`;
-const unitTxt = (mkt, sh) => scaled ? `${(+(sh / scaleK()).toFixed(2)).toLocaleString()} 股` : mkt === 'tw' && sh >= 1000 && sh % 1000 === 0 ? `${sh / 1000} 張` : `${(+sh.toFixed(4)).toLocaleString()} 股`;
+const unitTxt = (mkt, sh) => scaled ? `${(+(sh / scaleK()).toFixed(2)).toLocaleString()} ${unitOf(mkt)}` : mkt === 'tw' && sh >= 1000 && sh % 1000 === 0 ? `${sh / 1000} 張` : `${(+sh.toFixed(4)).toLocaleString()} ${unitOf(mkt)}`;
 function stockRow(a, i) {
   const si = stockInfo(a);
   const q = si.q;
   const open = openStocks.has(a.id);
-  const tw = si.mkt === 'tw';
+  const tw = si.mkt === 'tw', fd = si.mkt === 'fund';
   const chgCls = q ? plCls(q.chg) : '';
   const chgTxt = q ? `${q.chg > 0 ? '▲' : q.chg < 0 ? '▼' : ''}${Math.abs(q.chgPct).toFixed(2)}%` : '手動價格';
   const lots = si.lots.rows.slice().reverse();
-  return `<li class="stock ${open ? 'open' : ''} ${tw ? 'tw' : 'us'}" data-expand="${a.id}" style="--i:${i}">
+  const W = fd ? { b: '申購', s: '贖回', px: '淨值', buy: '加碼申購' } : { b: '買', s: '賣', px: '現價', buy: '加碼買進' };
+  return `<li class="stock ${open ? 'open' : ''} ${tw ? 'tw' : fd ? 'fund' : 'us'}" data-expand="${a.id}" style="--i:${i}">
     <div class="row">
-      <span class="ticker">${esc(Stocks.norm(si.mkt, a.sym))}</span>
+      ${fd ? `<span class="ticker fund-tk">${Icon('fund')}<small>${q ? (q.org === 'D' ? '境內' : '境外') : '基金'}</small></span>` : `<span class="ticker">${esc(Stocks.norm(si.mkt, a.sym))}</span>`}
       <div class="grow"><div class="name">${esc(q ? q.name : a.name || a.sym)}</div>
-        <div class="sub">${unitTxt(si.mkt, si.shares)}${si.avg ? ` · 均價 ${price(si.avg, si.ccy)}` : ''}${si.px ? ` · 現價 ${price(si.px, si.ccy)}` : ''}</div></div>
+        <div class="sub">${unitTxt(si.mkt, si.shares)}${si.avg ? ` · 均價 ${price(si.avg, si.ccy)}` : ''}${si.px ? ` · ${W.px} ${price(si.px, si.ccy)}` : ''}</div></div>
       <div class="amt">${fmt(si.value)}
         ${si.pl != null ? `<div class="sub chg ${plCls(si.pl)}">${si.pl >= 0 ? '+' : ''}${fmt(si.pl)}</div><div class="pl-pct ${plCls(si.pl)}">${si.plPct >= 0 ? '+' : ''}${si.plPct.toFixed(2)}%</div>` : `<div class="sub chg ${chgCls}">${chgTxt}</div>`}</div>
     </div>
     <div class="detail">
-      ${q ? `<div class="chart-box">${UI.sparkline(q.series, 280, 64, { tw, dot: true, sw: 2 })}<div class="chart-cap"><span>近 ${q.series.length} 個交易日</span><span>${esc(q.date || '')} 收盤</span></div></div>` : `<div class="hint-row">${Icon('search')}<span>沒有這檔的自動報價，使用手動填的價格</span></div>`}
-      <div class="kv"><span>現價</span><span>${si.px ? price(si.px, si.ccy) : '—'}</span></div>
+      ${q ? `<div class="chart-box">${UI.sparkline(q.series, 280, 64, { tw: tw || fd, dot: true, sw: 2 })}<div class="chart-cap"><span>${fd ? (q.series.length > 2 ? `近 ${q.series.length} 筆淨值` : '走勢每天累積中') : `近 ${q.series.length} 個交易日`}</span><span>${esc(q.date || '')} ${fd ? '淨值' : '收盤'}</span></div></div>` : `<div class="hint-row">${Icon('search')}<span>沒有這檔的自動報價，使用手動填的價格</span></div>`}
+      <div class="kv"><span>${W.px}</span><span>${si.px ? price(si.px, si.ccy) : '—'}</span></div>
       ${q ? `<div class="kv"><span>今日漲跌</span><span class="chg ${chgCls}">${q.chg >= 0 ? '+' : ''}${q.chg.toFixed(2)}（${chgTxt}）· ${fmt(si.dayChg)}</span></div>` : ''}
       <div class="kv"><span>持有</span><span>${unitTxt(si.mkt, si.shares)}${si.avg ? ` · 平均成本 ${price(si.avg, si.ccy)}` : ''}</span></div>
       ${si.costVal ? `<div class="kv"><span>總成本</span><span>${fmt(si.costVal)}</span></div>` : ''}
@@ -348,13 +368,13 @@ function stockRow(a, i) {
         const lp = !isSell && num(l.price) && si.px ? (si.px - num(l.price)) * num(l.shares) * Stocks.fx(si.ccy, state.currency) : null;
         const fromPlan = String(l.src || '').startsWith('plan:');
         const pp = fromPlan ? l.src.split(':') : null;
-        return `<li ${fromPlan ? `data-goplan="${pp[1]}|${pp[2]}" class="${l.est ? 'est' : ''}"` : `data-lot="${a.id}|${l.id}"`}><span class="lot-tag ${isSell ? 'sell' : 'buy'}">${isSell ? '賣' : '買'}</span>
+        return `<li ${fromPlan ? `data-goplan="${pp[1]}|${pp[2]}" class="${l.est ? 'est' : ''}"` : `data-lot="${a.id}|${l.id}"`}><span class="lot-tag ${isSell ? 'sell' : 'buy'}">${fd ? (isSell ? '贖' : '申') : isSell ? '賣' : '買'}</span>
           <span class="grow">${l.date ? esc(l.date.replace(/-/g, '/')) : '原有持股'} ${fromPlan ? `<span class="chip ${l.est ? 'gray' : 'blue'}">投資計畫・${l.est ? '預估' : '已確認'}</span>` : '<span class="chip">自己輸入</span>'}<small>${unitTxt(si.mkt, num(l.shares))}${num(l.price) ? ` @ ${price(num(l.price), si.ccy)}` : ' · 未填價格'}${fromPlan && l.note ? ` · ${esc(l.note)}` : ''}${l.est ? ' · 點一下去確認實際成交' : ''}</small></span>
           <span class="lot-pl">${isSell ? (l.realized != null ? `<span class="chg ${plCls(l.realized)}">實現 ${plTxt(l.realized * Stocks.fx(si.ccy, state.currency))}</span>` : '') : lp != null ? `<span class="chg ${plCls(lp)}">${plTxt(lp, (si.px / num(l.price) - 1) * 100)}</span>` : ''}</span></li>`;
       }).join('')}</ul>
       <div class="btnrow">
-        <button type="button" class="btn mini primary" data-trade="buy" data-id="${a.id}">${Icon.svg('plus', 16)} 加碼買進</button>
-        <button type="button" class="btn mini" data-trade="sell" data-id="${a.id}">賣出</button>
+        <button type="button" class="btn mini primary" data-trade="buy" data-id="${a.id}">${Icon.svg('plus', 16)} ${W.buy}</button>
+        <button type="button" class="btn mini" data-trade="sell" data-id="${a.id}">${fd ? '贖回' : '賣出'}</button>
         <button type="button" class="btn mini" data-edit="asset" data-id="${a.id}">${Icon.svg('pencil', 16)} 編輯</button>
       </div>
     </div></li>`;
@@ -395,8 +415,9 @@ function recordHistory(s) {
   const h = state.history = Array.isArray(state.history) ? state.history : [];
   const sv = c => Math.round(state.assets.filter(a => a.category === c).reduce((t, a) => t + assetValue(a), 0));
   const rec = { d: day, a: Math.round(s.totalAssets), l: Math.round(s.totalDebts), tw: sv('台股'), us: sv('美股') };
+  const fv = sv('基金'); if (fv) rec.fund = fv;
   const last = h[h.length - 1];
-  if (last && last.d === day) { if (last.a === rec.a && last.l === rec.l && last.tw === rec.tw && last.us === rec.us) return; h[h.length - 1] = rec; }
+  if (last && last.d === day) { if (last.a === rec.a && last.l === rec.l && last.tw === rec.tw && last.us === rec.us && last.fund === rec.fund) return; h[h.length - 1] = rec; }
   else h.push(rec);
   if (h.length > 400) {
     const cut = h.length - 400, keep = [], seen = new Set();
@@ -416,20 +437,18 @@ function renderNwTrend() {
   if (nwSel >= pts.length) nwSel = -1;
   const first = pts[0], last = pts[pts.length - 1], diff = last.v - first.v;
   const s = nwSel >= 0 ? pts[nwSel] : last;
+  scrubData.nw = { pts, tip: p => [p.label.replace(/-/g, '/'), fmt(p.v)], on: k => { nwSel = k; const b = el.querySelector('.sel-box'); if (b) b.innerHTML = nwSelHTML(pts[k]); } };
   el.innerHTML = `<div class="chips">${[[30, '1 月'], [90, '3 月'], [365, '1 年'], [0, '全部']].map(([v, t]) => `<button type="button" class="chip-btn ${nwRange === v ? 'on' : ''}" data-nwr="${v}">${t}</button>`).join('')}</div>
     <div class="nw-delta">${first.label.slice(5).replace('-', '/')} 起 <b class="${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '+' : '−'}${fmt(Math.abs(diff))}</b></div>
-    <div class="chart-wrap" id="nwChart">${Charts.line(pts, { selected: nwSel, color: diff >= 0 ? 'var(--viz-3)' : 'var(--viz-2)', hideAxis: hidden, fmtX: l => l.slice(5).replace('-', '/') })}</div>
-    <div class="sel-box"><div class="sel-head"><b>${s.label.replace(/-/g, '/')}</b><b>${fmt(s.v)}</b></div>
-      <div class="kv"><span>總資產</span><span class="pos">${fmt(s.a)}</span></div><div class="kv"><span>總負債</span><span class="neg">${fmt(s.l)}</span></div>
-      <div class="small muted">點圖上的日期看那天的數字</div></div>`;
+    <div class="chart-wrap" id="nwChart">${Charts.line(pts, { selected: nwSel, color: diff >= 0 ? 'var(--viz-3)' : 'var(--viz-2)', hideAxis: hidden, fmtX: l => l.slice(5).replace('-', '/'), sid: 'nw' })}</div>
+    <div class="sel-box">${nwSelHTML(s)}</div>`;
 }
+const nwSelHTML = s => `<div class="sel-head"><b>${s.label.replace(/-/g, '/')}</b><b>${fmt(s.v)}</b></div>
+      <div class="kv"><span>總資產</span><span class="pos">${fmt(s.a)}</span></div><div class="kv"><span>總負債</span><span class="neg">${fmt(s.l)}</span></div>
+      <div class="small muted">手指在圖上左右滑，看每一天的數字</div>`;
 document.addEventListener('click', e => {
   const r = e.target.closest('[data-nwr]');
   if (r) { nwRange = +r.dataset.nwr; nwSel = -1; renderNwTrend(); return; }
-  const k = e.target.closest('#nwChart [data-lk]');
-  if (k) { nwSel = +k.dataset.lk; renderNwTrend(); return; }
-  const c = e.target.closest('#dcChart [data-lk]');
-  if (c) { dcSel = +c.dataset.lk; renderDebtCurve(); }
 });
 
 // 資產頁：投資組合（持股比重＋各檔損益）
@@ -473,11 +492,13 @@ function renderDebtCurve() {
   if (dcSel >= pts.length) dcSel = -1;
   const s = dcSel >= 0 ? pts[dcSel] : null;
   const payoffs = P.events.filter(e => e.type === 'payoff').sort((a, b) => Loan.ymDiff(b.ym, a.ym));
+  const selH = s => s ? `<div class="sel-box"><div class="sel-head"><b>${s.label.replace('-', '/')}</b><b>${fmt(s.v)}</b></div>${s.ev ? `<div class="small">${s.ev.map(esc).join('、')} 還清</div>` : ''}</div>`
+      : `<div class="dc-legend">${payoffs.map(e => `<span><span class="dot" style="--c:${debtColor(e.debt)}"></span>${esc(e.debt.name)} ${e.ym.replace('-', '/')} 還清</span>`).join('')}</div>`;
+  scrubData.dc = { pts, tip: p => [p.label.replace('-', '/'), fmt(p.v)], on: k => { dcSel = k; const b = $('dcSel'); if (b) b.innerHTML = selH(pts[k]); } };
   el.innerHTML = `<div class="card"><h2>${Icon.svg('down', 24)} 負債餘額會怎麼下降</h2>
-    <div class="chart-wrap" id="dcChart">${Charts.line(pts, { selected: dcSel, color: 'var(--viz-1)', hideAxis: hidden, fmtX: l => `'${l.slice(2, 4)}` })}</div>
-    ${s ? `<div class="sel-box"><div class="sel-head"><b>${s.label.replace('-', '/')}</b><b>${fmt(s.v)}</b></div>${s.ev ? `<div class="small">${s.ev.map(esc).join('、')} 還清</div>` : ''}</div>`
-      : `<div class="dc-legend">${payoffs.map(e => `<span><span class="dot" style="--c:${debtColor(e.debt)}"></span>${esc(e.debt.name)} ${e.ym.replace('-', '/')} 還清</span>`).join('')}</div>`}
-    <div class="small muted">只含自動試算與理財型額度；點圖看那個時間點還欠多少</div></div>`;
+    <div class="chart-wrap" id="dcChart">${Charts.line(pts, { selected: dcSel, color: 'var(--viz-1)', hideAxis: hidden, fmtX: l => `'${l.slice(2, 4)}`, sid: 'dc' })}</div>
+    <div id="dcSel">${selH(s)}</div>
+    <div class="small muted">只含自動試算與理財型額度；手指在圖上左右滑，看每個時間點還欠多少</div></div>`;
 }
 
 // 股票資產走勢：近 30 個交易日用收盤價 × 當時持有股數回推，更早的用每天記錄的快照
@@ -497,7 +518,7 @@ function stockTrend(cats) {
     if (!si) { flat += assetValue(a); continue; }
     const q = si.q;
     if (!q || !q.series || q.series.length < 2 || !q.date) { flat += si.value; continue; }
-    const ds = prevTradingDays(q.date, q.series.length);
+    const ds = q.dates || prevTradingDays(q.date, q.series.length);
     const k = Stocks.fx(si.ccy, state.currency);
     const lots = (a.lots || []).map(l => ({ d: l.date || '', s: (l.type === 'sell' ? -1 : 1) * num(l.shares) }));
     const map = {};
@@ -515,7 +536,7 @@ function stockTrend(cats) {
   });
   // 更早的快照
   const first = sorted[0] || '9999';
-  const key = cats.length > 1 ? null : cats[0] === '台股' ? 'tw' : 'us';
+  const key = cats.length > 1 ? null : catMkt(cats[0]);
   const snaps = (state.history || []).filter(h => h.d < first && (key ? h[key] != null : h.tw != null)).map(h => ({ label: h.d, v: key ? h[key] : (h.tw || 0) + (h.us || 0) }));
   return snaps.concat(pts);
 }
@@ -524,17 +545,57 @@ function trendHTML(id, cats, title) {
   if (pts.length < 2) return '';
   if (trSel[id] == null || trSel[id] >= pts.length) trSel[id] = pts.length - 1;
   const f = pts[0], l = pts[pts.length - 1], d = l.v - f.v, sel = pts[trSel[id]];
+  scrubData['tr-' + id] = { pts, tip: p => [p.label.replace(/-/g, '/'), fmt(p.v)], on: k => { trSel[id] = k; const b = document.querySelector(`.trend[data-tr="${id}"] .tr-sel`); if (b) b.innerHTML = `<span>${pts[k].label.replace(/-/g, '/')}</span><b>${fmt(pts[k].v)}</b>`; } };
   return `<div class="trend" data-tr="${id}" data-cats="${cats.join(',')}">
     <div class="tr-head"><b>${title}</b><span>${f.label.slice(5).replace('-', '/')} 起 <b class="chg ${plCls(d)}">${d >= 0 ? '+' : '−'}${fmt(Math.abs(d))}${f.v ? `（${(d / f.v * 100).toFixed(1)}%）` : ''}</b></span></div>
-    <div class="chart-wrap">${Charts.line(pts, { selected: trSel[id], color: d >= 0 ? '#e53935' : '#2e9e4f', hideAxis: hidden, height: 130, fmtX: x => x.slice(5).replace('-', '/') })}</div>
+    <div class="chart-wrap">${Charts.line(pts, { selected: trSel[id], color: d >= 0 ? '#e53935' : '#2e9e4f', hideAxis: hidden, height: 130, fmtX: x => x.slice(5).replace('-', '/'), sid: 'tr-' + id })}</div>
     <div class="tr-sel"><span>${sel.label.replace(/-/g, '/')}</span><b>${fmt(sel.v)}</b></div></div>`;
 }
-document.addEventListener('click', e => {
-  const k = e.target.closest('.trend [data-lk]');
-  if (!k) return;
-  const t = k.closest('.trend'); trSel[t.dataset.tr] = +k.dataset.lk;
-  t.outerHTML = trendHTML(t.dataset.tr, t.dataset.cats.split(','), t.querySelector('.tr-head b').textContent);
-});
+// ---- 圖表手指滑動：虛線跟著手指，即時顯示那一點的日期與數字 ----
+const scrubData = {};   // sid → { pts, tip(p) → [標題, 數字], on(k) }
+{
+  let act = null;
+  const idxAt = (svg, cx) => {
+    const r = svg.getBoundingClientRect(), d = svg.dataset, n = +d.n;
+    const xv = (cx - r.left) / r.width * +d.w - +d.x0, pw = +d.pw;
+    const k = d.kind === 'bar' ? Math.floor(xv / pw * n) : Math.round(xv / pw * (n - 1));
+    return Math.max(0, Math.min(n - 1, k));
+  };
+  const move = (svg, k) => {
+    const d = svg.dataset, n = +d.n, x0 = +d.x0, pw = +d.pw;
+    if (d.kind === 'bar') {
+      const bw = pw / n, r = svg.querySelector('.sel'); if (r) r.setAttribute('x', (x0 + k * bw).toFixed(2));
+    } else {
+      const x = (x0 + (n === 1 ? pw / 2 : k / (n - 1) * pw)).toFixed(1), g = svg.querySelector('.xh');
+      if (g) { g.classList.remove('off'); const l = g.querySelector('line'), c = g.querySelector('circle'); l.setAttribute('x1', x); l.setAttribute('x2', x); c.setAttribute('cx', x); c.setAttribute('cy', d.ys.split(',')[k]); }
+    }
+    const S = scrubData[d.sid];
+    if (S) {
+      S.on(k);
+      const wrap = svg.closest('.chart-wrap'); let tip = wrap.querySelector('.xtip');
+      if (!tip) { tip = document.createElement('div'); tip.className = 'xtip'; wrap.appendChild(tip); }
+      const [a, b] = S.tip(S.pts[k]); tip.innerHTML = `<small>${a}</small><b>${b}</b>`;
+      const wr = wrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
+      const px = sr.left - wr.left + (d.kind === 'bar' ? (x0 + (k + .5) * pw / n) : (x0 + (n === 1 ? pw / 2 : k / (n - 1) * pw))) / +d.w * sr.width;
+      tip.style.left = Math.max(4, Math.min(wr.width - tip.offsetWidth - 4, px - tip.offsetWidth / 2)) + 'px';
+      tip.classList.add('on');
+    }
+  };
+  const end = () => { if (!act) return; const w = act.svg.closest('.chart-wrap'), t = w && w.querySelector('.xtip'); if (t) t.classList.remove('on'); act = null; };
+  document.addEventListener('pointerdown', e => {
+    const svg = e.target.closest && e.target.closest('svg.scrub'); if (!svg) return;
+    act = { svg, id: e.pointerId, k: -1 };
+    try { svg.setPointerCapture(e.pointerId); } catch (_) {}
+    const k = idxAt(svg, e.clientX); act.k = k; move(svg, k);
+  });
+  document.addEventListener('pointermove', e => {
+    if (!act || e.pointerId !== act.id) return;
+    const k = idxAt(act.svg, e.clientX);
+    if (k !== act.k) { act.k = k; move(act.svg, k); if (navigator.vibrate && e.pointerType === 'touch') try { navigator.vibrate(3); } catch (_) {} }
+  });
+  document.addEventListener('pointerup', end);
+  document.addEventListener('pointercancel', end);
+}
 
 function renderAssets(s) {
   if ($('portfolio')) $('portfolio').innerHTML = '';
@@ -581,7 +642,8 @@ function renderAssets(s) {
       <div class="sub-list-wrap">${g.c.stock ? trendHTML('tr-' + g.c.stock, [g.c.v], `${g.c.v}資產走勢`) : ''}<ul class="list sub-list">${rows}</ul></div></div>`;
   };
   // 台股、美股收進「股票」大分類
-  const stockGs = groups.filter(g => g.c.stock), others = groups.filter(g => !g.c.stock);
+  const inStk = g => g.c.stock === 'tw' || g.c.stock === 'us';
+  const stockGs = groups.filter(inStk), others = groups.filter(g => !inStk(g));
   const sTotal = stockGs.reduce((t, g) => t + g.total, 0);
   let stockBlock = '';
   if (stockGs.length) {
@@ -819,7 +881,7 @@ const OPTS = {
     if (!ps.length) throw new Error('還沒有不動產資產，先到「資產」新增這間房子');
     return [opt('', '不指定', Icon('other'), '不和任何房子連結'), ...ps.map(a => opt(a.id, a.name, assetIcon(a), `估值 ${short(assetValue(a))}${a.district ? ' · ' + a.district + (a.road || '') : ''}`))];
   },
-  planType: () => ['股票', '基金', '債券', '加密貨幣', '儲蓄／定存', '其他'].map(v => opt(v, v, Icon({ '股票': 'chart', '基金': 'fund', '債券': 'bond', '加密貨幣': 'crypto', '儲蓄／定存': 'cash', '其他': 'other' }[v]), v === '股票' ? '可以選台股、美股標的，看即時收盤價與走勢' : '')),
+  planType: () => ['股票', '基金', '債券', '加密貨幣', '儲蓄／定存', '其他'].map(v => opt(v, v, Icon({ '股票': 'chart', '基金': 'fund', '債券': 'bond', '加密貨幣': 'crypto', '儲蓄／定存': 'cash', '其他': 'other' }[v]), v === '股票' ? '可以選台股、美股標的，看即時收盤價與走勢' : v === '基金' ? '可以選境內、境外基金，看最新淨值與走勢' : '')),
   planMode: () => [opt('total', '投資總額', Icon('invest'), '一筆總額分幾個月投入，例如 1460 萬分 15 個月'), opt('monthly', '每月投入', Icon('calendar'), '每月固定投入多少，例如定期定額每月 1 萬')],
   billKind: () => BILL_KINDS.map(c => opt(c.v, c.label, Icon(c.ic), c.d)),
   billCat: () => BILL_CATS.map(c => opt(c.v, c.v, Icon(c.ic))),
@@ -827,13 +889,20 @@ const OPTS = {
   billCycle: () => BILL_CYCLES.map(c => opt(c.v, c.label, Icon(c.v === 'w' ? 'clock' : 'calendar'))),
   payWith: () => [opt('', '銀行帳戶自動扣款', Icon('bank')), ...state.bills.filter(isCardBill).map(c => opt(c.id, `刷 ${c.name}`, UI.bankIcon(bankOf(c.bank)), '金額會併入這張卡的帳單')), opt('other', '其他（現金、轉帳…）', Icon('wallet'))],
   autopay: () => [opt('auto', '自動扣繳', Icon('bank'), '截止日從帳戶自動扣'), opt('manual', '自己繳', Icon('wallet'), '截止日前要記得繳')],
+  fmode: () => [opt('track', '選基金，每天自動更新淨值', Icon('fund'), '境內、境外基金都有，填單位數就能算市值與損益'), opt('manual', '自己填目前市值', Icon('pencil'), '找不到的基金，或只想記總額')],
   grace: () => [0, 6, 12, 24, 36, 48, 60].map(m => opt(String(m), m ? `${m} 個月${m % 12 === 0 ? `（${m / 12} 年）` : ''}` : '沒有寬限期', Icon(m ? 'pause' : 'play'), m ? '期間只繳利息、不還本金' : '一撥款就開始還本金')),
   stock: async vals => {
     await Stocks.load(); if (mktOf(vals) === 'us') await Stocks.tail();
     const mkt = mktOf(vals);
+    if (mkt === 'fund') return fundOpts();
     return Stocks.list(mkt).map(x => opt(x.sym, `${x.sym}  ${x.name}`, `<span class="ticker small">${esc(x.sym.slice(0, 6))}</span>`, x.price != null ? price(x.price, mkt === 'us' ? 'USD' : 'TWD') : '', { key: `${x.sym} ${x.name}`, right: UI.sparkline(x.series, 56, 22, { tw: mkt === 'tw' }) }));
   },
 };
+async function fundOpts() {
+  if (!(await Stocks.funds())) throw new Error('基金資料還沒產生（每天晚上自動更新），可以先選「自己填市值」');
+  return Stocks.list('fund').map(x => opt(x.sym, x.name, Icon('fund'), `${x.org === 'D' ? '境內' : '境外'}・${x.ccy}・淨值 ${(+x.price).toLocaleString(undefined, { maximumFractionDigits: 4 })}`,
+    { key: `${x.name} ${x.sym} ${x.co || ''} ${x.org === 'D' ? '境內' : '境外'} ${x.ccy}`, right: x.prev ? `<span class="chg ${x.price > x.prev ? 'up' : x.price < x.prev ? 'down' : ''} small">${x.price >= x.prev ? '+' : ''}${((x.price - x.prev) / x.prev * 100).toFixed(2)}%</span>` : '' }));
+}
 const BODY_ZH = { sedan: '轎車', hatch: '掀背車', suv: '休旅車', bigsuv: '越野車', coupe: '跑車', roadster: '敞篷車', minivan: 'MPV', pickup: '皮卡', evcross: '電動跨界休旅', wagon: '旅行車', scooter: '速克達', escooter: '電動機車', sportbike: '檔車' };
 const swatch = c => `<span class="ico swatch" style="--sw:${c}"></span>`;
 const PICK_LABEL = {
@@ -853,7 +922,8 @@ const PICK_LABEL = {
   payWith: v => !v ? '銀行帳戶自動扣款' : v === 'other' ? '其他（現金、轉帳…）' : `刷 ${(state.bills.find(c => c.id === v) || {}).name || '（已刪除的卡）'}`,
   autopay: v => v === 'manual' ? '自己繳' : '自動扣繳',
   property: v => { const a = propOf(v); return a ? a.name : v ? '（已刪除的房子）' : '不指定'; },
-  stock: (v, vals) => { const q = v && Stocks.quote(mktOf(vals), v); return q ? `${q.sym} ${q.name}` : v; },
+  stock: (v, vals) => { const q = v && Stocks.quote(mktOf(vals), v); return q ? (q.fund ? q.name : `${q.sym} ${q.name}`) : v; },
+  fmode: v => v === 'manual' ? '自己填目前市值' : '選基金，每天自動更新淨值',
 };
 const PICK_ICON = {
   planSource: v => v === 'self' || !v ? Icon('wallet') : v === '__newline' ? Icon('mortgage') : v === '__newother' ? Icon('loan') : UI.bankIcon(bankOf((state.debts.find(d => d.id === v) || {}).bank)),
@@ -877,7 +947,8 @@ const PICK_ICON = {
   payWith: v => !v ? Icon('bank') : v === 'other' ? Icon('wallet') : UI.bankIcon(bankOf((state.bills.find(c => c.id === v) || {}).bank)),
   autopay: v => Icon(v === 'manual' ? 'wallet' : 'bank'),
   property: v => { const a = propOf(v); return a ? assetIcon(a) : Icon('other'); },
-  stock: (v, vals) => Icon(mktOf(vals) === 'us' ? 'us' : 'tw'),
+  stock: (v, vals) => Icon((MKTS[mktOf(vals)] || MKTS.tw).ic),
+  fmode: v => Icon(v === 'manual' ? 'pencil' : 'fund'),
 };
 
 const isRE = v => v.category === '不動產';
@@ -915,13 +986,14 @@ const FIELDS = {
   asset: [
     { k: 'category', label: '類別', type: 'pick', opts: 'assetCat', def: '現金/存款' },
     { k: 'name', label: '名稱', type: 'text', req: true, ph: '例：玉山活存', show: v => !isStock(v) },
-    { sec: ['tw', '股票持股'], show: isStock },
-    { k: 'sym', label: '股票代號', type: 'pick', opts: 'stock', show: v => isStock(v) && !v.id, req: true },
+    { k: 'fmode', label: '記錄方式', type: 'pick', opts: 'fmode', def: 'track', show: v => v.category === '基金' && !v.id },
+    { sec: ['tw', '股票持股'], show: isStock, labelFn: v => mktOf(v) === 'fund' ? '基金持有' : '股票持股', iconFn: v => (MKTS[mktOf(v)] || MKTS.tw).ic },
+    { k: 'sym', label: '股票代號', type: 'pick', opts: 'stock', show: v => isStock(v) && !v.id, req: true, labelFn: v => mktOf(v) === 'fund' ? '基金' : '股票代號' },
     { panel: 'stockPanel', show: isStock },
-    { k: 'shares', label: '買進股數', type: 'number', req: true, show: v => isStock(v) && !v.id, half: true, hintFn: v => mktOf(v) === 'tw' ? '1 張 = 1,000 股' : '可輸入小數（零股）' },
-    { k: 'cost', label: '成交價／平均成本', type: 'number', show: v => isStock(v) && !v.id, half: true, hintFn: () => '用來算損益，可不填' },
+    { k: 'shares', label: '買進股數', type: 'number', req: true, show: v => isStock(v) && !v.id, half: true, labelFn: v => mktOf(v) === 'fund' ? '持有單位數' : '買進股數', hintFn: v => mktOf(v) === 'tw' ? '1 張 = 1,000 股' : mktOf(v) === 'fund' ? '對帳單上的「單位數」，可輸入小數' : '可輸入小數（零股）' },
+    { k: 'cost', label: '成交價／平均成本', type: 'number', show: v => isStock(v) && !v.id, half: true, labelFn: v => mktOf(v) === 'fund' ? '申購淨值／平均成本' : '成交價／平均成本', hintFn: v => mktOf(v) === 'fund' ? `用基金的計價幣別${(() => { const q = v.sym && Stocks.quote('fund', v.sym); return q ? `（${q.ccy}）` : ''; })()}，用來算損益，可不填` : '用來算損益，可不填' },
     { k: 'buyDate', label: '買進日期（選填）', type: 'date', show: v => isStock(v) && !v.id },
-    { k: 'manualPrice', label: '目前股價（找不到報價時填）', type: 'number', show: noQuote },
+    { k: 'manualPrice', label: '目前股價（找不到報價時填）', type: 'number', show: noQuote, labelFn: v => mktOf(v) === 'fund' ? '目前淨值（找不到淨值時填）' : '目前股價（找不到報價時填）' },
     { sec: ['property', '實價登錄估價'], show: isRE },
     { k: 'county', label: '縣市', type: 'pick', opts: 'county', show: isRE, half: true },
     { k: 'district', label: '行政區', type: 'pick', opts: 'district', show: isRE, half: true },
@@ -984,8 +1056,8 @@ FIELDS.plan = [
   { k: 'nlBank', label: '銀行', type: 'pick', opts: 'bank', search: true, show: v => isNewLine(v) },
   { k: 'nlLimit', label: '核准額度', type: 'number', half: true, show: v => isNewLine(v), ph: v => v.total ? String(v.total) : '例：14600000', hintFn: () => '不填就用投入總額' },
   { k: 'nlRate', label: '年利率 (%)', type: 'number', step: '0.001', req: true, half: true, show: v => isNewLine(v), ph: v => v.source === '__newother' ? '例：3.2' : '例：2.6' },
-  { panel: 'planStocks', show: v => (v.ptype || '股票') === '股票' },
-  { k: 'targets', label: '投資標的（選填，可寫比例）', type: 'text', ph: '例：0050 50%、00878 30%、VOO 20%', show: v => (v.ptype || '股票') !== '股票' },
+  { panel: 'planStocks', show: v => pickType(v.ptype) },
+  { k: 'targets', label: '投資標的（選填，可寫比例）', type: 'text', ph: '例：0050 50%、00878 30%、VOO 20%', show: v => !pickType(v.ptype) },
   { k: 'yieldPct', label: '預估年化報酬／殖利率 %（選填）', type: 'number', step: '0.1', half: true },
   { panel: 'planPanel', show: () => true },
   { k: 'note', label: '備註', type: 'text' },
@@ -1045,7 +1117,7 @@ let editing = null;
 let vals = {};
 
 function fieldHTML(f) {
-  if (f.sec) return `<div class="sec" data-show>${f.sec[0] === 'car' ? UI.carIcon() : Icon(f.sec[0])}<span>${f.sec[1]}</span></div>`;
+  if (f.sec) return `<div class="sec" data-show>${f.sec[0] === 'car' ? UI.carIcon() : Icon(f.iconFn ? f.iconFn(vals) : f.sec[0])}<span>${f.labelFn ? f.labelFn(vals) : f.sec[1]}</span></div>`;
   if (f.panel) return `<div class="panel" id="${f.panel}" data-show></div>`;
   const v = vals[f.k] ?? '';
   const cls = `field${f.half ? ' half' : ''}`;
@@ -1164,10 +1236,10 @@ $('editFields').addEventListener('click', async e => {
     const isModel = f.opts === 'carModel';
     if (!options.length && !isStk) return toast(k === 'district' ? '請先選縣市' : k === 'road' ? '請先選行政區' : '沒有選項');
     const o = await UI.openPicker({
-      title: isStk ? (mktOf(vals) === 'us' ? '美股代號' : '台股代號') : f.label, options, value: vals[k],
+      title: isStk ? ({ us: '美股代號', fund: '選基金（境內＋境外）', tw: '台股代號' }[mktOf(vals)] || '台股代號') : f.label, options, value: vals[k],
       search: f.search || isStk || isModel || options.length > 8, limit: isStk ? 40 : 0,
-      placeholder: isStk ? (mktOf(vals) === 'us' ? '輸入代號，例如 AAPL、VOO' : '輸入代號或名稱，例如 2330、0050、台積電') : '',
-      custom: isStk ? q => !/^[A-Za-z0-9.\-]{1,10}$/.test(q) ? null : opt(Stocks.norm(mktOf(vals), q), `使用「${Stocks.norm(mktOf(vals), q)}」`, Icon('pencil'), '沒有自動報價，之後手動填股價')
+      placeholder: isStk ? ({ us: '輸入代號，例如 AAPL、VOO', fund: '輸入基金名稱或公司，例如 安聯台灣科技、摩根、貝萊德' }[mktOf(vals)] || '輸入代號或名稱，例如 2330、0050、台積電') : '',
+      custom: isStk && mktOf(vals) === 'fund' ? null : isStk ? q => !/^[A-Za-z0-9.\-]{1,10}$/.test(q) ? null : opt(Stocks.norm(mktOf(vals), q), `使用「${Stocks.norm(mktOf(vals), q)}」`, Icon('pencil'), '沒有自動報價，之後手動填股價')
         : isModel ? q => opt(q, `使用「${q}」`, Icon('pencil'), '清單沒有的車款') : null,
     });
     if (!o) return;
@@ -1180,11 +1252,13 @@ $('editFields').addEventListener('click', async e => {
       if (o.value === '不動產' && !vals.name) vals.name = '自住房';
       const pm = mktOf({ category: prev }), nm = mktOf(vals);
       if (pm !== nm) {
-        if (editing.id && pm && nm && vals.sym) { vals.sym = Stocks.norm(nm, vals.sym); toast(`這檔會改成${vals.category}，按儲存生效`); }
+        if (editing.id && pm && nm && (pm === 'fund' || nm === 'fund')) { vals[k] = prev; toast('基金和股票不能互換，請另外新增'); }
+        else if (editing.id && pm && nm && vals.sym) { vals.sym = Stocks.norm(nm, vals.sym); toast(`這檔會改成${vals.category}，按儲存生效`); }
         else if (editing.id && pm && !nm) { vals[k] = prev; toast('股票只能在台股和美股之間切換'); }
         else vals.sym = '';
       }
     }
+    if (k === 'sym' && mktOf(vals) === 'fund') Stocks.fundHist([vals.sym]).then(() => { if ($('editor').open) drawStockPanel(); });
     if (k === 'brand') {
       if (!vals.name) vals.name = brandOf(o.value)?.t === 'scooter' ? '機車' : '愛車';
       if (prev !== o.value) { vals.model = ''; }
@@ -1223,7 +1297,7 @@ function addLot(category, sym, lot, extra = {}) {
   const h = findHolding(category, k);
   const q = Stocks.quote(mkt, k);
   if (h) { h.lots = [...(h.lots || []), lot]; if (!h.name || h.name === h.sym) h.name = q ? q.name : h.sym; Object.assign(h, extra, { updatedAt: new Date().toISOString() }); return { h, merged: true }; }
-  const nh = { id: uid(), category, sym: k, name: q ? q.name : k, lots: [lot], ...extra, updatedAt: new Date().toISOString() };
+  const nh = { id: uid(), category, sym: k, name: q ? q.name : k, lots: [lot], ...(mkt === 'fund' ? { fmode: 'track', ccy: q ? q.ccy : 'TWD' } : {}), ...extra, updatedAt: new Date().toISOString() };
   state.assets.push(nh);
   openGroups.add(category);
   return { h: nh, merged: false };
@@ -1248,13 +1322,14 @@ function saveStock() {
     $('editor').close();
     return save();
   }
-  if (!num(vals.shares)) return toast('請填買進股數');
+  if (!num(vals.shares)) return toast(mktOf(vals) === 'fund' ? '請填持有單位數' : '請填買進股數');
   const lot = { id: uid(), type: 'buy', date: vals.buyDate || '', shares: num(vals.shares), price: vals.cost === '' || vals.cost == null ? '' : num(vals.cost) };
   const { h, merged } = addLot(vals.category, vals.sym, lot, vals.manualPrice ? { manualPrice: num(vals.manualPrice) } : {});
   $('editor').close();
   UI.burst('coin');
   save();
-  toast(merged ? `已加入 ${h.sym} ${h.name}（共 ${h.lots.length} 筆交易）` : `已新增 ${h.sym} ${h.name}`);
+  const nm = mktOf(h) === 'fund' ? h.name : `${h.sym} ${h.name}`;
+  toast(merged ? `已加入 ${nm}（共 ${h.lots.length} 筆交易）` : `已新增 ${nm}`);
 }
 
 // --- 股票面板 ---
@@ -1264,28 +1339,30 @@ function drawStockPanel() {
   const mkt = mktOf(vals);
   if (vals.id) {
     const si = stockInfo(vals);
-    el.innerHTML = `<div class="stock-head"><div><b>${esc(Stocks.norm(mkt, vals.sym))} ${esc(si.q ? si.q.name : vals.name || '')}</b><div class="small muted">${unitTxt(mkt, si.shares)}${si.avg ? ` · 均價 ${price(si.avg, si.ccy)}` : ''}</div></div>
+    el.innerHTML = `<div class="stock-head"><div><b>${mkt === 'fund' ? '' : esc(Stocks.norm(mkt, vals.sym)) + ' '}${esc(si.q ? si.q.name : vals.name || '')}</b><div class="small muted">${unitTxt(mkt, si.shares)}${si.avg ? ` · 均價 ${price(si.avg, si.ccy)}` : ''}</div></div>
       <div class="r"><b class="big-px">${fmt(si.value)}</b>${si.pl != null ? `<div class="chg ${plCls(si.pl)}">${plTxt(si.pl, si.plPct)}</div>` : ''}</div></div>
-      <div class="small muted">買進、賣出與每筆交易，請在資產列表點開這檔股票，用「加碼買進」「賣出」或點交易紀錄修改。</div>`;
+      <div class="small muted">買進、賣出與每筆交易，請在資產列表點開這檔${mkt === 'fund' ? '基金，用「加碼申購」「贖回」' : '股票，用「加碼買進」「賣出」'}或點交易紀錄修改。</div>`;
     return;
   }
   const exist = vals.sym && findHolding(vals.category, vals.sym);
   if (!vals.sym) {
-    el.innerHTML = `<div class="hint-row">${Icon(mkt === 'us' ? 'us' : 'tw')}<span>${Stocks.ready() ? '點上面選股票代號，會自動帶出最新收盤價與走勢' : '報價資料讀取中，或尚未產生（GitHub Action 每天收盤後更新）'}</span></div>`;
+    el.innerHTML = mkt === 'fund' ? `<div class="hint-row">${Icon('fund')}<span>點上面選基金（境內＋境外都有），會帶出最新淨值與走勢。淨值每天晚上自動更新。</span></div>`
+      : `<div class="hint-row">${Icon(mkt === 'us' ? 'us' : 'tw')}<span>${Stocks.ready() ? '點上面選股票代號，會自動帶出最新收盤價與走勢' : '報價資料讀取中，或尚未產生（GitHub Action 每天收盤後更新）'}</span></div>`;
     return;
   }
   const q = Stocks.quote(mkt, vals.sym);
-  const ccy = mkt === 'us' ? 'USD' : 'TWD';
+  const ccy = mktCcy(mkt, q, vals);
   const px = q ? q.price : num(vals.manualPrice);
   const sh = num(vals.shares), k = Stocks.fx(ccy, state.currency);
   const val = sh * px * k;
   const cost = num(vals.cost);
   const tw = mkt === 'tw';
   const chgCls = q ? (q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : '') : '';
-  el.innerHTML = (exist ? `<div class="hint-row merge-row">${Icon('basket')}<span>你已經有 ${esc(exist.sym)} ${esc(exist.name || '')}，這次買進會歸到同一檔，自動重算平均成本</span></div>` : '') + (q ? `<div class="stock-head"><div><b>${esc(q.sym)} ${esc(q.name)}</b><div class="small muted">${esc(q.date || '')} 收盤 · 每個交易日自動更新</div></div>
+  const twc = mkt !== 'us';   // 台股、基金：紅漲綠跌
+  el.innerHTML = (exist ? `<div class="hint-row merge-row">${Icon('basket')}<span>你已經有 ${esc(exist.sym)} ${esc(exist.name || '')}，這次買進會歸到同一檔，自動重算平均成本</span></div>` : '') + (q ? `<div class="stock-head"><div><b>${q.fund ? '' : esc(q.sym) + ' '}${esc(q.name)}</b><div class="small muted">${q.fund ? `${q.org === 'D' ? '境內' : '境外'}基金・${esc(q.ccy)} 計價・${esc(q.date || '')} 淨值・每天自動更新` : `${esc(q.date || '')} 收盤 · 每個交易日自動更新`}</div></div>
       <div class="r"><b class="big-px">${price(q.price, ccy)}</b><div class="chg ${chgCls}">${q.chg >= 0 ? '+' : ''}${q.chg.toFixed(2)}（${q.chgPct >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%）</div></div></div>
-      <div class="chart-box">${UI.sparkline(q.series, 280, 60, { tw, dot: true, sw: 2 })}</div>`
-    : `<div class="hint-row">${Icon('search')}<span>找不到「${esc(vals.sym)}」的自動報價，請在下方手動填目前股價</span></div>`) +
+      <div class="chart-box">${UI.sparkline(q.series, 280, 60, { tw: twc, dot: true, sw: 2 })}</div>`
+    : `<div class="hint-row">${Icon('search')}<span>找不到「${esc(vals.sym)}」的自動報價，請在下方手動填目前${mkt === 'fund' ? '淨值' : '股價'}</span></div>`) +
     (tw ? `<div class="quick">${[1000, 100, 1].map(n => `<button type="button" class="btn mini" data-shares="${n}">+${n === 1000 ? '1 張' : n + ' 股'}</button>`).join('')}</div>` : '') +
     (sh && px ? `<div class="kv"><span>市值</span><b class="accent">${fmt(val)}</b></div>` : '') +
     (sh && px && ccy !== state.currency ? `<div class="small muted">以匯率 1 ${ccy} ≈ ${k.toFixed(k < 1 ? 4 : 2)} ${state.currency} 換算</div>` : '') +
@@ -1543,7 +1620,7 @@ $('editForm').addEventListener('submit', e => {
   }
   if (vals.lvrAt && isRE(vals)) obj.lvrAt = vals.lvrAt;
   if (editing.kind === 'plan') {
-    if ((obj.ptype || '股票') === '股票') {
+    if (pickType(obj.ptype)) {
       const per0 = obj.pmode === 'monthly' ? num(obj.perMonth) : num(obj.total) / Math.max(1, Math.round(num(obj.months)));
       obj.stocks = (vals.stocks || []).filter(x => x.sym).map(x => x.ccy === 'USD' && x.amt !== '' && x.amt != null
         ? { mkt: x.mkt, sym: x.sym, ccy: 'USD', amt: Math.round(num(x.amt) * 100) / 100 }
@@ -1935,7 +2012,10 @@ function renderRepay() {
   const markers = {};
   P.events.forEach(e => { const k = Loan.ymDiff(P.cur, e.ym); if (k >= 0 && k < H && e.type === 'graceEnd') markers[k] = '#e53935'; else if (k >= 0 && k < H && !markers[k] && e.type !== 'lineEnd') markers[k] = '#90a4ae'; });
   const sel = months[repaySel];
-  const selRows = series.map(s => ({ s, it: sel.items[s.id] })).filter(x => x.it && x.it.pay > 0);
+  const repaySelHTML = sel => `<div class="sel-head"><b>${sel.ym.replace('-', '/')}</b><b>${fmt(sel.total)}</b></div>
+        ${series.map(s => ({ s, it: sel.items[s.id] })).filter(x => x.it && x.it.pay > 0).map(({ s, it }) => `<div class="kv"><span>${Loan.dueDay(s.d) ? `<span class="dday">${Math.min(Loan.dueDay(s.d), Loan.daysIn(sel.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}</span></div>`).join('') || '<div class="muted small">這個月沒有要繳的</div>'}
+        <div class="small muted">手指在圖上左右滑，看每個月的明細</div>`;
+  scrubData.repay = { pts: months, tip: m => [m.ym.replace('-', '/'), fmt(m.total)], on: k => { repaySel = k; const b = $('repaySelBox'); if (b) b.innerHTML = repaySelHTML(months[k]); } };
   const tableRows = months.map((m, k) => {
     const prev = k ? months[k - 1].total : m.total, diff = m.total - prev;
     const evs = P.events.filter(e => e.ym === m.ym && e.type !== 'lineEnd');
@@ -1997,11 +2077,9 @@ function renderRepay() {
     <div class="card">
       <h2>${Icon.svg('chart', 24)} 未來每月要繳多少</h2>
       <div class="chips">${[[12, '1 年'], [36, '3 年'], [60, '5 年'], [120, '10 年'], [0, '全部']].map(([v, t]) => `<button type="button" class="chip-btn ${repayH === v ? 'on' : ''}" data-h="${v}">${t}</button>`).join('')}</div>
-      <div class="chart-wrap" id="repayChart">${Charts.stacked(months, series, { selected: repaySel, markers })}</div>
+      <div class="chart-wrap" id="repayChart">${Charts.stacked(months, series, { selected: repaySel, markers, sid: 'repay' })}</div>
       <div class="legend">${series.map(s => `<span><span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}</span>`).join('')}<span><span class="tri"></span>寬限期結束</span></div>
-      <div class="sel-box"><div class="sel-head"><b>${sel.ym.replace('-', '/')}</b><b>${fmt(sel.total)}</b></div>
-        ${selRows.map(({ s, it }) => `<div class="kv"><span>${Loan.dueDay(s.d) ? `<span class="dday">${Math.min(Loan.dueDay(s.d), Loan.daysIn(sel.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}</span></div>`).join('') || '<div class="muted small">這個月沒有要繳的</div>'}
-        <div class="small muted">點圖上的月份看那個月的明細</div></div>
+      <div class="sel-box" id="repaySelBox">${repaySelHTML(sel)}</div>
     </div>
     <div class="card yr-card">
       <div class="due-head"><h2>${Icon.svg('calendar', 24)} 貸款逐月明細</h2><div class="yr-nav"><button type="button" class="yr-btn" data-yrgo="-1" aria-label="上一年">‹</button><span id="yrLabel">${y0 + yrIdx} 年</span><button type="button" class="yr-btn" data-yrgo="1" aria-label="下一年">›</button></div></div>
@@ -2017,8 +2095,6 @@ function renderRepay() {
 document.addEventListener('click', e => {
   const h = e.target.closest('[data-h]');
   if (h && h.closest('#view-repay')) { repayH = +h.dataset.h; repaySel = 0; renderRepay(); return; }
-  const bar = e.target.closest('#repayChart [data-k]');
-  if (bar) { repaySel = +bar.dataset.k; renderRepay(); return; }
   const yg = e.target.closest('[data-yrgo]');
   const yh = e.target.closest('#yrHome');
   if (yg || yh) { const sc = $('yrScroll'); yrIdx = yh ? 0 : Math.max(-yrBase, Math.min(29, yrIdx + +yg.dataset.yrgo)); sc.scrollTo({ left: (yrBase + yrIdx) * sc.clientWidth, behavior: 'smooth' }); yrLbl(); return; }
@@ -2077,7 +2153,7 @@ function renderInvest() {
           <div class="kv"><span>進度</span><span>第 ${Math.min(pr.current, pr.n)} / ${pr.n} 期</span></div>
           ${nowRow ? `<div class="kv"><span>本月要投入</span><b>${fmt(nowRow.amt)}</b></div>` : nextRow ? `<div class="kv"><span>下次投入</span><span>${nextRow.ym.replace('-', '/')} · ${fmt(nextRow.amt)}</span></div>` : '<div class="kv"><span>狀態</span><b class="pos">全部投入完成</b></div>'}
         </div></div>
-      ${assumed ? `<div class="hint-row warn-row">${Icon('warn')}<span>有 ${assumed} 期已過但還沒確認，負債先當作照計畫動用${p.ptype === '股票' ? '；股票要確認後才會加進持股' : ''}。點下面那期就能填實際${p.ptype === '股票' ? '股數、成交價' : '金額'}。</span></div>` : ''}
+      ${assumed ? `<div class="hint-row warn-row">${Icon('warn')}<span>有 ${assumed} 期已過但還沒確認，負債先當作照計畫動用${pickType(p.ptype) ? '；股票要確認後才會加進持股' : ''}。點下面那期就能填實際${p.ptype === '股票' ? '股數、成交價' : '金額'}。</span></div>` : ''}
       ${rs ? `<div class="int-box"><div class="kv"><span>目前每月利息</span><b>${fmt(rs.monthly)}</b></div>
         <div class="kv"><span>全部投入後每月利息（${rs.fullYM || ''} 起）</span><b class="neg">${fmt(rs.fullInterest)}</b></div>
         <div class="kv"><span>每多投入 100 萬，每月利息增加</span><span>${fmt(1e6 * num(src.rate) / 100 / 12)}</span></div></div>` : ''}
@@ -2088,8 +2164,8 @@ function renderInvest() {
         <div class="small muted">以總額 × ${pct(num(p.yieldPct))} ÷ 12 估算；${src ? `損益兩平的年化報酬約 ${pct(num(src.rate))}。` : ''}實際報酬會波動，僅供參考。</div></div>` : ''}
       <div class="chart-wrap">${Charts.invest(rows, { current: curIdx })}</div>
       <div class="legend"><span><span class="dot" style="--c:#14b8a6"></span>累計投入（左軸）</span>${src ? '<span><span class="dot" style="--c:#ff7043"></span>投入後每月利息（右軸）</span>' : ''}</div>
-      ${p.ptype === '股票' && (p.stocks || []).length ? `<div class="plan-stocks">${p.stocks.map(x => { const q = Stocks.quote(x.mkt, x.sym); const amt = stockAmt(x, planPer(p)); const k = q ? Stocks.fx(q.ccy, state.currency) : 1;
-        return `<div class="pst"><span class="ticker small">${esc(x.sym)}</span><span class="grow">${esc(q ? q.name : '')}<small>${q ? `收盤 ${price(q.price, q.ccy)}・<span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span>` : '找不到報價'}</small></span>${q ? UI.sparkline(q.series, 70, 24, { tw: x.mkt === 'tw' }) : ''}${amt && q ? `<span class="pst-r">${x.ccy === 'USD' ? `US$${(+x.amt).toLocaleString()}<small>≈ ${fmt(amt)}</small><small>` : `${fmt(amt)}<small>`}≈ ${(amt / (q.price * k)).toFixed(x.mkt === 'us' ? 2 : 0)} 股</small></span>` : ''}</div>`; }).join('')}</div>` : targets.length ? `<div class="targets"><div class="small muted">每期分配（以每期 ${fmt(pr.amounts[0])} 計）</div>${targets.map(t => `<span class="chip blue">${esc(t.name)} ${t.pct}% · ${short(pr.amounts[0] * t.pct / 100)}</span>`).join('')}</div>` : p.targets ? `<div class="small muted">標的：${esc(p.targets)}</div>` : ''}
+      ${pickType(p.ptype) && (p.stocks || []).length ? `<div class="plan-stocks">${p.stocks.map(x => { const q = Stocks.quote(x.mkt, x.sym); const amt = stockAmt(x, planPer(p)); const k = q ? Stocks.fx(q.ccy, state.currency) : 1;
+        return `<div class="pst">${x.mkt === 'fund' ? Icon('fund') : `<span class="ticker small">${esc(x.sym)}</span>`}<span class="grow">${esc(q ? q.name : x.sym)}<small>${q ? `${q.fund ? '淨值' : '收盤'} ${price(q.price, q.ccy)}・<span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span>` : '找不到報價'}</small></span>${q ? UI.sparkline(q.series, 70, 24, { tw: x.mkt !== 'us' }) : ''}${amt && q ? `<span class="pst-r">${x.ccy === 'USD' ? `US$${(+x.amt).toLocaleString()}<small>≈ ${fmt(amt)}</small><small>` : `${fmt(amt)}<small>`}≈ ${(amt / (q.price * k)).toFixed(x.mkt === 'tw' ? 0 : 2)} ${unitOf(x.mkt)}</small></span>` : ''}</div>`; }).join('')}</div>` : targets.length ? `<div class="targets"><div class="small muted">每期分配（以每期 ${fmt(pr.amounts[0])} 計）</div>${targets.map(t => `<span class="chip blue">${esc(t.name)} ${t.pct}% · ${short(pr.amounts[0] * t.pct / 100)}</span>`).join('')}</div>` : p.targets ? `<div class="small muted">標的：${esc(p.targets)}</div>` : ''}
       <ul class="plist">${rows.map(r => `<li class="prow ${r.state}" data-plan="${p.id}" data-i="${r.i}">
         <span class="pnum">${r.i + 1}</span>
         <div class="grow"><div><b>${r.ym.replace('-', '/')}${p.day ? '/' + String(p.day).padStart(2, '0') : ''}</b> ${({ done: '<span class="chip green">已確認</span>', assumed: '<span class="chip gray">未確認</span>', now: '<span class="chip red">本月</span>', future: '' })[r.state]}</div>
@@ -2120,7 +2196,7 @@ document.addEventListener('click', e => {
 const lotSrc = (p, i, sym) => `plan:${p.id}:${i}:${sym}`;
 // 計畫的股票標的（舊計畫的「0050 50%、VOO 50%」文字也算）
 function planStocksOf(p) {
-  if (p.ptype === '股票' && (p.stocks || []).some(x => x.sym)) return p.stocks.filter(x => x.sym);
+  if (pickType(p.ptype) && (p.stocks || []).some(x => x.sym)) return p.stocks.filter(x => x.sym);
   if (!p.ptype || p.ptype === '股票') {
     const ts = parseTargets(p.targets);
     if (ts.length) return ts.map(t => { const sym = t.name.toUpperCase(); return { mkt: /^\d/.test(sym) ? 'tw' : 'us', sym, pct: t.pct }; });
@@ -2131,7 +2207,7 @@ function planStocksOf(p) {
 function estPrice(mkt, sym, dt) {
   const q = Stocks.quote(mkt, sym); if (!q) return null;
   if (q.series && q.series.length > 1 && q.date) {
-    const ds = prevTradingDays(q.date, q.series.length);
+    const ds = q.dates || prevTradingDays(q.date, q.series.length);
     let idx = -1; ds.forEach((d, k) => { if (d <= dt) idx = k; });
     if (idx >= 0) return q.series[idx];
   }
@@ -2155,10 +2231,10 @@ function syncPlanEstimates() {
         const amt = stockAmt(x, per);
         const px = estPrice(x.mkt, x.sym, dt);
         if (!px || !amt) continue;
-        const fx = Stocks.fx(x.mkt === 'us' ? 'USD' : 'TWD', 'TWD');
-        const sh = x.mkt === 'us' ? Math.round(amt / (px * fx) * 1e4) / 1e4 : Math.floor(amt / (px * fx));
+        const fx = Stocks.fx(mktCcy(x.mkt, Stocks.quote(x.mkt, x.sym)), 'TWD');
+        const sh = roundSh(x.mkt, amt / (px * fx));
         if (!sh) continue;
-        const cat = x.mkt === 'us' ? '美股' : '台股', key = lotSrc(p, i, Stocks.norm(x.mkt, x.sym));
+        const cat = mktCat(x.mkt), key = lotSrc(p, i, Stocks.norm(x.mkt, x.sym));
         let h = findHolding(cat, x.sym);
         if (h && (h.lots || []).some(l => l.src === key && !l.est)) continue;   // 已有實際成交
         if (!h) { const q = Stocks.quote(x.mkt, x.sym); h = { id: 'plan-' + p.id + '-' + Stocks.norm(x.mkt, x.sym), category: cat, sym: Stocks.norm(x.mkt, x.sym), name: q ? q.name : x.sym, lots: [], fromPlan: true }; state.assets.push(h); }
@@ -2179,7 +2255,7 @@ document.addEventListener('click', e => {
 }, true);
 
 function findPlanLot(p, i, x) {
-  const cat = x.mkt === 'us' ? '美股' : '台股';
+  const cat = mktCat(x.mkt);
   const h = findHolding(cat, x.sym);
   const key = lotSrc(p, i, Stocks.norm(x.mkt, x.sym));
   const lots = h ? (h.lots || []).filter(l => l.src === key) : [];
@@ -2193,15 +2269,16 @@ function drawPdStocks(p, i, planned) {
   $('pdAmtLabel').textContent = list.length ? '這期實際動用金額（新台幣）' : '實際投入金額';
   if (!list.length) { el.innerHTML = ''; return; }
   const per = planPer(p), ratio = per ? planned / per : 1;
-  el.innerHTML = `<div class="small muted pd-note">填每一檔實際買了幾股、成交價多少；確認後會加進股票持股，並且就是這期理財型房貸的動用金額。之後再點這期可以隨時改。</div>` + list.map((x, k) => {
-    const q = Stocks.quote(x.mkt, x.sym), fx = Stocks.fx(x.mkt === 'us' ? 'USD' : 'TWD', state.currency);
+  const hasF = list.some(x => x.mkt === 'fund');
+  el.innerHTML = `<div class="small muted pd-note">填每一檔實際買了幾${hasF ? '股／單位' : '股'}、成交價${hasF ? '或申購淨值' : ''}多少；確認後會加進持股，並且就是這期理財型房貸的動用金額。之後再點這期可以隨時改。</div>` + list.map((x, k) => {
+    const q = Stocks.quote(x.mkt, x.sym), cc = mktCcy(x.mkt, q), fx = Stocks.fx(cc, state.currency), fd = x.mkt === 'fund';
     const { lot } = findPlanLot(p, i, x);
     const amt = stockAmt(x, per);
     const px = lot ? num(lot.price) : q ? q.price : '';
-    const sh = lot ? num(lot.shares) : px ? (x.mkt === 'us' ? Math.floor(amt / (px * fx) * 1e4) / 1e4 : Math.floor(amt / (px * fx))) : '';
-    return `<div class="pd-st" data-k="${k}"><div class="pd-st-h"><span class="ticker small">${esc(x.sym)}</span><span class="grow">${esc(q ? q.name : '')}<small>計畫 ${fmt(amt)}${q ? `・收盤 ${price(q.price, q.ccy)}` : ''}${lot ? '・<b class="pos">已記錄</b>' : ''}</small></span></div>
-      <div class="pd-st-in"><label><span>股數</span><input type="number" inputmode="decimal" step="any" class="pd-sh" value="${sh === '' ? '' : sh}"></label>
-      <label><span>成交價${x.mkt === 'us' ? '（USD）' : ''}</span><input type="number" inputmode="decimal" step="any" class="pd-px" value="${px === '' ? '' : px}"></label>
+    const sh = lot ? num(lot.shares) : px ? roundSh(x.mkt, amt / (px * fx)) : '';
+    return `<div class="pd-st" data-k="${k}"><div class="pd-st-h">${fd ? Icon('fund') : `<span class="ticker small">${esc(x.sym)}</span>`}<span class="grow">${esc(q ? q.name : x.sym)}<small>計畫 ${fmt(amt)}${q ? `・${fd ? '淨值' : '收盤'} ${price(q.price, q.ccy)}` : ''}${lot ? '・<b class="pos">已記錄</b>' : ''}</small></span></div>
+      <div class="pd-st-in"><label><span>${fd ? '單位數' : '股數'}</span><input type="number" inputmode="decimal" step="any" class="pd-sh" value="${sh === '' ? '' : sh}"></label>
+      <label><span>${fd ? '申購淨值' : '成交價'}${cc !== 'TWD' ? `（${cc}）` : ''}</span><input type="number" inputmode="decimal" step="any" class="pd-px" value="${px === '' ? '' : px}"></label>
       <span class="pd-sub" data-fx="${fx}"></span></div></div>`;
   }).join('');
   pdRecalc(!(p.done && p.done[i] != null));
@@ -2229,7 +2306,7 @@ function syncPlanLots(p, i, remove) {
     const x = periodCtx.stocks[+r.dataset.k];
     const sh = num(r.querySelector('.pd-sh').value), px = num(r.querySelector('.pd-px').value);
     if (!sh) return;
-    const cat = x.mkt === 'us' ? '美股' : '台股';
+    const cat = mktCat(x.mkt);
     const had = findHolding(cat, x.sym);
     const { h } = addLot(cat, x.sym, { id: uid(), type: 'buy', date: `${ym}-${day}`, shares: sh, price: px || '', src: lotSrc(p, i, Stocks.norm(x.mkt, x.sym)), note: `${p.name} 第 ${i + 1} 期` });
     if (!had) h.fromPlan = true;
@@ -2269,7 +2346,8 @@ function psSumHTML(list, per) {
 // 投資計畫的股票標的：台股／美股、可搜尋代號、帶出收盤價與走勢
 function drawPlanStocks() {
   const el = $('planStocks'); if (!el) return;
-  if ((vals.ptype || '股票') !== '股票') { el.innerHTML = ''; return; }
+  if (!pickType(vals.ptype)) { el.innerHTML = ''; return; }
+  if (vals.ptype === '基金' && vals.stocks) vals.stocks.forEach(x => { if (!x.sym && x.mkt !== 'fund') x.mkt = 'fund'; });
   const list = vals.stocks || (vals.stocks = [{ mkt: 'tw', sym: '', pct: '' }]);
   const per = planPer(vals);
   // 只有一檔、還沒填金額 → 自動帶入每期金額
@@ -2281,8 +2359,8 @@ function drawPlanStocks() {
       const k = q ? Stocks.fx(q.ccy, state.currency) : 1;
       return `<div class="ps-row" data-ps="${i}">
         <div class="ps-top">
-          <button type="button" class="bk-tag ${x.mkt === 'us' ? 'us' : ''}" data-psm="${i}">${x.mkt === 'us' ? '美股' : '台股'} ⇄</button>
-          <button type="button" class="pickbtn ps-pick ${x.sym ? '' : 'empty'}" data-psp="${i}"><span>${x.sym ? esc(x.sym) : '選股票'}</span><i>›</i></button>
+          <button type="button" class="bk-tag ${x.mkt === 'us' ? 'us' : x.mkt === 'fund' ? 'fund' : ''}" data-psm="${i}">${mktCat(x.mkt)} ⇄</button>
+          <button type="button" class="pickbtn ps-pick ${x.sym ? '' : 'empty'}" data-psp="${i}"><span>${x.sym ? esc(symName(x)) : x.mkt === 'fund' ? '選基金' : '選股票'}</span><i>›</i></button>
           ${list.length > 1 ? `<button type="button" class="bk-del" data-psd="${i}" aria-label="刪除">×</button>` : ''}
         </div>
         <div class="ps-money"><span class="small muted">每期金額</span>
@@ -2290,7 +2368,7 @@ function drawPlanStocks() {
           <input class="ps-amt" type="number" inputmode="decimal" step="any" placeholder="${x.ccy === 'USD' ? '例如 500' : '例如 10000'}" value="${esc(x.amt !== undefined && x.amt !== '' ? x.amt : share ? Math.round(share) : '')}" data-psv="${i}" aria-label="每期投入金額">
           <span class="ps-conv small muted" data-psx="${i}">${x.ccy === 'USD' && share ? `≈ ${fmt(share)}` : ''}</span>
         </div>
-        ${q ? `<div class="ps-info"><span class="ps-nm">${esc(q.name)}</span><span>收盤 <b>${price(q.price, q.ccy)}</b> <span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span></span>${UI.sparkline(q.series, 90, 26, { tw: x.mkt === 'tw' })}${share ? `<span class="muted">每期約可買 ${(share / (q.price * k)).toFixed(x.mkt === 'us' ? 2 : 0)} 股</span>` : ''}</div>` : x.sym ? '<div class="ps-info muted small">找不到報價</div>' : ''}
+        ${q ? `<div class="ps-info">${q.fund ? '' : `<span class="ps-nm">${esc(q.name)}</span>`}<span>${q.fund ? `${q.org === 'D' ? '境內' : '境外'}・淨值` : '收盤'} <b>${price(q.price, q.ccy)}</b> <span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span></span>${UI.sparkline(q.series, 90, 26, { tw: x.mkt !== 'us' })}${share ? `<span class="muted">每期約可買 ${(share / (q.price * k)).toFixed(x.mkt === 'tw' ? 0 : 2)} ${unitOf(x.mkt)}</span>` : ''}</div>` : x.sym ? '<div class="ps-info muted small">找不到報價</div>' : ''}
       </div>`;
     }).join('')}
     <div class="ps-sum">${psSumHTML(list, per)}</div>
@@ -2304,12 +2382,13 @@ $('editFields').addEventListener('click', async e => {
   if (t.dataset.psc != null) { const x = L[+t.dataset.psc]; x.ccy = x.ccy === 'USD' ? 'TWD' : 'USD'; }
   else if (t.dataset.psa) { const last = L[L.length - 1]; L.push({ mkt: last ? last.mkt : 'tw', ccy: last ? last.ccy || 'TWD' : 'TWD', sym: '', amt: '' }); }
   else if (t.dataset.psd != null) L.splice(+t.dataset.psd, 1);
-  else if (t.dataset.psm != null) { const x = L[+t.dataset.psm]; x.mkt = x.mkt === 'us' ? 'tw' : 'us'; x.sym = ''; }
+  else if (t.dataset.psm != null) { const x = L[+t.dataset.psm]; x.mkt = { tw: 'us', us: 'fund', fund: 'tw' }[x.mkt] || 'us'; x.sym = ''; }
   else if (t.dataset.psp != null) {
     const x = L[+t.dataset.psp];
-    const options = await OPTS.stock({ category: x.mkt === 'us' ? '美股' : '台股' });
-    const o = await UI.openPicker({ title: x.mkt === 'us' ? '選美股' : '選台股', options, value: x.sym, search: true, limit: 40, placeholder: '輸入代號或名稱搜尋' });
-    if (o) x.sym = o.value;
+    let options;
+    try { options = await OPTS.stock({ category: mktCat(x.mkt) }); } catch (err) { return toast(err.message); }
+    const o = await UI.openPicker({ title: { us: '選美股', fund: '選基金（境內＋境外）' }[x.mkt] || '選台股', options, value: x.sym, search: true, limit: 40, placeholder: x.mkt === 'fund' ? '輸入基金名稱或公司搜尋' : '輸入代號或名稱搜尋' });
+    if (o) { x.sym = o.value; if (x.mkt === 'fund') Stocks.fundHist([x.sym]).then(() => { if ($('editor').open && editing.kind === 'plan') drawPlanStocks(); }); }
   }
   drawPlanStocks(); drawPlanPanel();
 });
@@ -2356,10 +2435,13 @@ function openTrade(id, type, lotId) {
   const si = stockInfo(a);
   const lot = lotId ? (a.lots || []).find(l => l.id === lotId) : null;
   tradeCtx = { a, lotId, type: lot ? lot.type || 'buy' : type };
-  $('tdTitle').innerHTML = `<span class="ticker">${esc(a.sym)}</span> ${esc(si.q ? si.q.name : a.name || '')}`;
+  $('tdTitle').innerHTML = si.mkt === 'fund' ? esc(si.q ? si.q.name : a.name || '') : `<span class="ticker">${esc(a.sym)}</span> ${esc(si.q ? si.q.name : a.name || '')}`;
+  const fd = si.mkt === 'fund';
+  $('tdType').innerHTML = `<button type="button" data-t="buy">${fd ? '申購' : '買進'}</button><button type="button" data-t="sell">${fd ? '贖回' : '賣出'}</button>`;
+  $('tdPriceLabel').textContent = fd ? `淨值（${si.ccy}）` : si.ccy === 'TWD' ? '成交價（每股）' : `成交價（每股，${si.ccy}）`;
   $('tdDate').value = lot ? lot.date || '' : todayISO();
   $('tdShares').value = lot ? lot.shares : '';
-  $('tdPrice').value = lot ? (lot.price === '' ? '' : lot.price) : (si.px ? +si.px.toFixed(2) : '');
+  $('tdPrice').value = lot ? (lot.price === '' ? '' : lot.price) : (si.px ? +si.px.toFixed(si.mkt === 'fund' ? 4 : 2) : '');
   $('tdDelete').hidden = !lot;
   $('tdQuick').innerHTML = si.mkt === 'tw' ? [1000, 100].map(n => `<button type="button" class="btn mini" data-tq="${n}">+${n === 1000 ? '1 張' : n + ' 股'}</button>`).join('') + (si.shares ? `<button type="button" class="btn mini" data-tq="all">全部 ${unitTxt(si.mkt, si.shares)}</button>` : '') : (si.shares ? `<button type="button" class="btn mini" data-tq="all">全部 ${unitTxt(si.mkt, si.shares)}</button>` : '');
   setTradeType(tradeCtx.type);
@@ -2368,7 +2450,8 @@ function openTrade(id, type, lotId) {
 function setTradeType(t) {
   tradeCtx.type = t;
   $('tdType').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
-  $('tdSharesLabel').textContent = t === 'sell' ? '賣出股數' : '買進股數';
+  const fd = mktOf(tradeCtx.a) === 'fund';
+  $('tdSharesLabel').textContent = fd ? (t === 'sell' ? '贖回單位數' : '申購單位數') : t === 'sell' ? '賣出股數' : '買進股數';
   $('tdQuick').querySelectorAll('[data-tq="all"]').forEach(b => { b.hidden = t !== 'sell'; });
   tradePreview();
 }
@@ -2380,12 +2463,12 @@ function tradePreview() {
   const before = stockInfo(a), after = stockInfo({ ...a, lots });
   const L = lotsSummary(lots);
   const row = L.rows.find(r => r.id === lot.id);
-  $('tdPreview').innerHTML = !sh ? `<div class="hint-row">${Icon('calc')}<span>填入股數與價格，會算出交易後的平均成本與損益</span></div>`
+  $('tdPreview').innerHTML = !sh ? `<div class="hint-row">${Icon('calc')}<span>${mktOf(a) === 'fund' ? '填入單位數與淨值' : '填入股數與價格'}，會算出交易後的平均成本與損益</span></div>`
     : `<div class="kv"><span>交易後持有</span><span>${unitTxt(after.mkt, after.shares)}</span></div>
       ${after.avg ? `<div class="kv"><span>平均成本</span><span>${before.avg ? price(before.avg, after.ccy) + ' → ' : ''}<b>${price(after.avg, after.ccy)}</b></span></div>` : ''}
       ${type === 'buy' && p ? `<div class="kv"><span>這筆金額</span><span>${fmt(sh * p * Stocks.fx(after.ccy, state.currency))}</span></div>` : ''}
       ${type === 'sell' && row && row.realized != null ? `<div class="kv"><span>這筆實現損益</span><b class="chg ${plCls(row.realized)}">${plTxt(row.realized * Stocks.fx(after.ccy, state.currency))}</b></div>` : ''}
-      ${type === 'sell' && sh > before.shares + (lotId ? num((a.lots.find(l => l.id === lotId) || {}).shares) : 0) ? '<div class="small neg">賣出股數超過持有</div>' : ''}
+      ${type === 'sell' && sh > before.shares + (lotId ? num((a.lots.find(l => l.id === lotId) || {}).shares) : 0) ? `<div class="small neg">${mktOf(a) === 'fund' ? '贖回單位數' : '賣出股數'}超過持有</div>` : ''}
       ${after.pl != null ? `<div class="kv"><span>交易後未實現損益</span><span class="chg ${plCls(after.pl)}">${plTxt(after.pl, after.plPct)}</span></div>` : ''}`;
 }
 $('tdType').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b) setTradeType(b.dataset.t); });
@@ -2399,7 +2482,7 @@ $('tdQuick').addEventListener('click', e => {
 $('tdSave').addEventListener('click', () => {
   const { a, lotId, type } = tradeCtx;
   const sh = num($('tdShares').value);
-  if (!sh) return toast('請填股數');
+  if (!sh) return toast(mktOf(a) === 'fund' ? '請填單位數' : '請填股數');
   const lot = { id: lotId || uid(), type, date: $('tdDate').value, shares: sh, price: $('tdPrice').value === '' ? '' : num($('tdPrice').value) };
   a.lots = lotId ? a.lots.map(l => l.id === lotId ? lot : l) : [...(a.lots || []), lot];
   a.updatedAt = new Date().toISOString();
@@ -3281,6 +3364,7 @@ async function enterSim(kind) {
   const P = Sim.PERSONAS[kind];
   if (!P) return;
   await Stocks.load();
+  await Stocks.fundHist(['AGIF-FV1', '18480065']).catch(() => {});
   if (!sim) sim = { kind, real: state };
   sim.kind = kind;
   state = migrate({ ...Sim.build(kind), ai: sim.real.ai, backup: { on: false } });
@@ -3492,6 +3576,12 @@ render();
 renderBkNag();
 if (!locked) scheduleBackup(4000);
 Backup.persist().then(v => { persisted = v; });
+fetch('data/funds/meta.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(m => {
+  if (!m) return;
+  fundStatus = `<br><b>基金 ${esc(m.date || '—')} 淨值</b>（境內 ${m.domestic || 0} 檔、境外 ${m.offshore || 0} 檔），每天 21:17、09:47 自動更新`;
+  const el = $('stockStatus'); if (el && el.dataset.ok) el.insertAdjacentHTML('beforeend', fundStatus);
+}).catch(() => {});
+let fundStatus = '';
 Stocks.load().then(() => {
   // 美股長尾報價（小型股、槓桿 ETF…）背景載入，載完再更新一次
   Stocks.tail().then(ok => { if (ok) { levelsKey = ''; render(); } });
@@ -3500,7 +3590,8 @@ Stocks.load().then(() => {
   render();
   const m = Stocks.info();
   const upd = m && m.updated ? new Date(m.updated).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
-  $('stockStatus').innerHTML = m ? `<b>台股 ${esc(m.tw?.date || '—')} 收盤</b>（${m.tw?.n || 0} 檔）、<b>美股 ${esc(m.us?.date || '—')} 收盤</b>（${m.us?.n || 0} 檔）<br>最後更新：${upd}<br>自動更新：週一～五 14:23（台股收盤後）、05:41（美股收盤後）` : '股價資料：尚未產生（GitHub Action 每天收盤後自動更新）';
+  $('stockStatus').dataset.ok = '1';
+  $('stockStatus').innerHTML = (m ? `<b>台股 ${esc(m.tw?.date || '—')} 收盤</b>（${m.tw?.n || 0} 檔）、<b>美股 ${esc(m.us?.date || '—')} 收盤</b>（${m.us?.n || 0} 檔）<br>最後更新：${upd}<br>自動更新：週一～五 14:23（台股收盤後）、05:41（美股收盤後）` : '股價資料：尚未產生（GitHub Action 每天收盤後自動更新）') + fundStatus;
   if ($('view-assets').classList.contains('active')) renderAssets(summary());
 });
 LVR.loadIndex().then(ix => { lvrSummary = `更新到 ${ix.updated.slice(0, 10)}`; if (currentView === 'settings' && !setPage) renderSetMenu(); $('lvrStatus').innerHTML = `<b>成交資料：${esc(ix.seasons[0])}～${esc(ix.seasons.at(-1))}</b><br>最後更新：${esc(ix.updated.slice(0, 10))}<br>自動更新：每週一 03:17（內政部約每 10 天發布一批新成交）`; })

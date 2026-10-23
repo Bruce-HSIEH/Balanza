@@ -64,7 +64,8 @@ const UI = (() => {
     let shown = [];
     const draw = q => {
       q = (q || '').trim().toLowerCase();
-      let items = options.filter(o => !q || (o.key || `${o.label} ${o.sub || ''} ${o.value}`).toLowerCase().includes(q));
+      const words = q.split(/\s+/).filter(Boolean);   // 多個關鍵字：每個都要符合（例如「安聯 收益」）
+      let items = options.filter(o => { if (!q) return true; const t = (o.key || `${o.label} ${o.sub || ''} ${o.value}`).toLowerCase(); return words.every(w => t.includes(w)); });
       if (q && limit) items.sort((a, b) => (String(b.value).toLowerCase() === q) - (String(a.value).toLowerCase() === q) || (String(b.value).toLowerCase().startsWith(q)) - (String(a.value).toLowerCase().startsWith(q)));
       const total = items.length;
       if (limit) items = items.slice(0, limit);

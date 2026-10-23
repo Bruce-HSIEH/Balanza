@@ -13,6 +13,8 @@ const Sim = (() => {
   const at = (mkt, sym, f, fallback) => { const q = typeof Stocks !== 'undefined' && Stocks.quote(mkt, sym); return q ? Math.round(q.price * f * 100) / 100 : fallback; };
   const tw = (sym, name, lots) => ({ id: id(), category: '台股', sym, name, lots });
   const us = (sym, name, lots) => ({ id: id(), category: '美股', sym, name, lots });
+  // 基金：有淨值資料就照淨值算；沒有時用 manualPrice 估
+  const fund = (code, name, ccy, px, lots) => ({ id: id(), category: '基金', fmode: 'track', sym: code, name, ccy, manualPrice: px, lots });
   const A = (category, name, amount, extra = {}) => ({ id: id(), category, name, amount, ...extra });
   const car = (name, brand, model, carColor, buyYear, buyPrice, amount) => ({ id: id(), category: '車輛', name, brand, model, carColor, buyYear, buyPrice, amount });
   const house = (name, amount, county, district, road, btype, ping, extra = {}) => ({ id: id(), category: '不動產', name, amount, county, district, road, btype, ping, ...extra });
@@ -52,7 +54,7 @@ const Sim = (() => {
             us('VOO', 'Vanguard S&P 500', [buy(10000, 380, 700)]),
             us('TSM', 'TSMC ADR', [buy(12000, 95, 600)]),
             A('基金', '私募股權基金 Fund IV', 150000000),
-            A('基金', '全球平衡基金', 30000000),
+            fund('AGIF-FV1', '安聯收益成長基金-AT累積類股(美元)', 'USD', 30, [buy(30000, at('fund', 'AGIF-FV1', 0.8, 24), 900)]),
             A('債券', '美國 10 年期公債', 200000000),
             A('債券', '投資等級公司債', 60000000),
             A('加密貨幣', '比特幣 25 顆', 75000000),
@@ -109,7 +111,7 @@ const Sim = (() => {
             tw('0056', '元大高股息', [buy(5000, 33, 600)]),
             tw('2330', '台積電', [buy(200, 580, 700)]),
             us('VOO', 'Vanguard S&P 500', [buy(8, 410, 500), buy(7, 480, 200)]),
-            A('基金', '定期定額全球股票基金', 180000),
+            fund('18480065', '安聯台灣科技基金', 'TWD', 750, [buy(80, at('fund', '18480065', 0.62, 470), 700), buy(60, at('fund', '18480065', 0.8, 600), 400), buy(50, at('fund', '18480065', 0.95, 710), 120)]),
             A('加密貨幣', '比特幣 0.05 顆', 150000),
             A('保險', '六年期儲蓄險', 300000),
             home,

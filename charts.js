@@ -16,7 +16,7 @@ const Charts = (() => {
   const wanLabel0 = v => v >= 1e8 ? `${+(v / 1e8).toFixed(v >= 1e9 ? 0 : 1)}億` : v >= 1e4 ? `${+(v / 1e4).toFixed(v >= 1e5 ? 0 : 1)}萬` : Math.round(v).toLocaleString();
 
   // months: [{ym,total,items:{id:{pay}}}]；series: [{id,color}]；markers: {k: color}
-  function stacked(months, series, { selected = 0, markers = {}, height = 190, width = 340 } = {}) {
+  function stacked(months, series, { selected = 0, markers = {}, height = 190, width = 340, sid = '' } = {}) {
     const L = 38, R = 6, T = 14, B = 22;
     const pw = width - L - R, ph = height - T - B;
     const n = months.length;
@@ -50,7 +50,7 @@ const Charts = (() => {
     });
     const sx = L + selected * bw;
     const sel = `<rect x="${sx.toFixed(2)}" y="${T - 4}" width="${bw.toFixed(2)}" height="${ph + 4}" rx="2" class="sel"/>`;
-    return `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${grid}${sel}<g class="bars">${bars}</g>${marks}${xlab}${hits}</svg>`;
+    return `<svg class="chart${sid ? ' scrub' : ''}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"${sid ? ` data-sid="${sid}" data-kind="bar" data-x0="${L}" data-pw="${pw}" data-n="${n}" data-w="${width}"` : ''}>${grid}${sel}<g class="bars">${bars}</g>${marks}${xlab}${hits}</svg>`;
   }
 
   function ring(p, size = 112, color = '#14b8a6') {
@@ -109,7 +109,7 @@ const Charts = (() => {
 
   // ---- 折線（面積）圖 ----
   // pts: [{label, v, mark?}]；單一數列，selected = 索引
-  function line(pts, { width = 340, height = 150, selected = -1, color = 'var(--viz-1)', hideAxis = false, xEvery = 0, fmtX = l => l } = {}) {
+  function line(pts, { width = 340, height = 150, selected = -1, color = 'var(--viz-1)', hideAxis = false, xEvery = 0, fmtX = l => l, sid = '' } = {}) {
     const L = hideAxis ? 8 : 40, R = 10, T = 12, B = 22;
     const pw = width - L - R, ph = height - T - B, n = pts.length;
     if (n < 2) return '';
@@ -133,8 +133,10 @@ const Charts = (() => {
       const hw = pw / Math.max(1, n - 1);
       hits += `<rect x="${(x(k) - hw / 2).toFixed(1)}" y="${T}" width="${hw.toFixed(1)}" height="${ph}" fill="transparent" data-lk="${k}"/>`;
     });
-    const sel = selected >= 0 && selected < n ? `<line x1="${x(selected).toFixed(1)}" y1="${T}" x2="${x(selected).toFixed(1)}" y2="${T + ph}" class="xhair"/><circle cx="${x(selected).toFixed(1)}" cy="${y(pts[selected].v).toFixed(1)}" r="5" fill="${color}" stroke="var(--card)" stroke-width="2"/>` : '';
-    return `<svg class="chart line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="--lc:${color}">${grid}<path d="${area}" class="area"/><path d="${d}" class="ln"/>${marks}${sel}${xl}${hits}</svg>`;
+    const on = selected >= 0 && selected < n, sk = on ? selected : n - 1;
+    const sel = `<g class="xh${on ? '' : ' off'}"><line x1="${x(sk).toFixed(1)}" y1="${T}" x2="${x(sk).toFixed(1)}" y2="${T + ph}" class="xhair"/><circle cx="${x(sk).toFixed(1)}" cy="${y(pts[sk].v).toFixed(1)}" r="5" fill="${color}" stroke="var(--card)" stroke-width="2"/></g>`;
+    const meta = sid ? ` data-sid="${sid}" data-kind="line" data-x0="${L}" data-pw="${pw}" data-n="${n}" data-w="${width}" data-ys="${pts.map(p => y(p.v).toFixed(1)).join(',')}"` : '';
+    return `<svg class="chart line-chart${sid ? ' scrub' : ''}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="--lc:${color}"${meta}>${grid}<path d="${area}" class="area"/><path d="${d}" class="ln"/>${marks}${xl}${hits}${sel}</svg>`;
   }
 
   return { PALETTE, OTHER, stacked, ring, invest, donut, line, wanLabel, setScale: k => { K = k || 1; } };

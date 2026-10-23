@@ -1122,3 +1122,13 @@ button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; c
 .pst .grow small { display: block; font-size: 11.5px; color: var(--muted); }
 .pst-r { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .pst-r small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+.ps-amt { width: 96px; }
+.ps-sum { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; padding: 8px 10px; border-radius: 12px; background: var(--soft); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.ps-sum small { color: var(--muted); }
+.ps-sum.bad { background: #fdecea; }
+.ps-sum.bad small { color: #e53935; font-weight: 700; }
+.ps-sum .link-btn { margin: 0 0 0 auto; }
+@media (prefers-color-scheme: dark) { .ps-sum.bad { background: #3a1f1c; } }
+.ps-amt { width: 92px; }
+.ps-pick { min-width: 72px; }
+.ps-nm { width: 100%; font-weight: 600; }

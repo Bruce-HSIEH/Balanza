@@ -171,8 +171,9 @@ const Plan = (() => {
   // 到今天為止已經繳出去的錢（依貸款條件／歷程回推）
   // 回傳 { interest, principal, total, months, since, byYear: {YYYY: {i, p}}, estimated } 或 null（無法回推）
   function paidSoFar(d, plans, today = new Date()) {
-    const out = { interest: 0, principal: 0, months: 0, since: null, byYear: {}, estimated: false };
+    const out = { interest: 0, principal: 0, months: 0, since: null, byYear: {}, estimated: false, rows: [] };
     const addM = (ym, i, p) => {
+      out.rows.push({ ym, interest: i, principal: p });
       const y = ym.slice(0, 4);
       (out.byYear[y] = out.byYear[y] || { i: 0, p: 0 });
       out.byYear[y].i += i; out.byYear[y].p += p;

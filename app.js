@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.23.0';
+const APP_VERSION = '5.24.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -1637,8 +1637,45 @@ function eventHTML(e, compact) {
     ${!compact && e.total != null && e.type !== 'lineEnd' ? `<div class="ev-total">當月起總月付約 <b>${fmt(e.total)}</b></div>` : ''}</div></div>`;
 }
 
-let repayH = 36, repaySel = 0, repayOpen = new Set(), yrIdx = 0;
+let repayH = 36, repaySel = 0, repayOpen = new Set(), yrIdx = 0, yrBase = 0;   // yrIdx：距今年幾年（負數 = 過去）
+// 還款分頁可能還沒顯示（寬度 0），等版面出來再捲到目前年度
+function yrSync(sc, tries = 0) {
+  sc._sync = true;
+  requestAnimationFrame(() => {
+    if (!sc.isConnected) return;
+    if (!sc.clientWidth && tries < 120) return setTimeout(() => yrSync(sc, tries + 1), 100);
+    sc.scrollLeft = (yrBase + yrIdx) * sc.clientWidth;
+    requestAnimationFrame(() => { sc._sync = false; });
+  });
+}
+const yrLbl = () => { const l = $('yrLabel'); if (l) l.textContent = `${new Date().getFullYear() + yrIdx} 年`; const h = $('yrHome'); if (h) h.hidden = yrIdx === 0; };
 function projection(h) { return Plan.project(state.debts, state.plans, h); }
+// 過去每個月實際繳了多少（依撥款條件與貸款歷程回推），只算這個月以前
+function pastPay() {
+  const cur = Loan.nowYM(), by = {};
+  for (const d of state.debts) {
+    const r = Plan.paidSoFar(d, state.plans);
+    if (!r) continue;
+    for (const x of r.rows) {
+      if (Loan.ymDiff(x.ym, cur) <= 0) continue;          // x.ym 不早於這個月就跳過
+      const m = by[x.ym] || (by[x.ym] = { ym: x.ym, total: 0, items: {} });
+      const pay = x.interest + x.principal;
+      m.items[d.id] = { pay, principal: x.principal, interest: x.interest, past: true, revolving: d.mode === 'revolving' };
+      m.total += pay;
+    }
+  }
+  return by;
+}
+// 所有資料裡最早的月份（貸款開始、動用、投資計畫、訂閱開始），最多往回 40 年
+function earliestYM() {
+  const cur = Loan.nowYM(), c = [];
+  for (const d of state.debts) { if (d.startYM) c.push(d.startYM); if (d.drawnYM) c.push(d.drawnYM); const r = Plan.paidSoFar(d, state.plans); if (r && r.since) c.push(r.since); }
+  for (const p of state.plans) if (p.startYM) c.push(p.startYM);
+  for (const b of state.bills) if (b.anchor) c.push(String(b.anchor).slice(0, 7));
+  let e = cur;
+  for (const ym of c) if (/^\d{4}-\d{2}$/.test(ym) && Loan.ymDiff(ym, e) > 0) e = ym;   // ym 比 e 早
+  return Loan.ymDiff(e, cur) > 480 ? Loan.ymAdd(cur, -480) : e;
+}
 
 function renderHomeRepay() {
   const card = $('homeRepay');
@@ -1718,10 +1755,15 @@ function billEvents(ym) {
 const perMonth = b => isCardBill(b) ? 0 : (+b.amount || 0) * billFx(b) * (b.cycle === 'w' ? 52 / 12 : 1 / (+b.cycle || 1));
 
 // 這個月的扣款日曆（貸款＋信用卡＋訂閱）
-let calOff = 0, calSel = 0;   // calOff 0 = 這個月，1 = 下個月；calSel = 選到的日期
+let calOff = 0, calSel = 0, calDir = 0;   // calOff 0 = 這個月，負數 = 過去、正數 = 未來；calSel = 選到的日期
+const calMin = () => -Math.max(0, Loan.ymDiff(earliestYM(), Loan.nowYM()));
+const CAL_MAX = 360;
 function dueCalHTML(P) {
-  const m = P.months[calOff]; if (!m) return '';
-  const today = new Date(), isCur = calOff === 0, td = today.getDate();
+  calOff = Math.max(calMin(), Math.min(CAL_MAX, calOff));
+  const ymC = Loan.ymAdd(Loan.nowYM(), calOff);
+  const m = calOff >= 0 ? (P.months[calOff] || projection(calOff + 1).months[calOff]) : (pastPay()[ymC] || { ym: ymC, total: 0, items: {} });
+  if (!m) return '';
+  const today = new Date(), isCur = calOff === 0, isPast = calOff < 0, td = isPast ? 99 : today.getDate();
   const [y, mo] = m.ym.split('-').map(Number), dim = Loan.daysIn(m.ym), first = new Date(y, mo - 1, 1).getDay();
   // 統一成同一種項目
   const E = [];
@@ -1738,7 +1780,7 @@ function dueCalHTML(P) {
   let cells = '';
   for (let i = 0; i < first; i++) cells += '<span class="cd empty"></span>';
   for (let dday = 1; dday <= dim; dday++) {
-    const xs = byDay[dday] || [], past = isCur && dday < td, now = isCur && dday === td;
+    const xs = byDay[dday] || [], past = isPast || (isCur && dday < td), now = isCur && dday === td;
     // 貸款：整格上色（多筆就分色）；卡費、訂閱、結帳：維持小記號
     const lc = [...new Set(xs.filter(x => x.mark === 'loan').map(x => x.color))];
     const small = xs.filter(x => x.mark !== 'loan');
@@ -1747,18 +1789,18 @@ function dueCalHTML(P) {
   }
   const shown = E.filter(x => calSel && x.day === calSel).slice().sort((a, b) => (a.day || 99) - (b.day || 99) || (a.mark === 'close') - (b.mark === 'close'));
   const rows = shown.map(x => {
-    const dd = x.day, dt = dd ? new Date(y, mo - 1, dd) : null, left = isCur && dd ? dd - td : null;
-    const st = x.tag || (!dd ? '<span class="chip gray">沒填扣款日</span>' : isCur ? (left < 0 ? '<span class="chip gray">已扣款</span>' : left === 0 ? '<span class="chip red">今天</span>' : `<span class="chip${left <= 3 ? ' red' : ''}">還有 ${left} 天</span>`) : '');
-    return `<div class="due-row ${isCur && dd && left < 0 ? 'done' : ''} ${x.onCard ? 'oncard' : ''}" data-edit="${x.edit[0]}" data-id="${x.edit[1]}"><span class="due-d">${dt ? `<b>${dd}</b><small>週${WD[dt.getDay()]}</small>` : '<small>—</small>'}</span><span class="mk mk-${x.mark}" style="--c:${x.color}"></span><span class="grow">${esc(x.name)}${x.manual ? ' <span class="chip red">自己繳</span>' : ''}<small>${esc(x.sub)}</small></span><span class="due-amt">${x.amount != null ? fmt(x.amount) : ''}${st}</span></div>`;
+    const dd = x.day, dt = dd ? new Date(y, mo - 1, dd) : null, left = (isCur || isPast) && dd ? dd - td : null;
+    const st = x.tag || (!dd ? '<span class="chip gray">沒填扣款日</span>' : isPast ? '<span class="chip gray">已繳費</span>' : isCur ? (left < 0 ? '<span class="chip gray">已扣款</span>' : left === 0 ? '<span class="chip red">今天</span>' : `<span class="chip${left <= 3 ? ' red' : ''}">還有 ${left} 天</span>`) : '');
+    return `<div class="due-row ${(isPast || isCur) && dd && left < 0 ? 'done' : ''} ${x.onCard ? 'oncard' : ''}" data-edit="${x.edit[0]}" data-id="${x.edit[1]}"><span class="due-d">${dt ? `<b>${dd}</b><small>週${WD[dt.getDay()]}</small>` : '<small>—</small>'}</span><span class="mk mk-${x.mark}" style="--c:${x.color}"></span><span class="grow">${esc(x.name)}${x.manual ? ' <span class="chip red">自己繳</span>' : ''}<small>${esc(x.sub)}</small></span><span class="due-amt">${x.amount != null ? fmt(x.amount) : ''}${st}</span></div>`;
   }).join('') || (calSel ? '<div class="empty small">這天沒有扣款</div>' : '<div class="cal-hint">點月曆上的日期，看那天要繳什麼</div>');
-  const cnt = x => x.count && (!isCur || !x.day || x.day >= td);
+  const cnt = x => x.count && (isPast || !isCur || !x.day || x.day >= td);
   const sum = k => E.filter(x => x.count === k && cnt(x)).reduce((t, x) => t + (x.amount || 0), 0);
   const L = sum('loan'), C = sum('card'), Sb = sum('sub');
   return `<div class="card due-card">
-    <div class="due-head"><h2>${Icon.svg('calendar', 24)} ${mo} 月扣款日</h2><div class="chips"><button type="button" class="chip-btn ${calOff === 0 ? 'on' : ''}" data-cal="0">這個月</button><button type="button" class="chip-btn ${calOff === 1 ? 'on' : ''}" data-cal="1">下個月</button></div></div>
-    <div class="due-sum"><span>${isCur ? '這個月還要繳' : '下個月要繳'}</span><b>${fmt(L + C + Sb)}</b></div>
+    <div class="due-head"><h2>${Icon.svg('calendar', 24)} ${y !== today.getFullYear() ? `${y} 年 ` : ''}${mo} 月扣款日</h2><div class="yr-nav"><button type="button" class="yr-btn" data-calgo="-1" aria-label="上個月" ${calOff <= calMin() ? 'disabled' : ''}>‹</button>${calOff !== 0 ? '<button type="button" class="chip-btn on" data-cal="0">回這個月</button>' : ''}<button type="button" class="yr-btn" data-calgo="1" aria-label="下個月" ${calOff >= CAL_MAX ? 'disabled' : ''}>›</button></div></div>
+    <div class="due-sum"><span>${isPast ? '這個月繳了' : isCur ? '這個月還要繳' : `${mo} 月要繳`}${isPast ? ' <span class="chip gray">已繳費</span>' : ''}</span><b class="${isPast ? 'muted' : ''}">${fmt(L + C + Sb)}</b></div>
     <div class="due-split"><span><i class="mk mk-loanday" style="--c:var(--viz-1)"></i>貸款 ${fmt(L)}</span><span><i class="mk mk-card" style="--c:var(--viz-2)"></i>卡費 ${fmt(C)}</span><span><i class="mk mk-sub" style="--c:var(--viz-5)"></i>訂閱 ${fmt(Sb)}</span><span><i class="mk mk-close" style="--c:var(--viz-2)"></i>卡片結帳日</span></div>
-    <div class="cal"><span class="cw">日</span><span class="cw">一</span><span class="cw">二</span><span class="cw">三</span><span class="cw">四</span><span class="cw">五</span><span class="cw">六</span>${cells}</div>
+    <div class="cal${calDir ? (calDir > 0 ? ' slide-l' : ' slide-r') : ''}${isPast ? ' is-past' : ''}" id="dueCal"><span class="cw">日</span><span class="cw">一</span><span class="cw">二</span><span class="cw">三</span><span class="cw">四</span><span class="cw">五</span><span class="cw">六</span>${cells}</div>
     ${calSel ? `<div class="due-filter">${mo}/${calSel}（週${WD[new Date(y, mo - 1, calSel).getDay()]}）<button type="button" class="link-btn" data-cday="0">收起</button></div>` : ''}
     <div class="due-list">${rows}</div>
   </div>`;
@@ -1816,8 +1858,28 @@ function loansCardHTML(P) {
     <div class="fold-body">${list.map(row).join('')}</div>
   </div>`;
 }
-document.addEventListener('click', e => { const c = e.target.closest('[data-cday]'); if (c && c.closest('#view-repay')) { const d = +c.dataset.cday; calSel = calSel === d ? 0 : d; renderRepay(); } });
-document.addEventListener('click', e => { const c = e.target.closest('[data-cal]'); if (c) { calOff = +c.dataset.cal; calSel = 0; renderRepay(); } });
+document.addEventListener('click', e => { const c = e.target.closest('[data-cday]'); if (c && c.closest('#view-repay') && Date.now() - calSwiped > 400) { const d = +c.dataset.cday; calSel = calSel === d ? 0 : d; renderRepay(); } });
+function calGo(n, abs) {
+  const to = Math.max(calMin(), Math.min(CAL_MAX, abs ? n : calOff + n));
+  if (to === calOff) return;
+  calDir = Math.sign(to - calOff); calOff = to; calSel = 0;
+  const y = window.scrollY; renderRepay(); window.scrollTo(0, y); calDir = 0;
+}
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-cal]'); if (c) { calGo(+c.dataset.cal, true); return; }
+  const g = e.target.closest('[data-calgo]'); if (g) calGo(+g.dataset.calgo);
+});
+// 月曆左右滑：往左滑看下個月、往右滑看上個月
+{
+  let sx = 0, sy = 0, on = false;
+  document.addEventListener('touchstart', e => { const c = e.target.closest('#dueCal'); on = !!c; if (on) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; } }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (!on) return; on = false;
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) { calSwiped = Date.now(); calGo(dx < 0 ? 1 : -1); }
+  }, { passive: true });
+}
+let calSwiped = 0;
 
 // 已經繳出去的錢
 let paidOpen = false;
@@ -1887,12 +1949,21 @@ function renderRepay() {
   // 貸款逐月明細：一年一頁，左右滑 30 年
   const PY = projection(360);
   const y0 = new Date().getFullYear(), curM = new Date().getMonth();
-  const yearsHTML = Array.from({ length: 30 }, (_, yi) => {
-    const yr = y0 + yi;
-    let yt = 0;
+  const PAST = pastPay(), yStart = Math.min(y0, +earliestYM().slice(0, 4)), base = y0 - yStart;
+  yrIdx = Math.max(-base, Math.min(29, yrIdx));
+  const pastRow = (m, mi) => `<li class="mrow paid ${repayOpen.has(m.ym) ? 'open' : ''}" data-ym="${m.ym}">
+      <div class="mrow-head"><span class="mym">${mi + 1} 月</span><span class="grow"><span class="chip gray">已繳費</span></span><span class="mtot">${fmt(m.total)}</span></div>
+      <div class="mrow-detail">${series.map(s => { const it = m.items[s.id]; if (!it || it.pay <= 0) return ''; const dd = Loan.dueDay(s.d); return `<div class="kv"><span>${dd ? `<span class="dday">${Math.min(dd, Loan.daysIn(m.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}<small class="muted"> 本 ${fmt(it.principal)} / 息 ${fmt(it.interest)}</small></span></div>`; }).join('')}<div class="small muted">依撥款條件與貸款歷程回推，實際以銀行對帳單為準</div></div></li>`;
+  const yearsHTML = Array.from({ length: base + 30 }, (_, yj) => {
+    const yi = yj - base, yr = y0 + yi;
+    let yt = 0, yp = 0;
     const rowsY = Array.from({ length: 12 }, (_, mi) => {
       const k = yi * 12 + mi - curM;
-      if (k < 0) return `<li class="mrow past"><div class="mrow-head"><span class="mym">${mi + 1} 月</span><span class="grow"></span><span class="mtot muted">已過</span></div></li>`;
+      if (k < 0) {
+        const ym = `${yr}-${String(mi + 1).padStart(2, '0')}`, pm = PAST[ym];
+        if (pm && pm.total > 0) { yp += pm.total; return pastRow(pm, mi); }
+        return `<li class="mrow past"><div class="mrow-head"><span class="mym">${mi + 1} 月</span><span class="grow"></span><span class="mtot muted">沒有繳款</span></div></li>`;
+      }
       const m = PY.months[k];
       if (!m) return '';
       yt += m.total;
@@ -1905,7 +1976,8 @@ function renderRepay() {
         <span class="mtot">${fmt(m.total)}${k && Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'neg' : 'pos'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
       <div class="mrow-detail">${series.map(s => { const it = m.items[s.id]; if (!it || it.pay <= 0) return ''; const dd = Loan.dueDay(s.d); return `<div class="kv"><span>${dd ? `<span class="dday">${Math.min(dd, Loan.daysIn(m.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}<small class="muted"> 本 ${fmt(it.principal)} / 息 ${fmt(it.interest)}</small></span></div>`; }).join('') || '<div class="muted small">這個月沒有要繳的</div>'}</div></li>`;
     }).join('');
-    return `<section class="yr" data-yr="${yr}"><div class="yr-head"><b>${yr} 年</b><span>${yi === 0 ? '今年剩下' : '全年'} <b>${fmt(yt)}</b></span></div><ul class="mlist">${rowsY}</ul></section>`;
+    const head = yi < 0 ? `全年已繳 <b class="muted">${fmt(yp)}</b>` : yi === 0 ? `全年 <b>${fmt(yt + yp)}</b><small class="muted">已繳 ${fmt(yp)}・還要繳 ${fmt(yt)}</small>` : `全年 <b>${fmt(yt)}</b>`;
+    return `<section class="yr ${yi < 0 ? 'yr-past' : ''}" data-yr="${yr}"><div class="yr-head"><b>${yr} 年</b><span>${head}</span></div><ul class="mlist">${rowsY}</ul></section>`;
   }).join('');
   el.innerHTML = `
     <div class="card repay-sum">
@@ -1933,12 +2005,13 @@ function renderRepay() {
     </div>
     <div class="card yr-card">
       <div class="due-head"><h2>${Icon.svg('calendar', 24)} 貸款逐月明細</h2><div class="yr-nav"><button type="button" class="yr-btn" data-yrgo="-1" aria-label="上一年">‹</button><span id="yrLabel">${y0 + yrIdx} 年</span><button type="button" class="yr-btn" data-yrgo="1" aria-label="下一年">›</button></div></div>
-      <div class="small muted">左右滑動看其他年度（共 30 年），點月份看每筆明細</div>
+      <div class="yr-sub"><span class="small muted">左右滑動看其他年度（${yStart}～${y0 + 29}），點月份看每筆明細</span><button type="button" class="chip-btn on" id="yrHome" ${yrIdx === 0 ? 'hidden' : ''}>回今年</button></div>
       <div class="yr-scroll" id="yrScroll">${yearsHTML}</div>
     </div>`;
   const sc = $('yrScroll');
-  requestAnimationFrame(() => { sc.scrollLeft = yrIdx * sc.clientWidth; });
-  sc.addEventListener('scroll', () => { const i = Math.round(sc.scrollLeft / Math.max(1, sc.clientWidth)); if (i !== yrIdx) { yrIdx = i; $('yrLabel').textContent = `${y0 + i} 年`; } }, { passive: true });
+  yrBase = base;
+  yrSync(sc);
+  sc.addEventListener('scroll', () => { if (sc._sync) return; const i = Math.round(sc.scrollLeft / Math.max(1, sc.clientWidth)) - base; if (i !== yrIdx) { yrIdx = i; yrLbl(); } }, { passive: true });
 }
 
 document.addEventListener('click', e => {
@@ -1947,7 +2020,8 @@ document.addEventListener('click', e => {
   const bar = e.target.closest('#repayChart [data-k]');
   if (bar) { repaySel = +bar.dataset.k; renderRepay(); return; }
   const yg = e.target.closest('[data-yrgo]');
-  if (yg) { const sc = $('yrScroll'); yrIdx = Math.max(0, Math.min(29, yrIdx + +yg.dataset.yrgo)); sc.scrollTo({ left: yrIdx * sc.clientWidth, behavior: 'smooth' }); $('yrLabel').textContent = `${new Date().getFullYear() + yrIdx} 年`; return; }
+  const yh = e.target.closest('#yrHome');
+  if (yg || yh) { const sc = $('yrScroll'); yrIdx = yh ? 0 : Math.max(-yrBase, Math.min(29, yrIdx + +yg.dataset.yrgo)); sc.scrollTo({ left: (yrBase + yrIdx) * sc.clientWidth, behavior: 'smooth' }); yrLbl(); return; }
   const mr = e.target.closest('.mrow:not(.past)');
   if (mr) { const ym = mr.dataset.ym; repayOpen.has(ym) ? repayOpen.delete(ym) : repayOpen.add(ym); mr.classList.toggle('open'); }
 });

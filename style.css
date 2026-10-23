@@ -1155,3 +1155,17 @@ button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; c
 .ps-conv:empty { display: none; }
 .ps-sum { flex-direction: column; align-items: flex-start; gap: 2px; }
 .ps-fx { font-size: 11px; }
+
+/* 還款：月曆左右滑、過去月份 */
+.cal.slide-l { animation: calInL .22s ease-out; }
+.cal.slide-r { animation: calInR .22s ease-out; }
+@keyframes calInL { from { transform: translateX(28px); opacity: .3; } to { transform: none; opacity: 1; } }
+@keyframes calInR { from { transform: translateX(-28px); opacity: .3; } to { transform: none; opacity: 1; } }
+.cal { touch-action: pan-y; }
+.yr-btn:disabled { opacity: .3; cursor: default; }
+.yr-nav .chip-btn { padding: 4px 10px; font-size: 12px; }
+.yr-sub { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.yr-sub .chip-btn { flex: none; padding: 4px 10px; font-size: 12px; }
+.mrow.paid .mtot, .mrow.paid .mym, .mrow.paid .mrow-detail { color: var(--muted); }
+.mrow.paid { background: color-mix(in srgb, var(--soft) 70%, transparent); }
+.yr-head small { display: block; text-align: right; font-weight: 400; font-size: 11px; }

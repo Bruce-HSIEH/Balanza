@@ -10,7 +10,7 @@
   data/funds/hist/NN.json   {代碼: [[YYYYMMDD, 淨值], ...]}  依代碼分 64 份，App 只下載自己用到的那幾份
 來源檔每天只有最近 1～3 天，所以走勢是每天累積起來的（保留最近 HIST_N 筆）。
 """
-import csv, io, json, os, sys, time
+import base64, csv, datetime as dt, html as H, http.cookiejar, io, json, os, re, sys, time, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_stocks import get, log, load, LOG  # noqa: E402
@@ -20,6 +20,55 @@ SHARDS = 64
 HIST_N = 30
 SRC_D = 'https://www.sitca.org.tw/MemberK0000/F/03/nav.csv'
 SRC_O = 'https://opendata.tdcc.com.tw/getOD.ashx?id=3-4'
+SRC_D2 = 'https://www.sitca.org.tw/ROC/Industry/IN2106.aspx?pid=IN2213_02'   # 投信投顧公會「基金淨值（日）」所有公司
+UA2 = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+
+
+def sitca_all():
+    """投信投顧公會查詢頁：所有公司、指定日期的淨值表。表格放在頁面裡（有時包在 __VIEWSTATE 中）。
+    回傳 [(日期YYYYMMDD, 公司, 基金統編, 名稱, 幣別, 淨值, 前一日淨值)]"""
+    cj = http.cookiejar.CookieJar()
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    def req(data=None):
+        r = op.open(urllib.request.Request(SRC_D2, data=data, headers={'User-Agent': UA2, 'Referer': SRC_D2}), timeout=120)
+        return r.read().decode('utf-8', 'replace')
+    page = req()
+    hid = dict(re.findall(r'<input type="hidden" name="([^"]+)" id="[^"]*" value="([^"]*)"', page))
+    now = dt.datetime.utcnow() + dt.timedelta(hours=8)
+    for back in range(0, 7):
+        day = (now - dt.timedelta(days=back)).strftime('%Y%m%d')
+        f = dict(hid)
+        f['ctl00$ContentPlaceHolder1$txtQ_Date'] = day
+        f['ctl00$ContentPlaceHolder1$ddlQ_Comid'] = ''
+        f['ctl00$ContentPlaceHolder1$BtnQuery'] = '查詢'
+        t = req(urllib.parse.urlencode(f).encode())
+        rows = parse_sitca(t)
+        if not rows:
+            m = re.search(r'id="__VIEWSTATE" value="([^"]+)"', t)
+            if m:
+                try:
+                    rows = parse_sitca(base64.b64decode(m.group(1)).decode('utf-8', 'replace'))
+                except Exception:  # noqa
+                    rows = []
+        if rows:
+            log(f'投信投顧公會 {day}：{len(rows)} 檔')
+            return [(int(day),) + r for r in rows]
+        new_hid = dict(re.findall(r'<input type="hidden" name="([^"]+)" id="[^"]*" value="([^"]*)"', t))
+        if new_hid:
+            hid = new_hid
+    return []
+
+
+def parse_sitca(t):
+    out = []
+    for tr in re.findall(r'<tr class=["\']?DT(?:even|odd)["\']?[^>]*>(.*?)</tr>', t, re.S | re.I):
+        c = [H.unescape(re.sub(r'<br\s*/?>', ' ', x, flags=re.I)) for x in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S | re.I)]
+        c = [re.sub(r'<[^>]+>', '', x).strip() for x in c]
+        if len(c) < 10:
+            continue
+        # 類型代號, 公司代號, 公司名稱, 受益憑證代號, 基金統編, 基金名稱, 幣別, 淨值, 前一日淨值, 漲跌
+        out.append((c[2], c[4], re.sub(r'\s+', ' ', c[5]), (c[6] or 'TWD').upper(), c[7], c[8]))
+    return out
 
 
 def shard(code):
@@ -49,6 +98,19 @@ def collect():
     """回傳 {code: {'name','ccy','org','co','navs': {yyyymmdd: nav}}}"""
     out, ok = {}, []
     try:
+        for day, co, code, name, ccy, nav, prev in sitca_all():
+            nav, prev = f(nav), f(prev)
+            if not code or not nav:
+                continue
+            x = out.setdefault(code, {'name': name.split(' (')[0].split(' ((')[0].strip(), 'ccy': ccy or 'TWD', 'org': 'D', 'co': co, 'navs': {}})
+            x['navs'][day] = nav
+            if prev:
+                x.setdefault('prev', prev)
+        if out:
+            ok.append('D')
+    except Exception as e:  # noqa
+        log(f'投信投顧公會查詢頁失敗：{e}')
+    try:
         rs = rows(SRC_D)
         for r in rs:
             code = (r.get('基金統編') or '').strip()
@@ -57,9 +119,10 @@ def collect():
                 continue
             x = out.setdefault(code, {'name': (r.get('基金名稱') or '').strip(), 'ccy': (r.get('幣別') or 'TWD').strip().upper() or 'TWD',
                                       'org': 'D', 'co': (r.get('公司名稱') or '').strip(), 'navs': {}})
-            x['navs'][day] = nav
-        ok.append('D')
-        log(f'境內基金：{len(rs)} 列')
+            x['navs'].setdefault(day, nav)
+        if 'D' not in ok and rs:
+            ok.append('D')
+        log(f'境內基金（每日淨值 CSV）：{len(rs)} 列')
     except Exception as e:  # noqa
         log(f'境內基金失敗：{e}')
     try:
@@ -105,8 +168,9 @@ def main():
             s[code] = row
     for code, x in new.items():
         h = hist[shard(code)][code]
-        last, prev = h[-1], (h[-2] if len(h) > 1 else h[-1])
-        s[code] = [x['name'], x['ccy'], last[1], prev[1], iso(last[0]), x['org'], x['co']]
+        last = h[-1]
+        prev = h[-2][1] if len(h) > 1 else x.get('prev', last[1])
+        s[code] = [x['name'], x['ccy'], last[1], prev, iso(last[0]), x['org'], x['co']]
 
     # 清掉很久沒更新（已下市／清算）的基金
     if s:

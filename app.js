@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.26.0';
+const APP_VERSION = '5.26.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -244,7 +244,7 @@ function barsHTML(rows, iconFn, labelFn, extraFn) {
 
 // ---------- 畫面 ----------
 let lastLv = null, lastStress = null;
-const openGroups = new Set(ASSET_CATS.map(c => c.v));
+const openGroups = new Set();   // 一開始全部收合，點了才展開
 const openStocks = new Set();
 
 // 有基金持股或投資計畫選了基金，才下載基金淨值（清單＋用到的走勢分檔）
@@ -256,6 +256,9 @@ function ensureFunds() {
   fundKey = k;
   Stocks.fundHist(codes).then(() => { if (!locked && syncPlanEstimates()) store(); levelsKey = ''; render(); });
 }
+// 剛開 App：股價、基金淨值還在載入時先不跑數字，等資料到齊再一次算好（最多等 2.5 秒）
+let booting = true;
+const cnt = (el, v) => { if (booting) { el.textContent = '…'; return; } UI.countTo(el, v, fmt); };
 function render() {
   ensureFunds();
   const s = summary();
@@ -263,32 +266,34 @@ function render() {
   const stress = s.debtRatio >= 70 && s.netWorth >= 0;
 
   // 吉祥物
-  if (L.lv !== lastLv || stress !== lastStress) {
+  if (!booting && (L.lv !== lastLv || stress !== lastStress)) {
     $('mascot').innerHTML = UI.mascotSVG(L, { stress });
     $('mascotCard').dataset.lv = L.lv;
     $('mascotCard').style.setProperty('--g', L.lv > 0 ? Math.min(1, L.lv / 30).toFixed(2) : 0);
     $('mascotCard').classList.toggle('glow', L.lv >= 7);
     lastLv = L.lv; lastStress = stress;
   }
-  $('mascotLv').textContent = L.lv === 0 ? '' : `Lv.${L.lv} ${L.name}`;
-  $('mascotCard').dataset.tier = L.tier;
-  $('mascotMsg').textContent = L.msg;
-  $('mascotTip').textContent = L.lv === 0 ? '到「資產」「負債」新增資料叫醒牠' : `負債比 ${pct(s.debtRatio)}${stress ? '，負債偏重小秤在冒汗' : ''}`;
+  if (!booting) {
+    $('mascotLv').textContent = L.lv === 0 ? '' : `Lv.${L.lv} ${L.name}`;
+    $('mascotCard').dataset.tier = L.tier;
+    $('mascotMsg').textContent = L.msg;
+    $('mascotTip').textContent = L.lv === 0 ? '到「資產」「負債」新增資料叫醒牠' : `負債比 ${pct(s.debtRatio)}${stress ? '，負債偏重小秤在冒汗' : ''}`;
+  }
 
   $('eyeBtn').innerHTML = hidden ? EYE_OFF : EYE_ON;
   $('eyeBtn').classList.toggle('scaled', scaled && !hidden);
   $('eyeBtn').setAttribute('aria-label', hidden ? '顯示金額' : '隱藏金額');
-  UI.countTo($('netWorth'), s.netWorth, fmt);
+  cnt($('netWorth'), s.netWorth);
   $('netWorth').classList.toggle('neg', s.netWorth < 0);
-  UI.countTo($('totalAssets'), s.totalAssets, fmt);
-  UI.countTo($('totalDebts'), s.totalDebts, fmt);
-  $('debtRatio').textContent = pct(s.debtRatio);
-  $('ratioFill').style.width = Math.min(100, s.debtRatio) + '%';
+  cnt($('totalAssets'), s.totalAssets);
+  cnt($('totalDebts'), s.totalDebts);
+  $('debtRatio').textContent = booting ? '…' : pct(s.debtRatio);
+  $('ratioFill').style.width = booting ? '0' : Math.min(100, s.debtRatio) + '%';
   $('ratioFill').className = 'ratio-fill ' + (s.debtRatio >= 70 ? 'hot' : s.debtRatio >= 30 ? 'warm' : 'cool');
-  UI.countTo($('monthlyPay'), s.monthlyPay, fmt);
+  cnt($('monthlyPay'), s.monthlyPay);
   $('avgRate').textContent = pct(s.avgRate);
-  UI.countTo($('monthlyInterest'), s.monthlyInterest, fmt);
-  UI.countTo($('monthlyPrincipal'), s.monthlyPrincipal, fmt);
+  cnt($('monthlyInterest'), s.monthlyInterest);
+  cnt($('monthlyPrincipal'), s.monthlyPrincipal);
 
   renderHomeRepay();
 
@@ -829,7 +834,9 @@ function growBars() {
 // ---------- 分頁與新增按鈕 ----------
 let currentView = 'home';
 function showView(name) {
+  if (!name) name = lastTab || 'home';
   currentView = name;
+  if (!['levels', 'settings'].includes(name)) lastTab = name;
   document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   document.querySelectorAll('.view').forEach(v => {
     const on = v.id === 'view-' + name;
@@ -849,7 +856,10 @@ function showView(name) {
   if (name === 'settings') openSetPage('');
   if (name !== 'levels') document.querySelector('main').scrollTo(0, 0);
 }
-document.querySelectorAll('.tabs button, .top-btn').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+// 下方分頁直接切換；右上角（等級、設定）再點一次就關掉，回到原本停留的分頁
+let lastTab = 'home';
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+document.querySelectorAll('.top-btn[data-view]').forEach(b => b.addEventListener('click', () => showView(currentView === b.dataset.view ? lastTab : b.dataset.view)));
 $('toLevels').addEventListener('click', () => showView('levels'));
 document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) showView(g.dataset.goto); });
 document.addEventListener('click', e => {
@@ -1666,6 +1676,7 @@ $('askSugg').addEventListener('click', e => { const b = e.target.closest('[data-
 $('askCtx').addEventListener('change', e => { prefs.askCtx = e.target.checked; savePrefs(); });
 $('askClear').addEventListener('click', () => { if (askBusy) askBusy.abort(); askBusy = null; askLog = []; drawAsk(); });
 $('askClose').addEventListener('click', () => $('askDialog').close());
+$('askDialog').addEventListener('click', e => { if (e.target === $('askDialog')) $('askDialog').close(); });   // 點外面（含右上角對話鈕的位置）就關閉
 $('askLog').addEventListener('click', e => { const b = e.target.closest('[data-askclose]'); if (b) { $('askDialog').close(); showView('settings'); openSetPage(b.dataset.sp); } });
 
 // --- 詳細內容：點一下先看內容，要改再按「編輯」 ---
@@ -3549,7 +3560,7 @@ async function enterSim(kind) {
   syncPlanEstimates();
   const s0 = summary();
   state.history = Sim.history(kind, s0.totalAssets, s0.totalDebts);
-  openGroups.clear(); ASSET_CATS.forEach(c => openGroups.add(c.v));
+  openGroups.clear(); openStocks.clear(); fold.clear(); repayOpen.clear();
   lastLv = null; levelsKey = ''; nwSel = -1; dcSel = -1; Object.keys(donutSel).forEach(k => { donutSel[k] = null; });
   document.body.classList.add('simming');
   renderSimBar();
@@ -3766,6 +3777,12 @@ fetch('data/funds/meta.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() :
   const el = $('stockStatus'); if (el && el.dataset.ok) el.insertAdjacentHTML('beforeend', fundStatus);
 }).catch(() => {});
 let fundStatus = '';
+{
+  // 等股價（含美股長尾）與用到的基金淨值都載入，或最多 2.5 秒，再顯示數字
+  const needFund = () => state.assets.some(a => mktOf(a) === 'fund' && a.sym) || state.plans.some(p => planStocksOf(p).some(x => x.mkt === 'fund'));
+  const ready = Stocks.load().then(() => Promise.all([Stocks.tail(), needFund() ? Stocks.fundHist([...state.assets.filter(a => mktOf(a) === 'fund' && a.sym).map(a => a.sym), ...state.plans.flatMap(p => planStocksOf(p).filter(x => x.mkt === 'fund').map(x => x.sym))]) : null]));
+  Promise.race([ready, new Promise(r => setTimeout(r, 2500))]).catch(() => {}).then(() => { booting = false; levelsKey = ''; render(); });
+}
 Stocks.load().then(() => {
   // 美股長尾報價（小型股、槓桿 ETF…）背景載入，載完再更新一次
   Stocks.tail().then(ok => { if (ok) { levelsKey = ''; render(); } });

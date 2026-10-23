@@ -538,15 +538,21 @@ const UI = (() => {
 
   // ---------- 數字跳動 ----------
   const lastVals = new WeakMap();
+  const runs = new WeakMap();   // 每個元素只跑一個動畫，新的數字進來就接著從目前畫面上的值繼續，不會兩個動畫互搶
   function countTo(el, to, fmt, ms = 700) {
-    const from = lastVals.has(el) ? lastVals.get(el) : 0;
+    const prev = runs.get(el);
+    const from = prev ? prev.cur : (lastVals.has(el) ? lastVals.get(el) : 0);
     lastVals.set(el, to);
-    if (from === to) { el.textContent = fmt(to); return; }
+    if (from === to) { runs.delete(el); el.textContent = fmt(to); return; }
+    const run = { cur: from };
+    runs.set(el, run);
     const t0 = performance.now();
     const step = t => {
-      const p = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - p, 3);
-      el.textContent = fmt(from + (to - from) * e);
-      if (p < 1) requestAnimationFrame(step);
+      if (runs.get(el) !== run) return;
+      const p = Math.max(0, Math.min(1, (t - t0) / ms)), e = 1 - Math.pow(1 - p, 3);   // 第一格的時間戳可能早於 t0
+      run.cur = from + (to - from) * e;
+      el.textContent = fmt(run.cur);
+      if (p < 1) requestAnimationFrame(step); else runs.delete(el);
     };
     requestAnimationFrame(step);
   }

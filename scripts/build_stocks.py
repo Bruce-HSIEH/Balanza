@@ -387,18 +387,22 @@ def build_us_all(budget):
     return info
 
 
+FX_LIST = ['USD', 'JPY', 'EUR', 'CNY', 'AUD', 'ZAR', 'GBP', 'HKD', 'CHF', 'SGD', 'NZD', 'CAD']   # 基金常見計價幣別
+
+
 def build_fx(old_fx):
     fx = {'TWD': 1}
-    got = yahoo_spark(['TWD=X', 'JPYTWD=X', 'EURTWD=X'], time.time() + 30, rng='5d')
-    for ccy, sym in (('USD', 'TWD=X'), ('JPY', 'JPYTWD=X'), ('EUR', 'EURTWD=X')):
-        r = got.get(sym)
+    sym = {c: ('TWD=X' if c == 'USD' else f'{c}TWD=X') for c in FX_LIST}
+    got = yahoo_spark(list(sym.values()), time.time() + 40, rng='5d')
+    for ccy, ys in sym.items():
+        r = got.get(ys)
         if not r:
             try:
-                r = yahoo_chart(sym, '5d')
+                r = yahoo_chart(ys, '5d')
             except Exception:  # noqa
                 r = None
         if r:
-            fx[ccy] = round(r[1][-1], 4 if ccy == 'JPY' else 3)
+            fx[ccy] = round(r[1][-1], 4 if r[1][-1] < 1 else 3)
         elif ccy in old_fx:
             fx[ccy] = old_fx[ccy]
     log(f'匯率：{fx}')

@@ -1248,16 +1248,29 @@ svg.scrub { touch-action: pan-y; cursor: crosshair; -webkit-user-select: none; u
 .ask-input .btn { flex: none; }
 @media (prefers-color-scheme: dark) { .ask-msg.err { background: #3a1f1c; color: #ff8a80; } }
 
-/* 開 App：資料到齊再一次淡入 */
-main { transition: opacity .28s ease; }
-body.booting main { opacity: 0; }
-/* 更新紀錄：底部面板，可往下拉關閉 */
+/* 開 App：版面先出來，數字、吉祥物、圖表用灰條佔位，資料到齊後一起淡入 */
+.sk { display: block; height: 1em; border-radius: 8px; background: linear-gradient(90deg, var(--soft) 0%, color-mix(in srgb, var(--soft) 55%, var(--line)) 50%, var(--soft) 100%); background-size: 200% 100%; animation: skMove 1.3s ease-in-out infinite; }
+i.sk { font-style: normal; margin: 3px 0; }
+.big i.sk { height: 38px; margin: 2px 0 1px; }
+.row3 i.sk { height: 18px; }
+.sk-mascot { width: 118px; height: 118px; border-radius: 50%; margin: 3px auto; }
+.sk-chart { height: auto; aspect-ratio: 340 / 150; border-radius: 12px; margin: 6px 0 10px; }
+@keyframes skMove { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+body.booted #netWorth, body.booted #totalAssets, body.booted #totalDebts, body.booted #debtRatio, body.booted .mascot-text > div, body.booted #mascot > svg, body.booted #nwTrend { animation: bootIn .45s ease both; }
+@keyframes bootIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+/* 更新紀錄：點版本號 → 底部面板（可往下拉關閉）；更新後第一次開 → 置中視窗，要按「我知道了」 */
 .cl-sheet { max-height: 86vh; }
 .cl-sheet[open] { display: flex; flex-direction: column; }
+.cl-sheet .cl-scroll { flex: 1 1 auto; min-height: 0; }
+#clDialog.cl-dialog .sheet-grip { display: none; }
+#clDialog.cl-dialog[open] { display: flex; flex-direction: column; }
+#clDialog.cl-dialog .cl-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .cl-sheet h2 { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; font-size: 19px; }
-.cl-scroll { overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.cl-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .cl-end { justify-content: center; margin: 16px 0 6px; }
 .cl-end .btn { min-width: 60%; }
 .sheet-grip { touch-action: none; cursor: grab; position: relative; }
 .sheet-grip::before { content: ""; position: absolute; inset: -14px -60px; }
 .ask-log { overscroll-behavior: contain; }
+#clDialog.cl-dialog .cl-end { position: sticky; bottom: 0; margin: 0; padding: 12px 0 2px; background: linear-gradient(transparent, var(--card) 30%); }
+body.booting .mascot-lv { background: none !important; padding: 0; box-shadow: none !important; }

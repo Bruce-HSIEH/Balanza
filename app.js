@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.26.2';
+const APP_VERSION = '5.26.3';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -259,13 +259,26 @@ function ensureFunds() {
 // 剛開 App：股價、基金淨值還在載入時先不跑數字，等資料到齊再一次算好（最多等 2.5 秒）
 let booting = true, firstNums = true;
 // 第一次顯示直接放正確數字（畫面是淡入的），之後變動才用滾動動畫
-const cnt = (el, v) => { if (booting) { el.textContent = '…'; return; } UI.countTo(el, v, fmt, firstNums ? 0 : 700); };
+const SK = (w = '60%', h = '') => `<i class="sk" style="width:${w}${h ? `;height:${h}` : ''}"></i>`;
+const cnt = (el, v) => { if (booting) { el.innerHTML = SK(el.id === 'netWorth' ? '62%' : '78%'); return; } UI.countTo(el, v, fmt, firstNums ? 0 : 700); };
+// 載入中的骨架：版面先固定好，只有數字、圖表先用灰條代替
+function bootSkeleton() {
+  if (!$('mascot').firstChild) $('mascot').innerHTML = '<div class="sk sk-mascot"></div>';
+  $('mascotLv').innerHTML = SK('92px', '15px');
+  $('mascotMsg').innerHTML = SK('96%', '18px') + SK('70%', '18px');
+  $('mascotTip').innerHTML = SK('55%', '13px');
+  $('homeProg').hidden = false; $('homeProgFill').style.width = '0'; $('homeProgText').innerHTML = SK('80%', '14px');
+  $('debtRatio').innerHTML = SK('70%');
+  $('ratioFill').style.width = '0';
+  if (!$('nwTrend').dataset.sk) { $('nwTrend').dataset.sk = '1'; $('nwTrend').innerHTML = `<div class="chips">${['1 月', '3 月', '1 年', '全部'].map((t, i) => `<span class="chip-btn ${i === 3 ? 'on' : ''}">${t}</span>`).join('')}</div><div class="nw-delta">${SK('42%', '14px')}</div><div class="sk sk-chart"></div><div class="sel-box">${SK('100%', '16px')}${SK('100%', '14px')}${SK('100%', '14px')}</div>`; }
+}
 function render() {
   ensureFunds();
   const s = summary();
   const L = UI.levelOf(s, twdK());
   const stress = s.debtRatio >= 70 && s.netWorth >= 0;
 
+  if (booting) bootSkeleton();
   // 吉祥物
   if (!booting && (L.lv !== lastLv || stress !== lastStress)) {
     $('mascot').innerHTML = UI.mascotSVG(L, { stress });
@@ -288,8 +301,7 @@ function render() {
   $('netWorth').classList.toggle('neg', s.netWorth < 0);
   cnt($('totalAssets'), s.totalAssets);
   cnt($('totalDebts'), s.totalDebts);
-  $('debtRatio').textContent = booting ? '…' : pct(s.debtRatio);
-  $('ratioFill').style.width = booting ? '0' : Math.min(100, s.debtRatio) + '%';
+  if (!booting) { $('debtRatio').textContent = pct(s.debtRatio); $('ratioFill').style.width = Math.min(100, s.debtRatio) + '%'; }
   $('ratioFill').className = 'ratio-fill ' + (s.debtRatio >= 70 ? 'hot' : s.debtRatio >= 30 ? 'warm' : 'cool');
   cnt($('monthlyPay'), s.monthlyPay);
   $('avgRate').textContent = pct(s.avgRate);
@@ -305,7 +317,7 @@ function render() {
     k => { const b = bankOf(k); return b && b.code !== '—' ? `${shortBank(b)} (${b.code})` : (b ? b.name : k); },
     k => payByBank.get(k) ? `<small class="sub">月付 ${fmt(payByBank.get(k))}</small>` : '');
   renderAssetDonut();
-  if (!booting) { recordHistory(s); renderNwTrend(); }   // 資料還沒載完不要記錄當天淨資產，也不要畫半套的走勢
+  if (!booting) { recordHistory(s); delete $('nwTrend').dataset.sk; renderNwTrend(); }   // 資料還沒載完不要記錄當天淨資產，也不要畫半套的走勢
 
   // 還款時程
   const pl = s.st.filter(x => x.s.balance > 0).sort((a, b) => a.s.monthsLeft - b.s.monthsLeft);
@@ -760,7 +772,8 @@ function renderLevels(s, L) {
     <div class="lv-prog"><div class="lv-track"><div class="lv-fill" style="width:${(prog * 100).toFixed(1)}%"></div></div><div class="small muted">${note}</div></div>`;
 
   // 首頁的升級進度
-  $('homeProg').hidden = !next || booting;
+  if (booting) return;
+  $('homeProg').hidden = !next;
   if (next) {
     $('homeProgFill').style.width = (prog * 100).toFixed(1) + '%';
     $('homeProgText').textContent = `距離 Lv.${next.lv} ${next.name} 還差 ${fmt(need)}`;
@@ -811,7 +824,10 @@ function openChangelog(onlyNew) {
   $('clBody').innerHTML = changelogHTML(list);
   $('clClose').textContent = onlyNew ? '我知道了' : '關閉';
   clOnlyNew = !!onlyNew;
+  // 新版說明：置中視窗（要按「我知道了」）；平常點版本號：底部面板（可往下拉關閉）
+  $('clDialog').className = onlyNew ? 'cl-dialog' : 'sheet cl-sheet';
   if (!$('clDialog').open) $('clDialog').showModal();
+  $('clDialog').querySelector('.cl-scroll').scrollTop = 0;
 }
 // 新版說明要按「我知道了」才算看過；看過之前每次開 App 都會再顯示
 let clOnlyNew = false, pendingReload = false;
@@ -3786,8 +3802,12 @@ let fundStatus = '';
   const ready = Stocks.load().then(() => Promise.all([needTail() ? Stocks.tail() : null, needFund() ? Stocks.fundHist([...state.assets.filter(a => mktOf(a) === 'fund' && a.sym).map(a => a.sym), ...state.plans.flatMap(p => planStocksOf(p).filter(x => x.mkt === 'fund').map(x => x.sym))]) : null]));
   Promise.race([ready, new Promise(r => setTimeout(r, 1800))]).catch(() => {}).then(() => {
     if (!locked && syncPlanEstimates()) store();
-    booting = false; levelsKey = ''; lastLv = null; render(); firstNums = false;
-    requestAnimationFrame(() => document.body.classList.remove('booting'));   // 一次淡入，不會一格一格跳
+    booting = false; levelsKey = ''; lastLv = null;
+    document.body.classList.remove('booting'); document.body.classList.add('booted');   // 數字、吉祥物、圖表一起淡入
+    render(); firstNums = false;
+    setTimeout(() => document.body.classList.remove('booted'), 700);
+    // 先用手機裡的股價開起來，背景再抓最新的；有變才平順更新
+    Stocks.refresh().then(ch => { if (ch) { levelsKey = ''; if (!locked && syncPlanEstimates()) store(); render(); } });
   });
 }
 Stocks.load().then(() => {

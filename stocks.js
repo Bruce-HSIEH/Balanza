@@ -26,6 +26,20 @@ const Stocks = (() => {
     return loading;
   }
 
+  // 背景抓最新股價：先比 meta 的更新時間，有新資料才下載台股／美股（?fresh=1 讓 Service Worker 直接走網路）
+  async function refresh() {
+    try {
+      const m = await getJSON('data/stocks/meta.json?fresh=1');
+      if (data.meta && m.updated === data.meta.updated) return false;
+      const [tw, us] = await Promise.all([getJSON('data/stocks/tw.json?fresh=1').catch(() => null), getJSON('data/stocks/us.json?fresh=1').catch(() => null)]);
+      if (tw) data.tw = tw;
+      if (us) data.us = us;
+      data.meta = m;
+      if (data.usall) getJSON('data/stocks/us-all.json?fresh=1').then(j => { data.usall = j; }).catch(() => {});
+      return true;
+    } catch (e) { return false; }
+  }
+
   // 美股長尾（NASDAQ／NYSE 全部上市，只有最近收盤）：背景載入
   function tail() {
     if (tailP) return tailP;
@@ -105,5 +119,5 @@ const Stocks = (() => {
   const info = () => data.meta;
 
   const fundInfo = () => data.fund ? { date: data.fund.date, n: data.fund.n } : null;
-  return { load, tail, quote, list, fx, ready, info, norm, funds, fundHist, fundReady, fundInfo };
+  return { load, refresh, tail, quote, list, fx, ready, info, norm, funds, fundHist, fundReady, fundInfo };
 })();

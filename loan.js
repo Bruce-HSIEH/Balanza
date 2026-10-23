@@ -11,6 +11,12 @@ const Loan = (() => {
   const ymSlash = ym => ym ? ym.replace('-', '/') : '';
   const nowYM = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
+  // 每月扣款日：有填就用，沒填用撥款日期那一天
+  const dueDay = d => Math.round(n0(d.payDay)) || (d.startDate ? Number(String(d.startDate).slice(8, 10)) : 0) || 0;
+  const daysIn = ym => { const [y, m] = String(ym).split('-').map(Number); return new Date(y, m, 0).getDate(); };
+  // 某個月的扣款日（遇到月底不足就用該月最後一天）
+  const dueDate = (ym, day) => { const [y, m] = String(ym).split('-').map(Number); return new Date(y, m - 1, Math.min(day || 1, daysIn(ym))); };
+
   // 寬限期在第幾期之後開始（0 = 撥款就開始）— 舊資料相容
   const graceOffset = d => (d.graceYM && d.startYM ? Math.max(0, ymDiff(d.startYM, d.graceYM)) : 0);
 
@@ -89,7 +95,7 @@ const Loan = (() => {
   function paidPeriods(startYM, payDay, today = new Date()) {
     if (!startYM) return 0;
     let k = ymDiff(startYM, nowYM(today));
-    if (payDay && today.getDate() < payDay) k -= 1;
+    if (payDay && today.getDate() < Math.min(payDay, daysIn(nowYM(today)))) k -= 1;
     return Math.max(0, k);
   }
 
@@ -97,7 +103,7 @@ const Loan = (() => {
     const rows = schedule(d);
     const n = rows.length;
     if (!n) return null;
-    const k = Math.min(paidPeriods(d.startYM, n0(d.payDay), today), n);
+    const k = Math.min(paidPeriods(d.startYM, dueDay(d), today), n);
     const balance = k === 0 ? n0(d.principal) : rows[k - 1].balance;
     const next = rows[k] || null;
     const runs = graceRuns(rows);
@@ -134,7 +140,7 @@ const Loan = (() => {
     return { ...base, monthsLeft: months, interestLeft: Math.max(0, n * P - B), payoffYM: ymSlash(ymAdd(cur, months)) };
   }
 
-  return { schedule, graceRuns, changesOf, CHANGE_TYPES, autoStatus, manualStatus, paidPeriods, graceOffset, ymAdd, ymDiff, ymNum, ymStr, ymSlash, nowYM };
+  return { dueDay, dueDate, daysIn, schedule, graceRuns, changesOf, CHANGE_TYPES, autoStatus, manualStatus, paidPeriods, graceOffset, ymAdd, ymDiff, ymNum, ymStr, ymSlash, nowYM };
 })();
 
 if (typeof module !== 'undefined') module.exports = Loan;

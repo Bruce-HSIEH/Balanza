@@ -88,14 +88,14 @@ const Plan = (() => {
     const cur = nowYM(today);
     const months = Array.from({ length: horizon }, (_, k) => ({ ym: ymAdd(cur, k), items: {}, total: 0 }));
     const events = [];
-    const dayOf = d => Math.min(28, Math.max(1, Math.round(n0(d.payDay)) || 1));
+    const dayOf = d => Loan.dueDay(d) || 1;
     const ev = (d, ym, type, extra) => events.push({ debt: d, ym, day: dayOf(d), type, ...extra });
 
     for (const d of debts) {
       if (d.mode === 'auto') {
         const rows = Loan.schedule(d);
         if (!rows.length) continue;
-        const paid = Loan.paidPeriods(d.startYM, n0(d.payDay), today);
+        const paid = Loan.paidPeriods(d.startYM, Loan.dueDay(d), today);
         rows.forEach((r, idx) => {
           const k = ymDiff(cur, r.ym);
           if (k < 0 || k >= horizon) return;
@@ -149,7 +149,7 @@ const Plan = (() => {
     const totalAt = ym => { const k = ymDiff(cur, ym); return k >= 0 && k < horizon ? months[k].total : null; };
     events.forEach(e => {
       e.total = totalAt(e.ym);
-      e.date = new Date(Number(e.ym.slice(0, 4)), Number(e.ym.slice(5)) - 1, e.day);
+      e.date = Loan.dueDate(e.ym, e.day);
       e.days = Math.ceil((e.date - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
     });
     events.sort((a, b) => a.date - b.date);
@@ -182,7 +182,7 @@ const Plan = (() => {
     if (d.mode === 'auto') {
       const rows = Loan.schedule(d);
       if (!rows.length) return null;
-      const k = Math.min(Loan.paidPeriods(d.startYM, n0(d.payDay), today), rows.length);
+      const k = Math.min(Loan.paidPeriods(d.startYM, Loan.dueDay(d), today), rows.length);
       rows.slice(0, k).forEach(r => addM(r.ym, r.interest, r.principal));
     } else if (d.mode === 'revolving') {
       const cur = nowYM(today), r = n0(d.rate) / 100 / 12;
@@ -190,8 +190,8 @@ const Plan = (() => {
       const starts = linked.map(p => p.startYM).concat(n0(d.drawn) > 0 && d.drawnYM ? [d.drawnYM] : []);
       if (!starts.length) return n0(d.drawn) > 0 ? null : out;
       let ym = starts.reduce((a, b) => (ymDiff(a, b) < 0 ? b : a));
-      const payDay = Math.round(n0(d.payDay)) || 1;
-      const last = today.getDate() >= payDay ? cur : ymAdd(cur, -1);
+      const payDay = Loan.dueDay(d) || 1;
+      const last = today.getDate() >= Math.min(payDay, Loan.daysIn(cur)) ? cur : ymAdd(cur, -1);
       ym = ymAdd(ym, 1);                                   // 動用後的下個月開始付息
       for (let g = 0; ymDiff(ym, last) >= 0 && g < 600; g++, ym = ymAdd(ym, 1)) {
         let bal = d.drawnYM && ymDiff(d.drawnYM, ym) > 0 ? n0(d.drawn) : 0;

@@ -955,3 +955,32 @@ main {
 .sim-face { width: 74px; height: 74px; flex: none; display: grid; place-items: center; }
 .sim-face svg { width: 74px; height: 74px; }
 .sim-bar[hidden] { display: none; }
+
+/* ===== v5.17 扣款日 ===== */
+.hr-day { width: 30px; flex: none; text-align: center; line-height: 1; font-variant-numeric: tabular-nums; }
+.hr-day b { font-size: 16px; }
+.hr-day small { font-size: 10px; color: var(--muted); margin-left: 1px; }
+.hr-row.done { opacity: .55; }
+.dday { display: inline-block; min-width: 34px; font-size: 11.5px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.due-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.due-head h2 { margin-bottom: 4px; }
+.due-head .chips { margin: 0; }
+.due-sum { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 10px; font-size: 13px; color: var(--muted); }
+.due-sum b { font-size: 22px; color: var(--text); font-variant-numeric: tabular-nums; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 10px; }
+.cal .cw { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 2px; }
+.cal .cd { aspect-ratio: 1 / .86; border-radius: 9px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.cal .cd.empty { visibility: hidden; }
+.cal .cd.past { color: var(--muted); opacity: .6; }
+.cal .cd.has { background: var(--soft); font-weight: 700; }
+.cal .cd.today { box-shadow: inset 0 0 0 2px var(--accent); color: var(--accent); opacity: 1; }
+.cal .cd i { display: flex; gap: 2px; }
+.cal .cd i span { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.due-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.due-row.done { opacity: .5; }
+.due-d { width: 34px; flex: none; text-align: center; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.due-d b { display: block; font-size: 18px; }
+.due-d small { font-size: 10.5px; color: var(--muted); }
+.due-row .grow small { display: block; font-size: 11.5px; color: var(--muted); }
+.due-amt { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.due-amt .chip { font-weight: 600; }

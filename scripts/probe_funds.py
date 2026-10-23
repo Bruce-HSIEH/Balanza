@@ -4,7 +4,14 @@ os.makedirs('data/probe', exist_ok=True)
 out = {}
 UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124 Safari/537.36', 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*', 'Origin': 'https://www.fundclear.com.tw', 'Referer': 'https://www.fundclear.com.tw/onshore/fund-doc?type=nav'}
 B = 'https://www.fundclear.com.tw'
-def get(u): return urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': UA['User-Agent']}), timeout=40).read().decode('utf-8', 'replace')
+HB = {'User-Agent': UA['User-Agent'], 'Accept': '*/*', 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8', 'Referer': 'https://www.fundclear.com.tw/'}
+def get(u):
+    import time
+    for k in range(3):
+        try: return urllib.request.urlopen(urllib.request.Request(u, headers=HB), timeout=40).read().decode('utf-8', 'replace')
+        except Exception as e:
+            last = e; time.sleep(5)
+    raise last
 def post(path, body):
     try:
         r = urllib.request.urlopen(urllib.request.Request(B + path, data=json.dumps(body).encode(), headers=UA), timeout=60)
@@ -13,8 +20,9 @@ def post(path, body):
 import traceback
 try:
     h = get(B + '/')
-    main = [s for s in re.findall(r'src="([^"]+\.js)"', h) if 'main' in s][0]
-    t = get(B + '/' + main.lstrip('/'))
+    mains = [s for s in re.findall(r'src="([^"]+\.js)"', h) if 'main' in s]
+    out['mains'] = mains
+    t = get(B + '/' + mains[0].lstrip('/'))
     i = t.find('onshoreCommonSelectOrgSelection(')
     j = t.find('basePath}', i)
     path = t[j + 9: t.find('`', j)] if i >= 0 and j >= 0 else None

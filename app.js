@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.18.1';
+const APP_VERSION = '5.19.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -1417,6 +1417,12 @@ const EV_INFO = {
 };
 const dateTxt = d => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 const daysTxt = n => n < 0 ? '已過' : n === 0 ? '今天' : n < 60 ? `還有 ${n} 天` : n < 730 ? `還有 ${n} 天（約 ${Math.round(n / 30)} 個月）` : `還有 ${n} 天（約 ${(n / 365).toFixed(1)} 年）`;
+function eventRowHTML(e, i) {
+  const k = 'ev:' + i, o = fold.has(k), info = EV_INFO[e.type];
+  const soon = e.days <= 90 && (e.type === 'graceEnd' || e.type === 'balloon');
+  return `<div class="fold sub ${o ? 'open' : ''}" data-f="${k}"><button type="button" class="ev-row ${soon ? 'soon' : ''}" data-fold="${k}"><span class="ev-dt"><b>${e.date.getFullYear() === new Date().getFullYear() ? `${e.date.getMonth() + 1}/${e.date.getDate()}` : `${e.date.getFullYear()}/${e.date.getMonth() + 1}`}</b><small>${e.days <= 0 ? '今天' : e.days < 60 ? `${e.days} 天後` : e.days < 730 ? `${Math.round(e.days / 30)} 個月後` : `${(e.days / 365).toFixed(1)} 年後`}</small></span>${Icon.svg(info.ic, 22)}<span class="grow"><b>${esc(e.debt.name)}</b> ${info.t}</span><i class="chev">›</i></button>
+    <div class="fold-body">${eventHTML(e)}</div></div>`;
+}
 function eventHTML(e, compact) {
   const info = EV_INFO[e.type];
   const diff = e.to - e.from;
@@ -1433,7 +1439,7 @@ function eventHTML(e, compact) {
     ${!compact && e.total != null && e.type !== 'lineEnd' ? `<div class="ev-total">當月起總月付約 <b>${fmt(e.total)}</b></div>` : ''}</div></div>`;
 }
 
-let repayH = 36, repaySel = 0, repayOpen = new Set();
+let repayH = 36, repaySel = 0, repayOpen = new Set(), yrIdx = 0;
 function projection(h) { return Plan.project(state.debts, state.plans, h); }
 
 function renderHomeRepay() {
@@ -1537,12 +1543,12 @@ function dueCalHTML(P) {
     const xs = byDay[dday] || [], past = isCur && dday < td, now = isCur && dday === td;
     cells += `<button type="button" class="cd${xs.length ? ' has' : ''}${past ? ' past' : ''}${now ? ' today' : ''}${calSel === dday ? ' sel' : ''}" data-cday="${dday}"><b>${dday}</b>${xs.length ? `<i>${xs.slice(0, 4).map(x => `<span class="mk-${x.mark}" style="--c:${x.color}"></span>`).join('')}${xs.length > 4 ? '<em>+</em>' : ''}</i>` : ''}</button>`;
   }
-  const shown = (calSel ? E.filter(x => x.day === calSel) : E).slice().sort((a, b) => (a.day || 99) - (b.day || 99) || (a.mark === 'close') - (b.mark === 'close'));
+  const shown = E.filter(x => calSel && x.day === calSel).slice().sort((a, b) => (a.day || 99) - (b.day || 99) || (a.mark === 'close') - (b.mark === 'close'));
   const rows = shown.map(x => {
     const dd = x.day, dt = dd ? new Date(y, mo - 1, dd) : null, left = isCur && dd ? dd - td : null;
     const st = x.tag || (!dd ? '<span class="chip gray">沒填扣款日</span>' : isCur ? (left < 0 ? '<span class="chip gray">已扣款</span>' : left === 0 ? '<span class="chip red">今天</span>' : `<span class="chip${left <= 3 ? ' red' : ''}">還有 ${left} 天</span>`) : '');
     return `<div class="due-row ${isCur && dd && left < 0 ? 'done' : ''} ${x.onCard ? 'oncard' : ''}" data-edit="${x.edit[0]}" data-id="${x.edit[1]}"><span class="due-d">${dt ? `<b>${dd}</b><small>週${WD[dt.getDay()]}</small>` : '<small>—</small>'}</span><span class="mk mk-${x.mark}" style="--c:${x.color}"></span><span class="grow">${esc(x.name)}${x.manual ? ' <span class="chip red">自己繳</span>' : ''}<small>${esc(x.sub)}</small></span><span class="due-amt">${x.amount != null ? fmt(x.amount) : ''}${st}</span></div>`;
-  }).join('') || '<div class="empty small">這天沒有扣款</div>';
+  }).join('') || (calSel ? '<div class="empty small">這天沒有扣款</div>' : '<div class="cal-hint">點月曆上的日期，看那天要繳什麼</div>');
   const cnt = x => x.count && (!isCur || !x.day || x.day >= td);
   const sum = k => E.filter(x => x.count === k && cnt(x)).reduce((t, x) => t + (x.amount || 0), 0);
   const L = sum('loan'), C = sum('card'), Sb = sum('sub');
@@ -1552,23 +1558,61 @@ function dueCalHTML(P) {
     <div class="due-split"><span><i class="mk mk-loan" style="--c:var(--viz-1)"></i>貸款 ${fmt(L)}</span><span><i class="mk mk-card" style="--c:var(--viz-2)"></i>卡費 ${fmt(C)}</span><span><i class="mk mk-sub" style="--c:var(--viz-5)"></i>訂閱 ${fmt(Sb)}</span></div>
     <div class="cal"><span class="cw">日</span><span class="cw">一</span><span class="cw">二</span><span class="cw">三</span><span class="cw">四</span><span class="cw">五</span><span class="cw">六</span>${cells}</div>
     <div class="cal-legend"><span><i class="mk mk-loan" style="--c:var(--muted)"></i>貸款</span><span><i class="mk mk-card" style="--c:var(--muted)"></i>卡費繳款</span><span><i class="mk mk-close" style="--c:var(--muted)"></i>卡片結帳</span><span><i class="mk mk-sub" style="--c:var(--muted)"></i>訂閱</span></div>
-    ${calSel ? `<div class="due-filter">${mo}/${calSel} 的項目 <button type="button" class="link-btn" data-cday="0">看整個月 ›</button></div>` : ''}
+    ${calSel ? `<div class="due-filter">${mo}/${calSel}（週${WD[new Date(y, mo - 1, calSel).getDay()]}）<button type="button" class="link-btn" data-cday="0">收起</button></div>` : ''}
     <div class="due-list">${rows}</div>
-  </div>
-  ${billsCardHTML()}`;
+  </div>`;
 }
+// 收合狀態（點了才展開）
+const fold = new Set();
+document.addEventListener('click', e => {
+  const f = e.target.closest('[data-fold]');
+  if (!f || e.target.closest('[data-edit], [data-add], a')) return;
+  const k = f.dataset.fold;
+  fold.has(k) ? fold.delete(k) : fold.add(k);
+  const box = f.closest('.fold');
+  if (box && box.dataset.f === k) box.classList.toggle('open', fold.has(k)); else renderRepay();
+});
+const foldHead = (k, icon, title, sub, right, extra = '') => `<button type="button" class="fold-head" data-fold="${k}">${icon}<span class="grow"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</span>${right ? `<span class="fold-r">${right}</span>` : ''}${extra}<i class="chev">›</i></button>`;
 function billsCardHTML() {
-  const cards = state.bills.filter(isCardBill), subs = state.bills.filter(isSub);
-  const mon = subs.filter(b => !b.endDate || new Date(b.endDate) >= new Date()).reduce((t, b) => t + perMonth(b), 0);
+  const subs = state.bills.filter(isSub);
+  const live = subs.filter(b => !b.endDate || new Date(b.endDate) >= new Date());
+  const mon = live.reduce((t, b) => t + perMonth(b), 0);
   const subRow = b => { const n = chargesBetween(b, new Date(), new Date(Date.now() + 400 * 864e5))[0];
     return `<div class="bill-row" data-edit="bill" data-id="${b.id}"><span class="mk mk-sub" style="--c:${billColor(b)}"></span>${Icon((BILL_CATS.find(c => c.v === b.cat) || {}).ic || 'other')}<span class="grow">${esc(b.name)}<small>${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${n ? `・下次 ${mdTxt(n)}` : b.endDate ? '・已結束' : ''}${cardOf(b.payWith) ? `・刷 ${esc(cardOf(b.payWith).name)}` : ''}</small></span><span class="due-amt">${(b.ccy || 'TWD') === state.currency ? fmt(+b.amount || 0) : `${b.ccy} ${(+b.amount || 0).toLocaleString()}<small class="muted">≈ ${fmt((+b.amount || 0) * billFx(b))}</small>`}</span></div>`; };
-  const cardRow = c => `<div class="bill-row" data-edit="bill" data-id="${c.id}">${UI.bankIcon(bankOf(c.bank))}<span class="grow">${esc(c.name)}<small>每月 ${c.closeDay} 日結帳・${c.dueDay} 日前繳・${c.autopay === 'manual' ? '自己繳' : '自動扣繳'}</small></span><span class="due-amt">${+c.amount ? fmt(+c.amount * billFx(c)) : `<small class="muted">${state.bills.some(b => b.payWith === c.id) ? '訂閱加總' : '金額未填'}</small>`}</span></div>`;
-  return `<div class="card bills-card">
-    <div class="due-head"><h2>${Icon.svg('repay', 24)} 定期扣款</h2><button type="button" class="btn mini primary" data-add="bill">＋ 新增</button></div>
-    <p class="small muted">信用卡和訂閱只會顯示在扣款月曆，不會算進資產或負債。</p>
-    ${cards.length ? `<h3 class="bill-h">信用卡</h3>${cards.map(cardRow).join('')}` : ''}
-    ${subs.length ? `<h3 class="bill-h">訂閱與定期扣款 <small>每月約 <b>${fmt(mon)}</b>・一年約 ${fmt(mon * 12)}</small></h3>${subs.map(subRow).join('')}` : ''}
-    ${!state.bills.length ? `<div class="hint-row">${Icon('calendar')}<span>加入信用卡的結帳日、繳款日，和 Netflix、Claude、電信費這類定期扣款，就會一起出現在上面的月曆</span></div>` : ''}
+  const open = fold.has('bills');
+  return `<div class="card fold bills-card ${open ? 'open' : ''}" data-f="bills">
+    ${foldHead('bills', Icon('repay'), '訂閱與定期扣款', subs.length ? `${live.length} 項・每月約 ${fmt(mon)}・一年約 ${fmt(mon * 12)}` : '還沒有加入', '', `<span class="fold-add" data-add="bill" role="button" aria-label="新增定期扣款">＋</span>`)}
+    <div class="fold-body">
+      ${subs.length ? subs.map(subRow).join('') : `<div class="hint-row">${Icon('calendar')}<span>加入 Netflix、Claude、電信費、房租這類定期扣款，會一起出現在上面的月曆</span></div>`}
+      <p class="small muted fold-note">只顯示在扣款月曆，不會算進資產或負債。信用卡的結帳日和繳款日也在月曆上，點那一天的項目就能修改。</p>
+    </div>
+  </div>`;
+}
+// 貸款：一筆一列，點了才展開細項
+function loansCardHTML(P) {
+  const m0 = P.months[0];
+  const list = state.debts.map(d => ({ d, s: debtStatus(d), it: m0.items[d.id] })).filter(x => x.s);
+  const total = list.reduce((t, x) => t + (x.it ? x.it.pay : 0), 0);
+  const open = fold.has('loans');
+  const row = ({ d, s: x, it }) => {
+    const k = 'loan:' + d.id, o = fold.has(k), nd = nextDue(d);
+    const det = [
+      ['剩餘本金', fmt(x.balance)],
+      ['年利率', pct(x.rate ?? num(d.rate))],
+      ['扣款日', nd ? `${dueTxt(d)}・下次 ${mdTxt(nd.date)}${nd.days === 0 ? '（今天）' : `（${nd.days} 天後）`}` : '<span class="muted">還沒填</span>'],
+      x.inGrace ? ['寬限期', `剩 ${x.graceLeft} 個月，${x.graceEndYM} 結束後月付 <b class="neg">${fmt(x.afterGracePay)}</b>`] : null,
+      x.revolving ? ['額度', `已動用 ${short(x.balance)} / ${short(x.limit)}`] : null,
+      isFinite(x.monthsLeft) ? ['還清', `${x.payoffYM}（剩 ${x.monthsLeft} 期）`] : x.revolving ? null : ['還清', '<span class="neg">月付不足以還清</span>'],
+      isFinite(x.interestLeft) ? ['剩餘利息', fmt(x.interestLeft)] : null,
+    ].filter(Boolean);
+    return `<div class="fold sub ${o ? 'open' : ''}" data-f="${k}">
+      <button type="button" class="loan-row" data-fold="${k}"><span class="mk mk-loan" style="--c:${debtColor(d)}"></span><span class="grow">${esc(d.name)}${x.inGrace ? ' <span class="chip">寬限期</span>' : ''}${x.revolving ? ' <span class="chip blue">只繳息</span>' : ''}<small>${esc(shortBank(bankOf(d.bank)))}${dueTxt(d) ? `・${dueTxt(d)}` : ''}</small></span><span class="due-amt">${fmt(it ? it.pay : 0)}<small class="muted">每月</small></span><i class="chev">›</i></button>
+      <div class="fold-body">${det.map(([a, b]) => `<div class="kv"><span>${a}</span><span>${b}</span></div>`).join('')}<button type="button" class="btn mini" data-edit="debt" data-id="${d.id}">${Icon.svg('pencil', 16)} 編輯這筆</button></div>
+    </div>`;
+  };
+  return `<div class="card fold loans-card ${open ? 'open' : ''}" data-f="loans">
+    ${foldHead('loans', Icon('mortgage'), '貸款', `${list.length} 筆・這個月 ${fmt(total)}`, '')}
+    <div class="fold-body">${list.map(row).join('')}</div>
   </div>`;
 }
 document.addEventListener('click', e => { const c = e.target.closest('[data-cday]'); if (c && c.closest('#view-repay')) { const d = +c.dataset.cday; calSel = calSel === d ? 0 : d; renderRepay(); } });
@@ -1612,7 +1656,7 @@ document.addEventListener('click', e => { if (e.target.closest('#paidMore')) { p
 function renderRepay() {
   const el = $('repayBody');
   if (!state.debts.length) {
-    el.innerHTML = (state.bills.length ? dueCalHTML(projection(2)) : billsCardHTML()) + `<div class="card empty big-empty">${Icon('repay', 'ico-xl')}<p>到「負債」新增貸款，這裡就會推算你未來每個月要繳多少</p></div>`;
+    el.innerHTML = (state.bills.length ? dueCalHTML(projection(2)) : '') + billsCardHTML() + `<div class="card empty big-empty">${Icon('repay', 'ico-xl')}<p>到「負債」新增貸款，這裡就會推算你未來每個月要繳多少</p></div>`;
     return;
   }
   const all = Plan.horizonAll(state.debts);
@@ -1639,6 +1683,29 @@ function renderRepay() {
         <span class="mtot">${fmt(m.total)}${k && Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'neg' : 'pos'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
       <div class="mrow-detail">${series.map(s => { const it = m.items[s.id]; if (!it || it.pay <= 0) return ''; const dd = Loan.dueDay(s.d); return `<div class="kv"><span>${dd ? `<span class="dday">${Math.min(dd, Loan.daysIn(m.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}<small class="muted"> 本 ${fmt(it.principal)} / 息 ${fmt(it.interest)}</small></span></div>`; }).join('')}</div></li>`;
   }).join('');
+  // 貸款逐月明細：一年一頁，左右滑 30 年
+  const PY = projection(360);
+  const y0 = new Date().getFullYear(), curM = new Date().getMonth();
+  const yearsHTML = Array.from({ length: 30 }, (_, yi) => {
+    const yr = y0 + yi;
+    let yt = 0;
+    const rowsY = Array.from({ length: 12 }, (_, mi) => {
+      const k = yi * 12 + mi - curM;
+      if (k < 0) return `<li class="mrow past"><div class="mrow-head"><span class="mym">${mi + 1} 月</span><span class="grow"></span><span class="mtot muted">已過</span></div></li>`;
+      const m = PY.months[k];
+      if (!m) return '';
+      yt += m.total;
+      const prev = k ? PY.months[k - 1].total : m.total, diff = m.total - prev;
+      const evs = PY.events.filter(e => e.ym === m.ym && e.type !== 'lineEnd');
+      const open = repayOpen.has(m.ym);
+      return `<li class="mrow ${evs.length ? 'has-ev' : ''} ${open ? 'open' : ''}" data-ym="${m.ym}">
+      <div class="mrow-head"><span class="mym">${mi + 1} 月</span>
+        <span class="grow">${evs.map(e => `<span class="chip ${e.type === 'graceEnd' || e.type === 'balloon' ? 'red' : e.type === 'payoff' ? 'green' : 'blue'}">${esc(e.debt.name)}${e.type === 'graceEnd' ? '寬限期結束' : e.type === 'graceStart' ? '寬限期開始' : e.type === 'payoff' ? '還清' : e.type === 'balloon' ? '到期還本' : e.type === 'rateChange' ? '利率調整' : '投入完成'}</span>`).join('')}</span>
+        <span class="mtot">${fmt(m.total)}${k && Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'neg' : 'pos'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
+      <div class="mrow-detail">${series.map(s => { const it = m.items[s.id]; if (!it || it.pay <= 0) return ''; const dd = Loan.dueDay(s.d); return `<div class="kv"><span>${dd ? `<span class="dday">${Math.min(dd, Loan.daysIn(m.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}<small class="muted"> 本 ${fmt(it.principal)} / 息 ${fmt(it.interest)}</small></span></div>`; }).join('') || '<div class="muted small">這個月沒有要繳的</div>'}</div></li>`;
+    }).join('');
+    return `<section class="yr" data-yr="${yr}"><div class="yr-head"><b>${yr} 年</b><span>${yi === 0 ? '今年剩下' : '全年'} <b>${fmt(yt)}</b></span></div><ul class="mlist">${rowsY}</ul></section>`;
+  }).join('');
   el.innerHTML = `
     <div class="card repay-sum">
       <div class="rs"><span>本月應繳</span><b>${fmt(P.months[0].total)}</b></div>
@@ -1647,10 +1714,12 @@ function renderRepay() {
       <div class="rs"><span>期間最高月付</span><b class="neg">${fmt(peak.total)}</b><small>${peak.ym.replace('-', '/')} 起</small></div>
     </div>
     ${dueCalHTML(P)}
+    ${loansCardHTML(P)}
+    ${billsCardHTML()}
     ${paidCardHTML()}
     <div class="card">
       <h2>${Icon.svg('warn', 24)} 重要時間點</h2>
-      ${evAll.length ? evAll.map(e => eventHTML(e)).join('') : '<div class="empty">沒有即將發生的變化</div>'}
+      ${evAll.length ? `<div class="ev-list">${evAll.map(eventRowHTML).join('')}</div>` : '<div class="empty">沒有即將發生的變化</div>'}
     </div>
     <div class="card">
       <h2>${Icon.svg('chart', 24)} 未來每月要繳多少</h2>
@@ -1661,10 +1730,14 @@ function renderRepay() {
         ${selRows.map(({ s, it }) => `<div class="kv"><span>${Loan.dueDay(s.d) ? `<span class="dday">${Math.min(Loan.dueDay(s.d), Loan.daysIn(sel.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}</span></div>`).join('') || '<div class="muted small">這個月沒有要繳的</div>'}
         <div class="small muted">點圖上的月份看那個月的明細</div></div>
     </div>
-    <div class="card">
-      <h2>${Icon.svg('calendar', 24)} 逐月明細</h2>
-      <ul class="mlist">${tableRows}</ul>
+    <div class="card yr-card">
+      <div class="due-head"><h2>${Icon.svg('calendar', 24)} 貸款逐月明細</h2><div class="yr-nav"><button type="button" class="yr-btn" data-yrgo="-1" aria-label="上一年">‹</button><span id="yrLabel">${y0 + yrIdx} 年</span><button type="button" class="yr-btn" data-yrgo="1" aria-label="下一年">›</button></div></div>
+      <div class="small muted">左右滑動看其他年度（共 30 年），點月份看每筆明細</div>
+      <div class="yr-scroll" id="yrScroll">${yearsHTML}</div>
     </div>`;
+  const sc = $('yrScroll');
+  requestAnimationFrame(() => { sc.scrollLeft = yrIdx * sc.clientWidth; });
+  sc.addEventListener('scroll', () => { const i = Math.round(sc.scrollLeft / Math.max(1, sc.clientWidth)); if (i !== yrIdx) { yrIdx = i; $('yrLabel').textContent = `${y0 + i} 年`; } }, { passive: true });
 }
 
 document.addEventListener('click', e => {
@@ -1672,7 +1745,9 @@ document.addEventListener('click', e => {
   if (h && h.closest('#view-repay')) { repayH = +h.dataset.h; repaySel = 0; renderRepay(); return; }
   const bar = e.target.closest('#repayChart [data-k]');
   if (bar) { repaySel = +bar.dataset.k; renderRepay(); return; }
-  const mr = e.target.closest('.mrow');
+  const yg = e.target.closest('[data-yrgo]');
+  if (yg) { const sc = $('yrScroll'); yrIdx = Math.max(0, Math.min(29, yrIdx + +yg.dataset.yrgo)); sc.scrollTo({ left: yrIdx * sc.clientWidth, behavior: 'smooth' }); $('yrLabel').textContent = `${new Date().getFullYear() + yrIdx} 年`; return; }
+  const mr = e.target.closest('.mrow:not(.past)');
   if (mr) { const ym = mr.dataset.ym; repayOpen.has(ym) ? repayOpen.delete(ym) : repayOpen.add(ym); mr.classList.toggle('open'); }
 });
 

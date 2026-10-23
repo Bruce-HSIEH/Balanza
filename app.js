@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.20.3';
+const APP_VERSION = '5.21.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -816,6 +816,7 @@ const OPTS = {
     if (!ps.length) throw new Error('還沒有不動產資產，先到「資產」新增這間房子');
     return [opt('', '不指定', Icon('other'), '不和任何房子連結'), ...ps.map(a => opt(a.id, a.name, assetIcon(a), `估值 ${short(assetValue(a))}${a.district ? ' · ' + a.district + (a.road || '') : ''}`))];
   },
+  planType: () => ['股票', '基金', '債券', '加密貨幣', '儲蓄／定存', '其他'].map(v => opt(v, v, Icon({ '股票': 'chart', '基金': 'fund', '債券': 'bond', '加密貨幣': 'crypto', '儲蓄／定存': 'cash', '其他': 'other' }[v]), v === '股票' ? '可以選台股、美股標的，看即時收盤價與走勢' : '')),
   planMode: () => [opt('total', '投資總額', Icon('invest'), '一筆總額分幾個月投入，例如 1460 萬分 15 個月'), opt('monthly', '每月投入', Icon('calendar'), '每月固定投入多少，例如定期定額每月 1 萬')],
   billKind: () => BILL_KINDS.map(c => opt(c.v, c.label, Icon(c.ic), c.d)),
   billCat: () => BILL_CATS.map(c => opt(c.v, c.v, Icon(c.ic))),
@@ -842,6 +843,7 @@ const PICK_LABEL = {
   brand: v => { const b = brandOf(v); return b ? (b.zh === b.v ? b.v : `${b.zh} ${b.v}`) : v; },
   grace: v => +v ? `${v} 個月` : '沒有寬限期',
   planMode: v => v === 'monthly' ? '每月投入' : '投資總額',
+  planType: v => v || '股票',
   billKind: v => (BILL_KINDS.find(c => c.v === v) || {}).label || '',
   billCcy: v => (CURRENCIES.find(c => c.v === v) || {}).label || v,
   billCycle: v => (BILL_CYCLES.find(c => c.v === v) || {}).label || '',
@@ -864,6 +866,7 @@ const PICK_ICON = {
   btype: v => Icon((BUILDING_TYPES.find(c => c.v === v) || {}).ic || 'tower'),
   grace: v => Icon(+v ? 'pause' : 'play'),
   planMode: v => Icon(v === 'monthly' ? 'calendar' : 'invest'),
+  planType: v => Icon({ '股票': 'chart', '基金': 'fund', '債券': 'bond', '加密貨幣': 'crypto', '儲蓄／定存': 'cash', '其他': 'other' }[v || '股票'] || 'other'),
   billKind: v => Icon((BILL_KINDS.find(c => c.v === v) || {}).ic || 'calendar'),
   billCat: v => Icon((BILL_CATS.find(c => c.v === v) || {}).ic || 'other'),
   billCcy: v => Icon((CURRENCIES.find(c => c.v === v) || {}).ic || 'twd'),
@@ -964,19 +967,22 @@ const FIELDS = {
 };
 FIELDS.plan = [
   { k: 'name', label: '計畫名稱', type: 'text', req: true, ph: '例：理財型房貸分批投入' },
+  { k: 'ptype', label: '投資類型', type: 'pick', opts: 'planType', def: '股票' },
   { k: 'pmode', label: '怎麼投入', type: 'pick', opts: 'planMode', def: 'total' },
   { k: 'total', label: '投入總額', type: 'number', req: true, half: true, show: v => v.pmode !== 'monthly', ph: '例：14600000' },
   { k: 'perMonth', label: '每月投入金額', type: 'number', req: true, half: true, show: v => v.pmode === 'monthly', ph: '例：10000' },
   { k: 'months', label: '分幾個月投入', type: 'number', req: true, half: true, def: '12', min: 1, max: 600, labelFn: v => v.pmode === 'monthly' ? '投入幾個月' : '分幾個月投入', hintFn: v => v.pmode === 'monthly' ? '定期定額沒有結束日，可以填 120（10 年）' : '' },
   { k: 'startYM', label: '第一次投入年月', type: 'month', req: true, half: true, def: thisYM },
   { k: 'day', label: '每月投入日（選填）', type: 'number', min: 1, max: 31, half: true },
+  { k: 'doneMonths', label: '已經投入幾個月（選填）', type: 'number', min: 0, max: 600, half: true, ph: '例：3', hintFn: () => '已經在跑的計畫填這裡；這幾期會直接算已投入，「第一次投入年月」會自動往前推' },
   { k: 'source', label: '資金來源', type: 'pick', opts: 'planSource', def: 'self' },
   { sec: ['bank', '新額度的資料（儲存後會出現在負債）'], show: v => isNewLine(v) },
   { k: 'nlName', label: '額度名稱', type: 'text', req: true, show: v => isNewLine(v), ph: v => v.source === '__newother' ? '例：股票質押額度' : '例：理財型房貸額度' },
   { k: 'nlBank', label: '銀行', type: 'pick', opts: 'bank', search: true, show: v => isNewLine(v) },
   { k: 'nlLimit', label: '核准額度', type: 'number', half: true, show: v => isNewLine(v), ph: v => v.total ? String(v.total) : '例：14600000', hintFn: () => '不填就用投入總額' },
   { k: 'nlRate', label: '年利率 (%)', type: 'number', step: '0.001', req: true, half: true, show: v => isNewLine(v), ph: v => v.source === '__newother' ? '例：3.2' : '例：2.6' },
-  { k: 'targets', label: '投資標的（選填，可寫比例）', type: 'text', ph: '例：0050 50%、00878 30%、VOO 20%' },
+  { panel: 'planStocks', show: v => (v.ptype || '股票') === '股票' },
+  { k: 'targets', label: '投資標的（選填，可寫比例）', type: 'text', ph: '例：0050 50%、00878 30%、VOO 20%', show: v => (v.ptype || '股票') !== '股票' },
   { k: 'yieldPct', label: '預估年化報酬／殖利率 %（選填）', type: 'number', step: '0.1', half: true },
   { panel: 'planPanel', show: () => true },
   { k: 'note', label: '備註', type: 'text' },
@@ -1029,7 +1035,7 @@ FIELDS.bill.find(f => f.k === 'name').ph = v => isCardBill(v) ? EX.billName.card
 FIELDS.bill.find(f => f.k === 'amount').ph = v => isCardBill(v) ? EX.billAmount.card : EX.billAmount[v.cat] || '';
 FIELDS.bill.find(f => f.k === 'amount').labelFn = v => isCardBill(v) ? '每期大約金額（選填）' : '每次扣款金額';
 FIELDS.bill.find(f => f.k === 'note').ph = v => isCardBill(v) ? EX.billNote.card : EX.billNote.sub;
-const NUMERIC = new Set(['perMonth', 'buyMonth', 'nlLimit', 'nlRate', 'closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
+const NUMERIC = new Set(['doneMonths', 'perMonth', 'buyMonth', 'nlLimit', 'nlRate', 'closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
 
 // ---------- 編輯器 ----------
 let editing = null;
@@ -1066,6 +1072,14 @@ function openEditor(kind, id, preset) {
   }
   FIELDS[kind].forEach(f => { if (f.k && vals[f.k] == null && f.def != null) vals[f.k] = typeof f.def === 'function' ? f.def() : f.def; });
   if (kind === 'debt' && vals.startDate && !vals.startYM) vals.startYM = vals.startDate.slice(0, 7);
+  if (kind === 'plan' && item && !item.ptype) {
+    // 舊計畫：把文字寫的標的（例如「0050 50%、VOO 20%」）轉成股票清單
+    const ts = parseTargets(vals.targets);
+    const conv = ts.map(t => { const sym = t.name.toUpperCase(); const m = /^\d/.test(sym) ? 'tw' : 'us'; return Stocks.quote(m, sym) ? { mkt: m, sym, pct: t.pct } : null; });
+    if (ts.length && conv.every(Boolean)) { vals.ptype = '股票'; vals.stocks = conv; }
+    else vals.ptype = vals.targets ? '其他' : '股票';
+  }
+  if (kind === 'plan') { vals.stocks = (vals.stocks && vals.stocks.length ? vals.stocks : [{ mkt: 'tw', sym: '', pct: '' }]).map(x => ({ ...x })); vals.doneMonths = ''; Stocks.load().then(() => { if ($('editor').open && editing.kind === 'plan') drawPlanStocks(); }); }
   $('editTitle').innerHTML = `${Icon(KIND_ICON[kind])} ${id ? '編輯' : '新增'}${KIND_NAME[kind]}`;
   $('delBtn').style.display = id ? '' : 'none';
   drawForm();
@@ -1096,7 +1110,7 @@ function refreshForm() {
   if (editing.kind === 'asset' && isRE(vals)) drawLvrPanel();
   if (editing.kind === 'asset' && isRE(vals) && vals.id) drawPropLoanPanel();
   if (editing.kind === 'asset' && isStock(vals)) drawStockPanel();
-  if (editing.kind === 'plan') drawPlanPanel();
+  if (editing.kind === 'plan') { drawPlanPanel(); drawPlanStocks(); }
 }
 function drawPropLoanPanel() {
   const el = $('propLoanPanel'); if (!el) return;
@@ -1526,6 +1540,10 @@ $('editForm').addEventListener('submit', e => {
   }
   if (vals.lvrAt && isRE(vals)) obj.lvrAt = vals.lvrAt;
   if (editing.kind === 'plan') {
+    if ((obj.ptype || '股票') === '股票') {
+      obj.stocks = (vals.stocks || []).filter(x => x.sym).map(x => ({ mkt: x.mkt, sym: x.sym, pct: x.pct === '' ? '' : num(x.pct) }));
+      if (obj.stocks.length) obj.targets = obj.stocks.map(x => `${x.sym}${x.pct !== '' ? ' ' + x.pct + '%' : ''}`).join('、');
+    } else delete obj.stocks;
     if (obj.pmode === 'monthly') obj.total = Math.round(num(obj.perMonth) * Math.max(1, Math.round(num(obj.months))));
     else delete obj.perMonth;
     if (isNewLine(obj)) {
@@ -1536,6 +1554,21 @@ $('editForm').addEventListener('submit', e => {
       toast('已在負債新增這筆額度');
     }
     ['nlName', 'nlBank', 'nlLimit', 'nlRate'].forEach(k => delete obj[k]);
+    // 已經投入幾個月：起始月份往前推，前幾期直接算已投入
+    const dm = Math.round(num(obj.doneMonths));
+    delete obj.doneMonths;
+    if (dm > 0) {
+      const cur = Loan.nowYM();
+      if (!obj.startYM || Loan.ymDiff(obj.startYM, cur) < dm) obj.startYM = Loan.ymAdd(cur, -dm);
+      const am = Plan.amounts(obj);
+      const prev = editing.id ? (state.plans.find(x => x.id === editing.id) || {}).done : null;
+      obj.done = { ...(prev || {}) };
+      for (let i = 0; i < Math.min(dm, am.length); i++) if (obj.done[i] == null) obj.done[i] = am[i];
+    } else if (editing.id) {
+      const prev = state.plans.find(x => x.id === editing.id) || {};
+      if (prev.done) obj.done = prev.done;
+      if (prev.custom) obj.custom = prev.custom;
+    }
   }
   if (editing.kind === 'debt' && isAuto(vals)) {
     obj.changes = (vals.changes || []).filter(c => c.ym);
@@ -1975,7 +2008,8 @@ function renderInvest() {
         <div class="small muted">以總額 × ${pct(num(p.yieldPct))} ÷ 12 估算；${src ? `損益兩平的年化報酬約 ${pct(num(src.rate))}。` : ''}實際報酬會波動，僅供參考。</div></div>` : ''}
       <div class="chart-wrap">${Charts.invest(rows, { current: curIdx })}</div>
       <div class="legend"><span><span class="dot" style="--c:#14b8a6"></span>累計投入（左軸）</span>${src ? '<span><span class="dot" style="--c:#ff7043"></span>投入後每月利息（右軸）</span>' : ''}</div>
-      ${targets.length ? `<div class="targets"><div class="small muted">每期分配（以每期 ${fmt(pr.amounts[0])} 計）</div>${targets.map(t => `<span class="chip blue">${esc(t.name)} ${t.pct}% · ${short(pr.amounts[0] * t.pct / 100)}</span>`).join('')}</div>` : p.targets ? `<div class="small muted">標的：${esc(p.targets)}</div>` : ''}
+      ${p.ptype === '股票' && (p.stocks || []).length ? `<div class="plan-stocks">${p.stocks.map(x => { const q = Stocks.quote(x.mkt, x.sym); const amt = x.pct !== '' && num(x.pct) ? pr.amounts[Math.min(pr.amounts.length - 1, Math.max(0, pr.nextIdx))] * num(x.pct) / 100 : 0; const k = q ? Stocks.fx(q.ccy, state.currency) : 1;
+        return `<div class="pst"><span class="ticker small">${esc(x.sym)}</span><span class="grow">${esc(q ? q.name : '')}<small>${q ? `收盤 ${price(q.price, q.ccy)}・<span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span>` : '找不到報價'}${num(x.pct) ? `・${x.pct}%` : ''}</small></span>${q ? UI.sparkline(q.series, 70, 24, { tw: x.mkt === 'tw' }) : ''}${amt && q ? `<span class="pst-r">${fmt(amt)}<small>≈ ${(amt / (q.price * k)).toFixed(x.mkt === 'us' ? 2 : 0)} 股</small></span>` : ''}</div>`; }).join('')}</div>` : targets.length ? `<div class="targets"><div class="small muted">每期分配（以每期 ${fmt(pr.amounts[0])} 計）</div>${targets.map(t => `<span class="chip blue">${esc(t.name)} ${t.pct}% · ${short(pr.amounts[0] * t.pct / 100)}</span>`).join('')}</div>` : p.targets ? `<div class="small muted">標的：${esc(p.targets)}</div>` : ''}
       <ul class="plist">${rows.map(r => `<li class="prow ${r.state}" data-plan="${p.id}" data-i="${r.i}">
         <span class="pnum">${r.i + 1}</span>
         <div class="grow"><div><b>${r.ym.replace('-', '/')}${p.day ? '/' + String(p.day).padStart(2, '0') : ''}</b> ${({ done: '<span class="chip green">已確認</span>', assumed: '<span class="chip gray">未確認</span>', now: '<span class="chip red">本月</span>', future: '' })[r.state]}</div>
@@ -2014,6 +2048,50 @@ $('pdDone').addEventListener('click', () => savePeriod('done'));
 $('pdPlan').addEventListener('click', () => savePeriod('plan'));
 $('pdUndo').addEventListener('click', () => savePeriod('undo'));
 $('pdCancel').addEventListener('click', () => $('periodDialog').close());
+
+// 投資計畫的股票標的：台股／美股、可搜尋代號、帶出收盤價與走勢
+function drawPlanStocks() {
+  const el = $('planStocks'); if (!el) return;
+  if ((vals.ptype || '股票') !== '股票') { el.innerHTML = ''; return; }
+  const list = vals.stocks || (vals.stocks = [{ mkt: 'tw', sym: '', pct: '' }]);
+  const n = Math.max(1, Math.round(num(vals.months)));
+  const per = vals.pmode === 'monthly' ? num(vals.perMonth) : num(vals.total) / n;
+  const sumPct = list.reduce((t, x) => t + (num(x.pct) || 0), 0);
+  el.innerHTML = `<div class="panel-title">${Icon('chart')} 投資標的</div>
+    ${list.map((x, i) => {
+      const q = x.sym ? Stocks.quote(x.mkt, x.sym) : null;
+      const share = per && num(x.pct) ? per * num(x.pct) / 100 : 0;
+      const k = q ? Stocks.fx(q.ccy, state.currency) : 1;
+      return `<div class="ps-row" data-ps="${i}">
+        <div class="ps-top">
+          <button type="button" class="bk-tag ${x.mkt === 'us' ? 'us' : ''}" data-psm="${i}">${x.mkt === 'us' ? '美股' : '台股'} ⇄</button>
+          <button type="button" class="pickbtn ps-pick ${x.sym ? '' : 'empty'}" data-psp="${i}"><span>${x.sym ? esc(`${x.sym} ${q ? q.name : ''}`) : '選股票（可搜尋代號或名稱）'}</span><i>›</i></button>
+          <input class="ps-pct" type="number" inputmode="decimal" step="any" placeholder="%" value="${esc(x.pct ?? '')}" data-psv="${i}" aria-label="比例">
+          ${list.length > 1 ? `<button type="button" class="bk-del" data-psd="${i}" aria-label="刪除">×</button>` : ''}
+        </div>
+        ${q ? `<div class="ps-info"><span>收盤 <b>${price(q.price, q.ccy)}</b> <span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span></span>${UI.sparkline(q.series, 90, 26, { tw: x.mkt === 'tw' })}${share ? `<span class="muted">每期 ${fmt(share)} ≈ ${(share / (q.price * k)).toFixed(x.mkt === 'us' ? 2 : 0)} 股</span>` : ''}</div>` : x.sym ? '<div class="ps-info muted small">找不到報價</div>' : ''}
+      </div>`;
+    }).join('')}
+    <div class="btnrow"><button type="button" class="btn mini" data-psa="1">＋ 再加一檔</button>${list.length > 1 || sumPct ? `<span class="small ${Math.abs(sumPct - 100) < 0.01 || !sumPct ? 'muted' : 'neg'}">比例合計 ${sumPct}%${sumPct && Math.abs(sumPct - 100) >= 0.01 ? '（應為 100%）' : ''}</span>` : ''}</div>`;
+}
+$('editFields').addEventListener('click', async e => {
+  const t = e.target.closest('[data-psm], [data-psp], [data-psd], [data-psa]');
+  if (!t || !t.closest('#planStocks')) return;
+  readInputs();
+  const L = vals.stocks;
+  if (t.dataset.psa) L.push({ mkt: L.length ? L[L.length - 1].mkt : 'tw', sym: '', pct: '' });
+  else if (t.dataset.psd != null) L.splice(+t.dataset.psd, 1);
+  else if (t.dataset.psm != null) { const x = L[+t.dataset.psm]; x.mkt = x.mkt === 'us' ? 'tw' : 'us'; x.sym = ''; }
+  else if (t.dataset.psp != null) {
+    const x = L[+t.dataset.psp];
+    const options = await OPTS.stock({ category: x.mkt === 'us' ? '美股' : '台股' });
+    const o = await UI.openPicker({ title: x.mkt === 'us' ? '選美股' : '選台股', options, value: x.sym, search: true, limit: 40, placeholder: '輸入代號或名稱搜尋' });
+    if (o) x.sym = o.value;
+  }
+  drawPlanStocks(); drawPlanPanel();
+});
+$('editFields').addEventListener('input', e => { const i = e.target.dataset && e.target.dataset.psv; if (i != null && vals.stocks) { vals.stocks[+i].pct = e.target.value; const sp = $('planStocks').querySelector('.btnrow'); if (sp) { /* 合計稍後重畫 */ } } });
+$('editFields').addEventListener('change', e => { if (e.target.dataset && e.target.dataset.psv != null) drawPlanStocks(); });
 
 function drawPlanPanel() {
   const el = $('planPanel');

@@ -1107,3 +1107,18 @@ button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; c
 .group.not-counted { opacity: .85; }
 .group.not-counted .group-head .sub .chip { margin-right: 4px; }
 .group.not-counted .amt.pos { color: var(--muted); }
+
+/* ===== v5.21 投資計畫標的 ===== */
+.ps-row { background: var(--soft); border-radius: 14px; padding: 8px; margin-bottom: 8px; }
+.ps-top { display: flex; gap: 6px; align-items: center; }
+.ps-top .bk-tag { flex: none; padding: 4px 8px; border-radius: 8px; }
+.ps-pick { flex: 1; min-width: 0; padding: 8px 10px; }
+.ps-pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-pct { width: 58px; flex: none; text-align: center; }
+.ps-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; margin-top: 6px; padding: 0 2px; font-variant-numeric: tabular-nums; }
+.ps-info .muted { font-size: 12px; }
+.plan-stocks { margin: 8px 0; }
+.pst { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.pst .grow small { display: block; font-size: 11.5px; color: var(--muted); }
+.pst-r { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pst-r small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }

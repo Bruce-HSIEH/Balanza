@@ -207,10 +207,11 @@
 
   <dialog id="periodDialog" class="cl-dialog">
     <h2 id="pdTitle">第 1 期</h2>
-    <label class="field"><span class="flabel">實際投入金額</span><input id="pdAmount" type="number" inputmode="decimal" step="any"></label>
+    <div id="pdStocks"></div>
+    <label class="field"><span class="flabel" id="pdAmtLabel">實際投入金額</span><input id="pdAmount" type="number" inputmode="decimal" step="any"></label>
     <div class="small muted" id="pdPlanned"></div>
     <div class="pd-btns">
-      <button type="button" class="btn primary" id="pdDone">確認已投入這個金額</button>
+      <button type="button" class="btn primary" id="pdDone">確認這一期</button>
       <button type="button" class="btn" id="pdPlan">只修改這期的計畫金額</button>
       <button type="button" class="btn danger" id="pdUndo">取消確認</button>
       <button type="button" class="btn" id="pdCancel">關閉</button>

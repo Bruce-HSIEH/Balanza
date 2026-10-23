@@ -1132,3 +1132,13 @@ button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; c
 .ps-amt { width: 92px; }
 .ps-pick { min-width: 72px; }
 .ps-nm { width: 100%; font-weight: 600; }
+/* 每期確認：各檔實際成交 */
+.pd-note { margin: 4px 0 8px; line-height: 1.5; }
+.pd-st { background: var(--soft); border-radius: 14px; padding: 8px 10px; margin-bottom: 8px; }
+.pd-st-h { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.pd-st-h .grow small { display: block; font-size: 11.5px; color: var(--muted); }
+.pd-st-in { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; align-items: end; }
+.pd-st-in label span { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 2px; }
+.pd-st-in input { width: 100%; }
+.pd-sub { grid-column: 1 / -1; text-align: right; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#periodDialog { max-height: 86vh; overflow-y: auto; }

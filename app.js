@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.21.1';
+const APP_VERSION = '5.22.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -2000,7 +2000,7 @@ function renderInvest() {
           <div class="kv"><span>進度</span><span>第 ${Math.min(pr.current, pr.n)} / ${pr.n} 期</span></div>
           ${nowRow ? `<div class="kv"><span>本月要投入</span><b>${fmt(nowRow.amt)}</b></div>` : nextRow ? `<div class="kv"><span>下次投入</span><span>${nextRow.ym.replace('-', '/')} · ${fmt(nextRow.amt)}</span></div>` : '<div class="kv"><span>狀態</span><b class="pos">全部投入完成</b></div>'}
         </div></div>
-      ${assumed ? `<div class="hint-row warn-row">${Icon('warn')}<span>有 ${assumed} 期已過但還沒確認，先當作照計畫投入。點下面那期就能確認實際金額。</span></div>` : ''}
+      ${assumed ? `<div class="hint-row warn-row">${Icon('warn')}<span>有 ${assumed} 期已過但還沒確認，負債先當作照計畫動用${p.ptype === '股票' ? '；股票要確認後才會加進持股' : ''}。點下面那期就能填實際${p.ptype === '股票' ? '股數、成交價' : '金額'}。</span></div>` : ''}
       ${rs ? `<div class="int-box"><div class="kv"><span>目前每月利息</span><b>${fmt(rs.monthly)}</b></div>
         <div class="kv"><span>全部投入後每月利息（${rs.fullYM || ''} 起）</span><b class="neg">${fmt(rs.fullInterest)}</b></div>
         <div class="kv"><span>每多投入 100 萬，每月利息增加</span><span>${fmt(1e6 * num(src.rate) / 100 / 12)}</span></div></div>` : ''}
@@ -2031,19 +2031,75 @@ document.addEventListener('click', e => {
   const i = +r.dataset.i;
   const planned = Plan.amounts(p)[i];
   const done = p.done && p.done[i] != null;
-  periodCtx = { p, i };
+  periodCtx = { p, i, manual: false };
   $('pdTitle').innerHTML = `${Icon('invest')} 第 ${i + 1} 期 · ${Loan.ymAdd(p.startYM, i).replace('-', '/')}`;
   $('pdAmount').value = Math.round(done ? p.done[i] : planned);
-  $('pdPlanned').textContent = `計畫金額 ${fmt(planned)}`;
+  $('pdPlanned').textContent = `計畫金額 ${fmt(planned)}${state.debts.some(d => d.id === p.source) ? '・確認後的金額就是這期理財型房貸實際動用的金額' : ''}`;
+  drawPdStocks(p, i, planned);
   $('pdUndo').hidden = !done;
   $('periodDialog').showModal();
 });
+// 股票計畫：每期依標的填實際成交股數與價格，確認後同步寫進股票持股（之後還能再改）
+const lotSrc = (p, i, sym) => `plan:${p.id}:${i}:${sym}`;
+function findPlanLot(p, i, x) {
+  const cat = x.mkt === 'us' ? '美股' : '台股';
+  const h = findHolding(cat, x.sym);
+  const lot = h && (h.lots || []).find(l => l.src === lotSrc(p, i, Stocks.norm(x.mkt, x.sym)));
+  return { h, lot, cat };
+}
+function drawPdStocks(p, i, planned) {
+  const el = $('pdStocks');
+  const list = p.ptype === '股票' ? (p.stocks || []).filter(x => x.sym) : [];
+  periodCtx.stocks = list;
+  $('pdAmtLabel').textContent = list.length ? '這期實際動用金額（新台幣）' : '實際投入金額';
+  if (!list.length) { el.innerHTML = ''; return; }
+  const per = planPer(p), ratio = per ? planned / per : 1;
+  el.innerHTML = `<div class="small muted pd-note">填每一檔實際買了幾股、成交價多少；確認後會加進股票持股，並且就是這期理財型房貸的動用金額。之後再點這期可以隨時改。</div>` + list.map((x, k) => {
+    const q = Stocks.quote(x.mkt, x.sym), fx = Stocks.fx(x.mkt === 'us' ? 'USD' : 'TWD', state.currency);
+    const { lot } = findPlanLot(p, i, x);
+    const amt = stockAmt(x, per) * ratio;
+    const px = lot ? num(lot.price) : q ? q.price : '';
+    const sh = lot ? num(lot.shares) : px ? (x.mkt === 'us' ? Math.floor(amt / (px * fx) * 1e4) / 1e4 : Math.floor(amt / (px * fx))) : '';
+    return `<div class="pd-st" data-k="${k}"><div class="pd-st-h"><span class="ticker small">${esc(x.sym)}</span><span class="grow">${esc(q ? q.name : '')}<small>計畫 ${fmt(amt)}${q ? `・收盤 ${price(q.price, q.ccy)}` : ''}${lot ? '・<b class="pos">已記錄</b>' : ''}</small></span></div>
+      <div class="pd-st-in"><label><span>股數</span><input type="number" inputmode="decimal" step="any" class="pd-sh" value="${sh === '' ? '' : sh}"></label>
+      <label><span>成交價${x.mkt === 'us' ? '（USD）' : ''}</span><input type="number" inputmode="decimal" step="any" class="pd-px" value="${px === '' ? '' : px}"></label>
+      <span class="pd-sub" data-fx="${fx}"></span></div></div>`;
+  }).join('');
+  pdRecalc(!(p.done && p.done[i] != null));
+}
+function pdRecalc(setAmount) {
+  let sum = 0;
+  $('pdStocks').querySelectorAll('.pd-st').forEach(r => {
+    const sh = num(r.querySelector('.pd-sh').value), px = num(r.querySelector('.pd-px').value), fx = +r.querySelector('.pd-sub').dataset.fx || 1;
+    const v = sh * px * fx; sum += v;
+    r.querySelector('.pd-sub').textContent = v ? `= ${fmt(v)}` : '';
+  });
+  if (setAmount && !periodCtx.manual && sum) $('pdAmount').value = Math.round(sum);
+}
+$('pdStocks').addEventListener('input', () => pdRecalc(true));
+$('pdAmount').addEventListener('input', () => { periodCtx.manual = true; });
+function syncPlanLots(p, i, remove) {
+  for (const x of (p.stocks || []).filter(x => x.sym)) {
+    const { h, lot, cat } = findPlanLot(p, i, x);
+    if (lot) h.lots = h.lots.filter(l => l !== lot);
+    if (h && !h.lots.length) state.assets = state.assets.filter(a => a !== h);
+  }
+  if (remove) return;
+  const ym = Loan.ymAdd(p.startYM, i), day = String(Math.min(Loan.daysIn(ym), Math.round(num(p.day)) || 1)).padStart(2, '0');
+  $('pdStocks').querySelectorAll('.pd-st').forEach(r => {
+    const x = periodCtx.stocks[+r.dataset.k];
+    const sh = num(r.querySelector('.pd-sh').value), px = num(r.querySelector('.pd-px').value);
+    if (!sh) return;
+    const cat = x.mkt === 'us' ? '美股' : '台股';
+    addLot(cat, x.sym, { id: uid(), type: 'buy', date: `${ym}-${day}`, shares: sh, price: px || '', src: lotSrc(p, i, Stocks.norm(x.mkt, x.sym)), note: `${p.name} 第 ${i + 1} 期` });
+  });
+}
 function savePeriod(mode) {
   const { p, i } = periodCtx;
   const v = num($('pdAmount').value);
-  if (mode === 'done') { p.done = { ...(p.done || {}), [i]: v }; UI.burst('coin'); }
+  if (mode === 'done') { p.done = { ...(p.done || {}), [i]: v }; if (p.ptype === '股票') syncPlanLots(p, i); UI.burst('coin'); }
   if (mode === 'plan') { p.custom = { ...(p.custom || {}) }; p.custom[i] = v; }
-  if (mode === 'undo' && p.done) { delete p.done[i]; }
+  if (mode === 'undo' && p.done) { delete p.done[i]; if (p.ptype === '股票') syncPlanLots(p, i, true); }
   $('periodDialog').close();
   save();
 }

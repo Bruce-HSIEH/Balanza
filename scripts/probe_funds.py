@@ -22,7 +22,7 @@ try:
     h = get(B + '/')
     mains = [s for s in re.findall(r'src="([^"]+\.js)"', h) if 'main' in s]
     out['mains'] = mains
-    t = get(B + '/' + mains[0].lstrip('/'))
+    t = get(mains[0] if mains[0].startswith('http') else B + '/' + mains[0].lstrip('/'))
     i = t.find('onshoreCommonSelectOrgSelection(')
     j = t.find('basePath}', i)
     path = t[j + 9: t.find('`', j)] if i >= 0 and j >= 0 else None

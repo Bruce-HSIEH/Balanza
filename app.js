@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.20.1';
+const APP_VERSION = '5.20.2';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -183,7 +183,7 @@ function stockInfo(a) {
 function assetValue(a) {
   const s = stockInfo(a);
   if (s) return s.value;
-  if (a.category === '車輛' && num(a.buyPrice) && num(a.buyYear)) return carValue(num(a.buyPrice), num(a.buyYear));   // 殘值每年自動重算
+  if (a.category === '車輛' && num(a.buyPrice) && num(a.buyYear)) return carValue(num(a.buyPrice), num(a.buyYear), a.buyMonth);   // 殘值每年自動重算
   return num(a.amount);
 }
 // 車子只看殘值，不算進總資產／淨資產
@@ -561,7 +561,7 @@ function renderAssets(s) {
     const rows = g.items.map(({ a, v }) => {
       if (g.c.stock && a.sym) return stockRow(a, i++);
       let sub = '';
-      if (a.category === '車輛' && a.brand) { const b = brandOf(a.brand); sub = `${b ? b.zh : a.brand}${a.model ? ' ' + a.model : ''}${a.buyYear ? ' · ' + a.buyYear + ' 年購入' : ''}${num(a.buyPrice) ? ' · 買價 ' + short(num(a.buyPrice)) : ''}`; }
+      if (a.category === '車輛' && a.brand) { const b = brandOf(a.brand); sub = `${b ? b.zh : a.brand}${a.model ? ' ' + a.model : ''}${a.buyYear ? ' · ' + a.buyYear + ' 年購入' : ''}${num(a.buyPrice) ? ' · 買價 ' + short(num(a.buyPrice)) : ''}${num(a.buyPrice) && num(a.buyYear) ? '' : ' · 未填購入年份或價格，點開補上才會自動算殘值'}`; }
       if (a.category === '不動產' && a.district) sub = `${a.district}${a.road || ''}${a.ping ? ' · ' + a.ping + ' 坪' : ''}${a.lvrAt ? ' · 實價估' : ''}`;
       let eq = '';
       if (isRE(a)) { const L = loansOn(a.id, s.st); if (L.list.length) eq = `<div class="sub eq-line">貸款 <span class="neg">${short(L.debt)}</span> · 淨值 <b class="${v - L.debt >= 0 ? 'pos' : 'neg'}">${short(v - L.debt)}</b> · 成數 ${v ? Math.round(L.debt / v * 100) : '—'}%</div>`; }
@@ -927,8 +927,9 @@ const FIELDS = {
     { k: 'brand', label: '廠牌', type: 'pick', opts: 'brand', show: isCar },
     { k: 'model', label: '車款', type: 'pick', opts: 'carModel', show: v => isCar(v) && !!v.brand },
     { k: 'carColor', label: '車色', type: 'pick', opts: 'carColor', show: v => isCar(v) && !!v.brand },
-    { k: 'buyYear', label: '購入年份', type: 'number', ph: String(new Date().getFullYear()), show: isCar, half: true },
-    { k: 'buyPrice', label: '購入價格', type: 'number', show: isCar, half: true },
+    { k: 'buyYear', label: '購入年份', type: 'number', ph: String(new Date().getFullYear()), show: isCar, half: true, req: true },
+    { k: 'buyMonth', label: '購入月份（選填）', type: 'number', min: 1, max: 12, ph: '例：5', show: isCar, half: true },
+    { k: 'buyPrice', label: '購入價格（新台幣元）', type: 'number', show: isCar, half: true, req: true, ph: '例：950000', hintFn: v => num(v.buyPrice) && num(v.buyPrice) < 10000 ? '<span class="neg">要填「元」，例如 95 萬填 950000</span>' : '' },
     { panel: 'carPanel', show: isCar },
     { sec: ['wallet', '價值'], show: v => !isStock(v) && !(isCar(v) && num(v.buyPrice) && num(v.buyYear)) },
     { k: 'amount', label: '目前價值', type: 'number', req: true, show: v => !isStock(v) && !(isCar(v) && num(v.buyPrice) && num(v.buyYear)) },
@@ -1023,7 +1024,7 @@ FIELDS.bill.find(f => f.k === 'name').ph = v => isCardBill(v) ? EX.billName.card
 FIELDS.bill.find(f => f.k === 'amount').ph = v => isCardBill(v) ? EX.billAmount.card : EX.billAmount[v.cat] || '';
 FIELDS.bill.find(f => f.k === 'amount').labelFn = v => isCardBill(v) ? '每期大約金額（選填）' : '每次扣款金額';
 FIELDS.bill.find(f => f.k === 'note').ph = v => isCardBill(v) ? EX.billNote.card : EX.billNote.sub;
-const NUMERIC = new Set(['nlLimit', 'nlRate', 'closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
+const NUMERIC = new Set(['buyMonth', 'nlLimit', 'nlRate', 'closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
 
 // ---------- 編輯器 ----------
 let editing = null;
@@ -1123,7 +1124,7 @@ $('editFields').addEventListener('input', e => {
   }
   if (editing.kind === 'debt') { drawLoanPanel(); drawChgPanel(); }
   if (editing.kind === 'plan') drawPlanPanel();
-  if (editing.kind === 'asset' && isCar(vals) && ['buyYear', 'buyPrice', 'model'].includes(e.target.name)) refreshForm();
+  if (editing.kind === 'asset' && isCar(vals) && ['buyYear', 'buyMonth', 'buyPrice', 'model'].includes(e.target.name)) refreshForm();
   if (editing.kind === 'asset' && isRE(vals) && e.target.name === 'ping') drawLvrPanel();
   if (editing.kind === 'asset' && isRE(vals) && vals.id && e.target.name === 'amount') drawPropLoanPanel();
   if (editing.kind === 'asset' && isStock(vals) && ['shares', 'cost', 'manualPrice'].includes(e.target.name)) drawStockPanel();
@@ -1394,9 +1395,17 @@ function readChg() {
 $('editFields').addEventListener('input', e => { if (e.target.dataset.cf && chgEdit) chgEdit[e.target.dataset.cf] = e.target.value; });
 
 // --- 車輛 ---
-function carValue(price, year) {
-  const age = Math.max(0, new Date().getFullYear() - num(year));
-  const v = price * (age === 0 ? 1 : 0.8 * Math.pow(0.88, age - 1));
+// 車齡（年，可有小數）：有購入月份就用月份，沒有就當年中購入
+function carAge(year, month) {
+  const now = new Date(), y = num(year);
+  if (!y) return 0;
+  const m = num(month) ? num(month) - 1 : 6;
+  return Math.max(0, (now.getFullYear() + now.getMonth() / 12) - (y + m / 12));
+}
+// 第一年約 -20%（逐月攤），之後每年約 -12%，最低保留 10%
+function carValue(price, year, month) {
+  const age = carAge(year, month);
+  const v = price * (age <= 1 ? 1 - 0.2 * age : 0.8 * Math.pow(0.88, age - 1));
   return Math.round(Math.max(v, price * 0.1));
 }
 function drawCarPanels() {
@@ -1408,10 +1417,10 @@ function drawCarPanels() {
     <div class="car-name">${b ? esc(b.zh === b.v ? b.v : b.zh + ' ' + b.v) + ' ' + esc(vals.model || '') : '先選廠牌'} <small class="muted">${b ? esc(BODY_ZH[type] || '') + ' · ' + esc(b.f) : ''}</small></div>`;
   const el = $('carPanel');
   if (!el) return;
-  const pr = num(vals.buyPrice), year = num(vals.buyYear);
+  const pr = num(vals.buyPrice), year = num(vals.buyYear), age = carAge(year, vals.buyMonth);
   if (!pr || !year) { el.innerHTML = `<div class="hint-row">${Icon('down')}<span>填入購入年份與價格，就會自動估算目前殘值（車子不計入總資產）</span></div>`; return; }
-  const v = carValue(pr, year);
-  el.innerHTML = `<div class="kv"><span>估算殘值（車齡 ${Math.max(0, new Date().getFullYear() - year)} 年）</span><b class="accent">${fmt(v)}</b></div>
+  const v = carValue(pr, year, vals.buyMonth);
+  el.innerHTML = `<div class="kv"><span>估算殘值（車齡約 ${age < 1 ? Math.round(age * 12) + ' 個月' : age.toFixed(1) + ' 年'}）</span><b class="accent">${fmt(v)}</b></div>
     <div class="kv"><span>已折舊</span><span class="neg">${fmt(pr - v)}（${(100 - v / pr * 100).toFixed(0)}%）</span></div>
     <div class="muted small">殘值會自動算、每年自動更新，<b>不計入總資產與淨資產</b>。依一般折舊估算（首年約 -20%，之後每年約 -12%），實際以中古車行情為準。</div>`;
 }

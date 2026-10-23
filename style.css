@@ -1145,3 +1145,13 @@ button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; c
 .lots li.est { opacity: .75; border-left: 3px dashed var(--line); }
 .lots li[data-goplan] { cursor: pointer; }
 .lots .chip { font-size: 10.5px; padding: 1px 6px; vertical-align: 1px; }
+
+.ps-ccy { flex: none; border: 1px solid var(--line, #ddd); background: var(--soft); color: inherit; border-radius: 10px; padding: 6px 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.ps-ccy.us { background: #e8f1ff; color: #1e5bd8; border-color: #b9d0ff; }
+@media (prefers-color-scheme: dark) { .ps-ccy.us { background: #1c2a44; color: #9cc0ff; border-color: #2f4a7a; } }
+.ps-money { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ps-money .ps-amt { flex: 1; min-width: 0; width: auto; }
+.ps-conv { flex: none; white-space: nowrap; }
+.ps-conv:empty { display: none; }
+.ps-sum { flex-direction: column; align-items: flex-start; gap: 2px; }
+.ps-fx { font-size: 11px; }

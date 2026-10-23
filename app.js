@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.22.1';
+const APP_VERSION = '5.23.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -1545,10 +1545,10 @@ $('editForm').addEventListener('submit', e => {
   if (editing.kind === 'plan') {
     if ((obj.ptype || '股票') === '股票') {
       const per0 = obj.pmode === 'monthly' ? num(obj.perMonth) : num(obj.total) / Math.max(1, Math.round(num(obj.months)));
-      obj.stocks = (vals.stocks || []).filter(x => x.sym).map(x => ({ mkt: x.mkt, sym: x.sym, amt: Math.round(stockAmt(x, per0)) }));
-      const sum = obj.stocks.reduce((t, x) => t + x.amt, 0);
-      if (obj.stocks.length && Math.round(sum) !== Math.round(per0) && !confirm(`各檔金額合計 ${fmt(sum)}，跟每期 ${fmt(per0)} 不一樣，還是要儲存嗎？`)) return;
-      if (obj.stocks.length) obj.targets = obj.stocks.map(x => `${x.sym} ${x.amt}`).join('、');
+      obj.stocks = (vals.stocks || []).filter(x => x.sym).map(x => x.ccy === 'USD' && x.amt !== '' && x.amt != null
+        ? { mkt: x.mkt, sym: x.sym, ccy: 'USD', amt: Math.round(num(x.amt) * 100) / 100 }
+        : { mkt: x.mkt, sym: x.sym, amt: Math.round(stockAmt(x, per0)) });
+      if (obj.stocks.length) obj.targets = obj.stocks.map(x => `${x.sym} ${x.ccy === 'USD' ? 'US$' : ''}${x.amt}`).join('、');
     } else delete obj.stocks;
     if (obj.pmode === 'monthly') obj.total = Math.round(num(obj.perMonth) * Math.max(1, Math.round(num(obj.months))));
     else delete obj.perMonth;
@@ -2015,7 +2015,7 @@ function renderInvest() {
       <div class="chart-wrap">${Charts.invest(rows, { current: curIdx })}</div>
       <div class="legend"><span><span class="dot" style="--c:#14b8a6"></span>累計投入（左軸）</span>${src ? '<span><span class="dot" style="--c:#ff7043"></span>投入後每月利息（右軸）</span>' : ''}</div>
       ${p.ptype === '股票' && (p.stocks || []).length ? `<div class="plan-stocks">${p.stocks.map(x => { const q = Stocks.quote(x.mkt, x.sym); const amt = stockAmt(x, planPer(p)); const k = q ? Stocks.fx(q.ccy, state.currency) : 1;
-        return `<div class="pst"><span class="ticker small">${esc(x.sym)}</span><span class="grow">${esc(q ? q.name : '')}<small>${q ? `收盤 ${price(q.price, q.ccy)}・<span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span>` : '找不到報價'}</small></span>${q ? UI.sparkline(q.series, 70, 24, { tw: x.mkt === 'tw' }) : ''}${amt && q ? `<span class="pst-r">${fmt(amt)}<small>≈ ${(amt / (q.price * k)).toFixed(x.mkt === 'us' ? 2 : 0)} 股</small></span>` : ''}</div>`; }).join('')}</div>` : targets.length ? `<div class="targets"><div class="small muted">每期分配（以每期 ${fmt(pr.amounts[0])} 計）</div>${targets.map(t => `<span class="chip blue">${esc(t.name)} ${t.pct}% · ${short(pr.amounts[0] * t.pct / 100)}</span>`).join('')}</div>` : p.targets ? `<div class="small muted">標的：${esc(p.targets)}</div>` : ''}
+        return `<div class="pst"><span class="ticker small">${esc(x.sym)}</span><span class="grow">${esc(q ? q.name : '')}<small>${q ? `收盤 ${price(q.price, q.ccy)}・<span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span>` : '找不到報價'}</small></span>${q ? UI.sparkline(q.series, 70, 24, { tw: x.mkt === 'tw' }) : ''}${amt && q ? `<span class="pst-r">${x.ccy === 'USD' ? `US$${(+x.amt).toLocaleString()}<small>≈ ${fmt(amt)}</small><small>` : `${fmt(amt)}<small>`}≈ ${(amt / (q.price * k)).toFixed(x.mkt === 'us' ? 2 : 0)} 股</small></span>` : ''}</div>`; }).join('')}</div>` : targets.length ? `<div class="targets"><div class="small muted">每期分配（以每期 ${fmt(pr.amounts[0])} 計）</div>${targets.map(t => `<span class="chip blue">${esc(t.name)} ${t.pct}% · ${short(pr.amounts[0] * t.pct / 100)}</span>`).join('')}</div>` : p.targets ? `<div class="small muted">標的：${esc(p.targets)}</div>` : ''}
       <ul class="plist">${rows.map(r => `<li class="prow ${r.state}" data-plan="${p.id}" data-i="${r.i}">
         <span class="pnum">${r.i + 1}</span>
         <div class="grow"><div><b>${r.ym.replace('-', '/')}${p.day ? '/' + String(p.day).padStart(2, '0') : ''}</b> ${({ done: '<span class="chip green">已確認</span>', assumed: '<span class="chip gray">未確認</span>', now: '<span class="chip red">本月</span>', future: '' })[r.state]}</div>
@@ -2078,10 +2078,10 @@ function syncPlanEstimates() {
       if (Plan.periodState(p, i, cur) !== 'assumed') return;
       const ym = Loan.ymAdd(p.startYM, i), day = String(Math.min(Loan.daysIn(ym), Math.round(num(p.day)) || 1)).padStart(2, '0'), dt = `${ym}-${day}`;
       for (const x of ss) {
-        const amt = stockAmt(x, per) * (per ? amount / per : 1);
+        const amt = stockAmt(x, per);
         const px = estPrice(x.mkt, x.sym, dt);
         if (!px || !amt) continue;
-        const fx = Stocks.fx(x.mkt === 'us' ? 'USD' : 'TWD', state.currency);
+        const fx = Stocks.fx(x.mkt === 'us' ? 'USD' : 'TWD', 'TWD');
         const sh = x.mkt === 'us' ? Math.round(amt / (px * fx) * 1e4) / 1e4 : Math.floor(amt / (px * fx));
         if (!sh) continue;
         const cat = x.mkt === 'us' ? '美股' : '台股', key = lotSrc(p, i, Stocks.norm(x.mkt, x.sym));
@@ -2122,7 +2122,7 @@ function drawPdStocks(p, i, planned) {
   el.innerHTML = `<div class="small muted pd-note">填每一檔實際買了幾股、成交價多少；確認後會加進股票持股，並且就是這期理財型房貸的動用金額。之後再點這期可以隨時改。</div>` + list.map((x, k) => {
     const q = Stocks.quote(x.mkt, x.sym), fx = Stocks.fx(x.mkt === 'us' ? 'USD' : 'TWD', state.currency);
     const { lot } = findPlanLot(p, i, x);
-    const amt = stockAmt(x, per) * ratio;
+    const amt = stockAmt(x, per);
     const px = lot ? num(lot.price) : q ? q.price : '';
     const sh = lot ? num(lot.shares) : px ? (x.mkt === 'us' ? Math.floor(amt / (px * fx) * 1e4) / 1e4 : Math.floor(amt / (px * fx))) : '';
     return `<div class="pd-st" data-k="${k}"><div class="pd-st-h"><span class="ticker small">${esc(x.sym)}</span><span class="grow">${esc(q ? q.name : '')}<small>計畫 ${fmt(amt)}${q ? `・收盤 ${price(q.price, q.ccy)}` : ''}${lot ? '・<b class="pos">已記錄</b>' : ''}</small></span></div>
@@ -2178,7 +2178,20 @@ $('pdCancel').addEventListener('click', () => $('periodDialog').close());
 // 每期要投入多少（依計畫方式）
 const planPer = v => { const n = Math.max(1, Math.round(num(v.months))); return v.pmode === 'monthly' ? num(v.perMonth) : num(v.total) / n; };
 // 標的每期金額：新版存金額；舊資料只有 %，換算成金額
-const stockAmt = (x, per) => x.amt !== undefined && x.amt !== '' ? num(x.amt) : (num(x.pct) ? per * num(x.pct) / 100 : 0);
+// 金額可以填台幣或美金（x.ccy === 'USD'），回傳一律換成台幣
+const stockAmt = (x, per) => x.amt !== undefined && x.amt !== '' ? num(x.amt) * (x.ccy === 'USD' ? Stocks.fx('USD', 'TWD') : 1) : (num(x.pct) ? per * num(x.pct) / 100 : 0);
+// 最新匯率與更新時間
+function fxNote() {
+  const m = Stocks.info() || {}, r = Stocks.fx('USD', 'TWD');
+  const t = m.updated ? new Date(m.updated) : null;
+  const when = t && !isNaN(t) ? `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : '—';
+  return `匯率 1 USD = ${r.toFixed(2)} TWD・${when} 更新`;
+}
+function psSumHTML(list, per) {
+  const sum = list.reduce((t, x) => t + stockAmt(x, per), 0);
+  const usd = list.some(x => x.ccy === 'USD' && x.amt !== '' && x.amt != null);
+  return `<span>單筆合計 <b>${usd ? '約 ' : ''}${fmt(sum)}</b></span>${per ? `<small>貸款每期動用以上面的每${vals.pmode === 'monthly' ? '月' : '期'}投入 ${fmt(per)} 計算</small>` : ''}${usd ? `<small class="ps-fx">${fxNote()}</small>` : ''}`;
+}
 // 投資計畫的股票標的：台股／美股、可搜尋代號、帶出收盤價與走勢
 function drawPlanStocks() {
   const el = $('planStocks'); if (!el) return;
@@ -2187,8 +2200,6 @@ function drawPlanStocks() {
   const per = planPer(vals);
   // 只有一檔、還沒填金額 → 自動帶入每期金額
   if (list.length === 1 && (list[0].amt === undefined || list[0].amt === '') && per) list[0].amt = Math.round(per);
-  const sum = list.reduce((t, x) => t + stockAmt(x, per), 0);
-  const diff = Math.round(per - sum);
   el.innerHTML = `<div class="panel-title">${Icon('chart')} 投資標的</div>
     ${list.map((x, i) => {
       const q = x.sym ? Stocks.quote(x.mkt, x.sym) : null;
@@ -2198,22 +2209,26 @@ function drawPlanStocks() {
         <div class="ps-top">
           <button type="button" class="bk-tag ${x.mkt === 'us' ? 'us' : ''}" data-psm="${i}">${x.mkt === 'us' ? '美股' : '台股'} ⇄</button>
           <button type="button" class="pickbtn ps-pick ${x.sym ? '' : 'empty'}" data-psp="${i}"><span>${x.sym ? esc(x.sym) : '選股票'}</span><i>›</i></button>
-          <input class="ps-pct ps-amt" type="number" inputmode="decimal" step="any" placeholder="每期金額" value="${esc(x.amt !== undefined && x.amt !== '' ? x.amt : share ? Math.round(share) : '')}" data-psv="${i}" aria-label="每期投入金額">
           ${list.length > 1 ? `<button type="button" class="bk-del" data-psd="${i}" aria-label="刪除">×</button>` : ''}
+        </div>
+        <div class="ps-money"><span class="small muted">每期金額</span>
+          <button type="button" class="ps-ccy ${x.ccy === 'USD' ? 'us' : ''}" data-psc="${i}" aria-label="切換台幣／美金">${x.ccy === 'USD' ? 'US$ ⇄' : 'NT$ ⇄'}</button>
+          <input class="ps-amt" type="number" inputmode="decimal" step="any" placeholder="${x.ccy === 'USD' ? '例如 500' : '例如 10000'}" value="${esc(x.amt !== undefined && x.amt !== '' ? x.amt : share ? Math.round(share) : '')}" data-psv="${i}" aria-label="每期投入金額">
+          <span class="ps-conv small muted" data-psx="${i}">${x.ccy === 'USD' && share ? `≈ ${fmt(share)}` : ''}</span>
         </div>
         ${q ? `<div class="ps-info"><span class="ps-nm">${esc(q.name)}</span><span>收盤 <b>${price(q.price, q.ccy)}</b> <span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span></span>${UI.sparkline(q.series, 90, 26, { tw: x.mkt === 'tw' })}${share ? `<span class="muted">每期約可買 ${(share / (q.price * k)).toFixed(x.mkt === 'us' ? 2 : 0)} 股</span>` : ''}</div>` : x.sym ? '<div class="ps-info muted small">找不到報價</div>' : ''}
       </div>`;
     }).join('')}
-    <div class="ps-sum ${per && diff !== 0 ? 'bad' : ''}"><span>合計 <b>${fmt(sum)}</b>／每期 ${fmt(per)}</span>${!per ? '<small>先填上面的金額與月數</small>' : diff === 0 ? '<small class="pos">剛好</small>' : `<small>${diff > 0 ? `還差 ${fmt(diff)}` : `多了 ${fmt(-diff)}`}</small>${list.length > 1 ? `<button type="button" class="link-btn" data-psfill="1">補到最後一檔</button>` : ''}`}</div>
+    <div class="ps-sum">${psSumHTML(list, per)}</div>
     <div class="btnrow"><button type="button" class="btn mini" data-psa="1">＋ 再加一檔</button></div>`;
 }
 $('editFields').addEventListener('click', async e => {
-  const t = e.target.closest('[data-psm], [data-psp], [data-psd], [data-psa], [data-psfill]');
+  const t = e.target.closest('[data-psm], [data-psp], [data-psd], [data-psa], [data-psc]');
   if (!t || !t.closest('#planStocks')) return;
   readInputs();
   const L = vals.stocks;
-  if (t.dataset.psfill) { const per = planPer(vals), others = L.slice(0, -1).reduce((a, x) => a + stockAmt(x, per), 0); L[L.length - 1].amt = Math.max(0, Math.round(per - others)); }
-  else if (t.dataset.psa) { const per = planPer(vals), used = L.reduce((a, x) => a + stockAmt(x, per), 0); L.push({ mkt: L.length ? L[L.length - 1].mkt : 'tw', sym: '', amt: per > used ? Math.round(per - used) : '' }); }
+  if (t.dataset.psc != null) { const x = L[+t.dataset.psc]; x.ccy = x.ccy === 'USD' ? 'TWD' : 'USD'; }
+  else if (t.dataset.psa) { const last = L[L.length - 1]; L.push({ mkt: last ? last.mkt : 'tw', ccy: last ? last.ccy || 'TWD' : 'TWD', sym: '', amt: '' }); }
   else if (t.dataset.psd != null) L.splice(+t.dataset.psd, 1);
   else if (t.dataset.psm != null) { const x = L[+t.dataset.psm]; x.mkt = x.mkt === 'us' ? 'tw' : 'us'; x.sym = ''; }
   else if (t.dataset.psp != null) {
@@ -2226,16 +2241,14 @@ $('editFields').addEventListener('click', async e => {
 });
 $('editFields').addEventListener('input', e => {
   const i = e.target.dataset && e.target.dataset.psv;
-  if (i != null && vals.stocks) { vals.stocks[+i].amt = e.target.value; delete vals.stocks[+i].pct; updatePsSum(); }
+  if (i != null && vals.stocks) { const x = vals.stocks[+i]; x.amt = e.target.value; delete x.pct; updatePsSum(); const c = $('planStocks').querySelector(`[data-psx="${i}"]`); if (c) c.textContent = x.ccy === 'USD' && num(x.amt) ? `≈ ${fmt(stockAmt(x, 0))}` : ''; }
   else if (editing && editing.kind === 'plan' && ['total', 'perMonth', 'months'].includes(e.target.name)) updatePsSum();
 });
 // 只更新合計那一行，不重畫輸入框（打字時才不會跳掉）
 function updatePsSum() {
   const el = $('planStocks'); if (!el || !vals.stocks) return;
   const box = el.querySelector('.ps-sum'); if (!box) return;
-  const per = planPer(vals), sum = vals.stocks.reduce((t, x) => t + stockAmt(x, per), 0), diff = Math.round(per - sum);
-  box.classList.toggle('bad', !!per && diff !== 0);
-  box.innerHTML = `<span>合計 <b>${fmt(sum)}</b>／每期 ${fmt(per)}</span>${!per ? '<small>先填上面的金額與月數</small>' : diff === 0 ? '<small class="pos">剛好</small>' : `<small>${diff > 0 ? `還差 ${fmt(diff)}` : `多了 ${fmt(-diff)}`}</small>${vals.stocks.length > 1 ? '<button type="button" class="link-btn" data-psfill="1">補到最後一檔</button>' : ''}`}`;
+  box.innerHTML = psSumHTML(vals.stocks, planPer(vals));
 }
 $('editFields').addEventListener('change', e => { if (e.target.dataset && e.target.dataset.psv != null) drawPlanStocks(); });
 

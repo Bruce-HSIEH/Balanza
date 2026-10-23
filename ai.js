@@ -112,11 +112,19 @@ const AI = (() => {
     const o = { type: String(sc.type).toUpperCase() };
     if (sc.description) o.description = sc.description;
     if (sc.enum) o.enum = sc.enum;
-    if (sc.properties) { o.properties = {}; for (const [k, v] of Object.entries(sc.properties)) o.properties[k] = toGemini(v); }
+    if (sc.properties) {
+      // Gemini 常常省略「選填」欄位，所以全部設成必填、不知道的填 null
+      const req = new Set(sc.required || []);
+      o.properties = {};
+      for (const [k, v] of Object.entries(sc.properties)) { o.properties[k] = toGemini(v); if (!req.has(k)) o.properties[k].nullable = true; }
+      o.required = Object.keys(sc.properties);
+      o.propertyOrdering = Object.keys(sc.properties);
+    }
     if (sc.items) o.items = toGemini(sc.items);
-    if (sc.required) o.required = sc.required;
     return o;
   }
+  // 去掉 null 欄位
+  const clean = arr => (Array.isArray(arr) ? arr : []).map(x => Object.fromEntries(Object.entries(x || {}).filter(([, v]) => v !== null && v !== '')));
   async function callGemini(key, model, text, signal) {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST', signal,
@@ -139,7 +147,7 @@ const AI = (() => {
     const txt = (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';
     let out = {};
     try { out = JSON.parse(txt); } catch (e) { const m = txt.match(/\{[\s\S]*\}/); if (m) try { out = JSON.parse(m[0]); } catch (e2) { /* ignore */ } }
-    return { items: Array.isArray(out.items) ? out.items : [], usage: j.usageMetadata };
+    return { items: clean(out.items), usage: j.usageMetadata };
   }
 
   // ---- 看圖：券商 App 庫存截圖 → 持股 ----
@@ -181,7 +189,9 @@ const AI = (() => {
 - 「整股」「碎股」「定額」這類標籤是同一檔的交易方式，不要拆成多筆；用「總股數」那一行。
 - 欄位對照補充：總股數→shares（保留小數，例如 53.72618）；成交均價 (USD)／平均成本→avg_cost；成交均價後面標 (USD) 代表美股。
 - symbol 只放代號本身（例如 NVDA、QQQ、2330），不要加市場、逗號或交易所。英文代號一律 market=us，數字代號 market=tw。
-- 「總預估損益」如果幣別跟股價不同（例如美股但損益是台幣），pl_amount 不要填，只填 pl_pct。`;
+- 「總預估損益」如果幣別跟股價不同（例如美股但損益是台幣），pl_amount 填 null，只填 pl_pct。
+- 每一檔都一定要盡量填 shares 和 avg_cost，畫面上看得到就一定要填數字。
+範例：畫面寫「QQQ／總股數 53.72618／成交均價 (USD) 660.016402／總預估損益 +110,927 (+9.94%)」→ {"market":"us","symbol":"QQQ","name":"Invesco QQQ Trust","shares":53.72618,"avg_cost":660.016402,"price":null,"market_value":null,"cost_total":null,"pl_amount":null,"pl_pct":9.94}`;
 
   async function visionClaude(key, model, images, signal) {
     const content = [...images.map(im => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } })), { type: 'text', text: VISION_PROMPT }];
@@ -218,7 +228,7 @@ const AI = (() => {
       throw new Error(`Gemini 回應錯誤（${res.status}）：${msg}`);
     }
     const txt = (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';
-    try { const o = JSON.parse(txt); return Array.isArray(o.holdings) ? o.holdings : []; } catch (e) { return []; }
+    try { const o = JSON.parse(txt); return clean(o.holdings); } catch (e) { return []; }
   }
   // 一次最多送 5 張，多的分批
   async function readHoldings(cfg, images, signal, onProgress) {

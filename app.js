@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.20.2';
+const APP_VERSION = '5.20.3';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -816,6 +816,7 @@ const OPTS = {
     if (!ps.length) throw new Error('還沒有不動產資產，先到「資產」新增這間房子');
     return [opt('', '不指定', Icon('other'), '不和任何房子連結'), ...ps.map(a => opt(a.id, a.name, assetIcon(a), `估值 ${short(assetValue(a))}${a.district ? ' · ' + a.district + (a.road || '') : ''}`))];
   },
+  planMode: () => [opt('total', '投資總額', Icon('invest'), '一筆總額分幾個月投入，例如 1460 萬分 15 個月'), opt('monthly', '每月投入', Icon('calendar'), '每月固定投入多少，例如定期定額每月 1 萬')],
   billKind: () => BILL_KINDS.map(c => opt(c.v, c.label, Icon(c.ic), c.d)),
   billCat: () => BILL_CATS.map(c => opt(c.v, c.v, Icon(c.ic))),
   billCcy: () => CURRENCIES.map(c => opt(c.v, c.label, Icon(c.ic))),
@@ -840,6 +841,7 @@ const PICK_LABEL = {
   mode: v => (CALC_MODES.find(c => c.v === v) || {}).label || '',
   brand: v => { const b = brandOf(v); return b ? (b.zh === b.v ? b.v : `${b.zh} ${b.v}`) : v; },
   grace: v => +v ? `${v} 個月` : '沒有寬限期',
+  planMode: v => v === 'monthly' ? '每月投入' : '投資總額',
   billKind: v => (BILL_KINDS.find(c => c.v === v) || {}).label || '',
   billCcy: v => (CURRENCIES.find(c => c.v === v) || {}).label || v,
   billCycle: v => (BILL_CYCLES.find(c => c.v === v) || {}).label || '',
@@ -861,6 +863,7 @@ const PICK_ICON = {
   county: () => Icon('pin'), district: () => Icon('city'), road: () => Icon('road'),
   btype: v => Icon((BUILDING_TYPES.find(c => c.v === v) || {}).ic || 'tower'),
   grace: v => Icon(+v ? 'pause' : 'play'),
+  planMode: v => Icon(v === 'monthly' ? 'calendar' : 'invest'),
   billKind: v => Icon((BILL_KINDS.find(c => c.v === v) || {}).ic || 'calendar'),
   billCat: v => Icon((BILL_CATS.find(c => c.v === v) || {}).ic || 'other'),
   billCcy: v => Icon((CURRENCIES.find(c => c.v === v) || {}).ic || 'twd'),
@@ -961,8 +964,10 @@ const FIELDS = {
 };
 FIELDS.plan = [
   { k: 'name', label: '計畫名稱', type: 'text', req: true, ph: '例：理財型房貸分批投入' },
-  { k: 'total', label: '投入總額', type: 'number', req: true, half: true },
-  { k: 'months', label: '分幾個月投入', type: 'number', req: true, half: true, def: '12', min: 1, max: 120 },
+  { k: 'pmode', label: '怎麼投入', type: 'pick', opts: 'planMode', def: 'total' },
+  { k: 'total', label: '投入總額', type: 'number', req: true, half: true, show: v => v.pmode !== 'monthly', ph: '例：14600000' },
+  { k: 'perMonth', label: '每月投入金額', type: 'number', req: true, half: true, show: v => v.pmode === 'monthly', ph: '例：10000' },
+  { k: 'months', label: '分幾個月投入', type: 'number', req: true, half: true, def: '12', min: 1, max: 600, labelFn: v => v.pmode === 'monthly' ? '投入幾個月' : '分幾個月投入', hintFn: v => v.pmode === 'monthly' ? '定期定額沒有結束日，可以填 120（10 年）' : '' },
   { k: 'startYM', label: '第一次投入年月', type: 'month', req: true, half: true, def: thisYM },
   { k: 'day', label: '每月投入日（選填）', type: 'number', min: 1, max: 31, half: true },
   { k: 'source', label: '資金來源', type: 'pick', opts: 'planSource', def: 'self' },
@@ -1024,7 +1029,7 @@ FIELDS.bill.find(f => f.k === 'name').ph = v => isCardBill(v) ? EX.billName.card
 FIELDS.bill.find(f => f.k === 'amount').ph = v => isCardBill(v) ? EX.billAmount.card : EX.billAmount[v.cat] || '';
 FIELDS.bill.find(f => f.k === 'amount').labelFn = v => isCardBill(v) ? '每期大約金額（選填）' : '每次扣款金額';
 FIELDS.bill.find(f => f.k === 'note').ph = v => isCardBill(v) ? EX.billNote.card : EX.billNote.sub;
-const NUMERIC = new Set(['buyMonth', 'nlLimit', 'nlRate', 'closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
+const NUMERIC = new Set(['perMonth', 'buyMonth', 'nlLimit', 'nlRate', 'closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
 
 // ---------- 編輯器 ----------
 let editing = null;
@@ -1521,6 +1526,8 @@ $('editForm').addEventListener('submit', e => {
   }
   if (vals.lvrAt && isRE(vals)) obj.lvrAt = vals.lvrAt;
   if (editing.kind === 'plan') {
+    if (obj.pmode === 'monthly') obj.total = Math.round(num(obj.perMonth) * Math.max(1, Math.round(num(obj.months))));
+    else delete obj.perMonth;
     if (isNewLine(obj)) {
       if (!vals.nlBank) return toast('請選擇新額度的銀行');
       const id = uid();
@@ -1953,7 +1960,7 @@ function renderInvest() {
       <div class="plan-top">${Charts.ring(pr.invested / (pr.total || 1))}
         <div class="plan-stats">
           <div class="kv"><span>已投入</span><b class="accent">${fmt(pr.invested)}</b></div>
-          <div class="kv"><span>總額</span><span>${fmt(pr.total)}</span></div>
+          ${p.pmode === 'monthly' ? `<div class="kv"><span>每月投入</span><span>${fmt(num(p.perMonth) || pr.total / pr.n)}</span></div><div class="kv"><span>預計總額</span><span>${fmt(pr.total)}</span></div>` : `<div class="kv"><span>總額</span><span>${fmt(pr.total)}</span></div>`}
           <div class="kv"><span>進度</span><span>第 ${Math.min(pr.current, pr.n)} / ${pr.n} 期</span></div>
           ${nowRow ? `<div class="kv"><span>本月要投入</span><b>${fmt(nowRow.amt)}</b></div>` : nextRow ? `<div class="kv"><span>下次投入</span><span>${nextRow.ym.replace('-', '/')} · ${fmt(nextRow.amt)}</span></div>` : '<div class="kv"><span>狀態</span><b class="pos">全部投入完成</b></div>'}
         </div></div>
@@ -2011,13 +2018,15 @@ $('pdCancel').addEventListener('click', () => $('periodDialog').close());
 function drawPlanPanel() {
   const el = $('planPanel');
   if (!el) return;
-  const t = num(vals.total), n = Math.max(1, Math.round(num(vals.months)));
-  if (!t) { el.innerHTML = `<div class="hint-row">${Icon('invest')}<span>填入總額與期數，會自動算出每月投入多少；資金來源選理財型房貸，會一起算出利息怎麼遞增</span></div>`; return; }
+  const n = Math.max(1, Math.round(num(vals.months)));
+  const monthly = vals.pmode === 'monthly';
+  const t = monthly ? num(vals.perMonth) * n : num(vals.total);
+  if (!t) { el.innerHTML = `<div class="hint-row">${Icon('invest')}<span>${monthly ? '填入每月金額與月數，會自動算出總共投入多少' : '填入總額與期數，會自動算出每月投入多少'}；資金來源選理財型房貸，會一起算出利息怎麼遞增</span></div>`; return; }
   const src = state.debts.find(d => d.id === vals.source);
   const r = src ? num(src.rate) / 100 / 12 : 0;
   const end = vals.startYM ? Loan.ymAdd(vals.startYM, n - 1).replace('-', '/') : '';
   el.innerHTML = `<div class="panel-title">${Icon('calc')} 試算</div>
-    <div class="kv"><span>每月投入</span><b class="accent">${fmt(t / n)}</b></div>
+    ${monthly ? `<div class="kv"><span>總共投入</span><b class="accent">${fmt(t)}</b></div>` : `<div class="kv"><span>每月投入</span><b class="accent">${fmt(t / n)}</b></div>`}
     <div class="kv"><span>最後一期</span><span>${end}</span></div>
     ${src ? `<div class="kv"><span>第 1 期後每月利息</span><span>${fmt((num(src.drawn) + t / n) * r)}</span></div>
     <div class="kv"><span>全部投入後每月利息</span><b class="neg">${fmt((num(src.drawn) + t) * r)}</b></div>

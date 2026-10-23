@@ -1,0 +1,3 @@
+   5296 tdcc-3-2.csv
+  22955 tdcc-3-4.csv
+  28251 total

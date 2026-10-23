@@ -1,0 +1,59 @@
+name: 探測基金資料來源（暫時）
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/probe.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-commit
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: 探測
+        continue-on-error: true
+        run: |
+          mkdir -p data/probe; cd data/probe
+          UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36'
+          g() { curl -sSL -m 60 -A "$UA" "$@"; }
+          for id in 11109 11641 43476; do g "https://data.gov.tw/api/v2/rest/dataset/$id" > gov-$id.json || true; done
+          for id in 3-2 3-4; do g "https://opendata.tdcc.com.tw/getOD.ashx?id=$id" > tdcc-$id.csv || true; done
+          wc -l tdcc-*.csv > tdcc-lines.txt; for f in tdcc-*.csv; do head -c 3000 $f > $f.head; done; rm -f tdcc-*.csv
+          g "https://www.sitca.org.tw/ROC/Industry/IN2106.aspx?pid=IN2213_02" > sitca-in2106.html || true
+          g "https://www.fundclear.com.tw/" > fundclear.html || true
+          grep -o 'src="[^"]*\.js"' fundclear.html | head -20 > fundclear-js.txt || true
+          for s in $(grep -o 'src="[^"]*main[^"]*\.js"' fundclear.html | sed 's/src="//;s/"$//' | head -2); do u="$s"; case "$u" in http*) ;; *) u="https://www.fundclear.com.tw/${u#/}";; esac; g "$u" | grep -oE '"/?api/[^"]{3,120}"|https?://[a-z0-9.\-]+fundclear[^"]{0,120}' | sort -u | head -300 > fundclear-api.txt; done
+          # 下載 data.gov.tw 資源（前 3000 字）
+          python3 - <<'PY'
+          import json,glob,subprocess
+          for f in glob.glob('gov-*.json'):
+              try:
+                  d=json.load(open(f)); res=d.get('result',{}).get('distribution',[])
+              except Exception as e:
+                  print(f,'ERR',e); continue
+              for i,r in enumerate(res):
+                  u=r.get('resourceDownloadUrl'); print(f,u,r.get('resourceFormat'))
+                  if u:
+                      out=subprocess.run(['curl','-sSL','-m','90','-A','Mozilla/5.0',u],capture_output=True).stdout
+                      open(f'{f}.res{i}.head','wb').write(out[:4000]); open(f'{f}.res{i}.size','w').write(str(len(out)))
+          PY
+          ls -la
+      - name: 提交
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/probe
+          git commit -m "chore: 探測基金資料" || exit 0
+          git pull --rebase origin main
+          git push

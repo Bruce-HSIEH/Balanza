@@ -3,31 +3,21 @@ socket.setdefaulttimeout(25)
 os.makedirs('data/probe', exist_ok=True)
 out = {}
 UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124 Safari/537.36'}
+B = 'https://www.fundclear.com.tw/'
 def get(u): return urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=25).read().decode('utf-8', 'replace')
-h = get('https://www.fundclear.com.tw/')
-js = re.findall(r'src="([^"]+\.js)"', h)
-segs = []
-for s in js:
-    u = s if s.startswith('http') else 'https://www.fundclear.com.tw/' + s.lstrip('/')
-    t = get(u)
-    for kw in ('download-doc', 'nav-profit', 'navProfit', 'fund-doc', 'downloadNav', 'download-nav'):
-        for m in re.finditer(re.escape(kw), t):
-            segs.append(t[max(0, m.start() - 400): m.start() + 400].replace('\n', ' '))
-    # 類別定義：含 type:"nav" 的元件附近
-    for m in re.finditer(r'type:"nav"|"nav"', t):
-        segs.append('NAV@' + t[max(0, m.start() - 300): m.start() + 300].replace('\n', ' '))
-seen, uniq = set(), []
-for x in segs:
-    k = x[350:450]
-    if k not in seen: seen.add(k); uniq.append(x)
-out['segs'] = uniq[:120]
-# 試打幾個可能的下載
-tries = {}
-for path, body in [('/api/onshore/download-doc/download-nav', {}), ('/api/onshore/download-doc/download-fund-type', {}), ('/api/onshore/download-doc/init', {}), ('/api/onshore/download-doc/query', {})]:
-    try:
-        r = urllib.request.urlopen(urllib.request.Request('https://www.fundclear.com.tw' + path, data=json.dumps(body).encode(), headers={**UA, 'Content-Type': 'application/json', 'Accept': '*/*'}), timeout=25)
-        b = r.read(); tries[path] = {'status': r.status, 'type': r.headers.get('Content-Type'), 'disp': r.headers.get('Content-Disposition'), 'len': len(b), 'head': b[:300].decode('utf-8', 'replace')}
-    except urllib.error.HTTPError as e: tries[path] = {'status': e.code, 'body': e.read()[:300].decode('utf-8', 'replace')}
-    except Exception as e: tries[path] = repr(e)
-out['tries'] = tries
+h = get(B)
+todo = [s if s.startswith('http') else B + s.lstrip('/') for s in re.findall(r'src="([^"]+\.js)"', h)]
+done, hits = set(), []
+while todo and len(done) < 120:
+    u = todo.pop()
+    if u in done: continue
+    done.add(u)
+    try: t = get(u)
+    except Exception: continue
+    for c in set(re.findall(r'["\']((?:chunk-)?[A-Za-z0-9_\-]{6,40}\.js)["\']', t)):
+        todo.append(B + c)
+    for m in re.finditer(r'DownloadDocDownloadNav\(|download-nav|navDate|NavDate', t):
+        hits.append(u.split('/')[-1] + ' @ ' + t[max(0, m.start() - 600): m.start() + 400].replace('\n', ' '))
+out['n_js'] = len(done)
+out['hits'] = hits[:60]
 json.dump(out, open('data/probe/out.json', 'w'), ensure_ascii=False, indent=1)

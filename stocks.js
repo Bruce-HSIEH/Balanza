@@ -3,7 +3,8 @@
 // 你的持股只存在手機裡，App 下載的是整個市場的公開報價檔
 
 const Stocks = (() => {
-  const data = { tw: null, us: null, meta: null };
+  const data = { tw: null, us: null, meta: null, usall: null };
+  let tailP = null;
   let loading = null;
 
   async function getJSON(path) {
@@ -24,6 +25,12 @@ const Stocks = (() => {
     return loading;
   }
 
+  // 美股長尾（NASDAQ／NYSE 全部上市，只有最近收盤）：背景載入
+  function tail() {
+    if (tailP) return tailP;
+    tailP = getJSON('data/stocks/us-all.json').then(j => { data.usall = j; return true; }).catch(() => false);
+    return tailP;
+  }
   const norm = (mkt, sym) => {
     sym = String(sym || '').trim().toUpperCase();
     return mkt === 'us' ? sym.replace(/\./g, '-') : sym;
@@ -31,9 +38,9 @@ const Stocks = (() => {
 
   function quote(mkt, sym) {
     const D = data[mkt];
-    if (!D) return null;
     const k = norm(mkt, sym);
-    const row = D.s[k];
+    let row = D && D.s[k], date = D && D.date;
+    if (!row && mkt === 'us' && data.usall) { row = data.usall.s[k]; date = data.usall.date; }
     if (!row) return null;
     const [name, closes, rowDate] = row;
     const series = closes.filter(v => v != null);
@@ -42,7 +49,7 @@ const Stocks = (() => {
     return {
       sym: k, name, price, prev,
       chg: price - prev, chgPct: prev ? (price - prev) / prev * 100 : 0,
-      series: series.slice(-30), date: rowDate || D.date,
+      series: series.slice(-30), date: rowDate || date,
       ccy: mkt === 'us' ? 'USD' : 'TWD',
     };
   }
@@ -50,7 +57,8 @@ const Stocks = (() => {
   function list(mkt) {
     const D = data[mkt];
     if (!D) return [];
-    return Object.entries(D.s).map(([k, [name, closes]]) => {
+    const all = mkt === 'us' && data.usall ? { ...data.usall.s, ...D.s } : D.s;
+    return Object.entries(all).map(([k, [name, closes]]) => {
       const s = closes.filter(v => v != null);
       return { sym: k, name, price: s.at(-1), series: s.slice(-20) };
     });
@@ -67,5 +75,5 @@ const Stocks = (() => {
   const ready = () => !!(data.tw || data.us);
   const info = () => data.meta;
 
-  return { load, quote, list, fx, ready, info, norm };
+  return { load, tail, quote, list, fx, ready, info, norm };
 })();

@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 28
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,6 +36,10 @@ jobs:
         timeout-minutes: 12
         continue-on-error: true
         run: python scripts/build_stocks.py --only us --budget 540
+      - name: 美股全部上市（長尾）
+        timeout-minutes: 10
+        continue-on-error: true
+        run: python scripts/build_stocks.py --only usall --budget 480
       - name: 提交資料
         if: always()
         run: |

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.19.1';
+const APP_VERSION = '5.19.2';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -717,7 +717,7 @@ const OPTS = {
   autopay: () => [opt('auto', '自動扣繳', Icon('bank'), '截止日從帳戶自動扣'), opt('manual', '自己繳', Icon('wallet'), '截止日前要記得繳')],
   grace: () => [0, 6, 12, 24, 36, 48, 60].map(m => opt(String(m), m ? `${m} 個月${m % 12 === 0 ? `（${m / 12} 年）` : ''}` : '沒有寬限期', Icon(m ? 'pause' : 'play'), m ? '期間只繳利息、不還本金' : '一撥款就開始還本金')),
   stock: async vals => {
-    await Stocks.load();
+    await Stocks.load(); if (mktOf(vals) === 'us') await Stocks.tail();
     const mkt = mktOf(vals);
     return Stocks.list(mkt).map(x => opt(x.sym, `${x.sym}  ${x.name}`, `<span class="ticker small">${esc(x.sym.slice(0, 6))}</span>`, x.price != null ? price(x.price, mkt === 'us' ? 'USD' : 'TWD') : '', { key: `${x.sym} ${x.name}`, right: UI.sparkline(x.series, 56, 22, { tw: mkt === 'tw' }) }));
   },
@@ -1042,7 +1042,12 @@ $('editFields').addEventListener('click', async e => {
     if (k === 'type' && !editing.id) vals.mode = o.value === '理財型房貸' ? 'revolving' : ['信用卡', '親友借款'].includes(o.value) ? 'manual' : 'auto';
     if (k === 'category') {
       if (o.value === '不動產' && !vals.name) vals.name = '自住房';
-      if (mktOf({ category: prev }) !== mktOf(vals)) { vals.sym = ''; }
+      const pm = mktOf({ category: prev }), nm = mktOf(vals);
+      if (pm !== nm) {
+        if (editing.id && pm && nm && vals.sym) { vals.sym = Stocks.norm(nm, vals.sym); toast(`這檔會改成${vals.category}，按儲存生效`); }
+        else if (editing.id && pm && !nm) { vals[k] = prev; toast('股票只能在台股和美股之間切換'); }
+        else vals.sym = '';
+      }
     }
     if (k === 'brand') {
       if (!vals.name) vals.name = brandOf(o.value)?.t === 'scooter' ? '機車' : '愛車';
@@ -1089,6 +1094,20 @@ function addLot(category, sym, lot, extra = {}) {
 }
 function saveStock() {
   if (editing.id) {
+    const cur = state.assets.find(a => a.id === editing.id);
+    // 改市場（台股 ↔ 美股）：同市場已有同代號就合併交易紀錄
+    if (cur && cur.category !== vals.category) {
+      const sym = Stocks.norm(mktOf(vals), vals.sym);
+      const other = state.assets.find(a => a.id !== cur.id && a.category === vals.category && a.sym && Stocks.norm(mktOf(a), a.sym) === sym);
+      if (other) {
+        other.lots = [...(other.lots || []), ...(cur.lots || [])];
+        state.assets = state.assets.filter(a => a.id !== cur.id);
+        $('editor').close(); save(); return toast(`已併入${vals.category} ${sym}`);
+      }
+      const q = Stocks.quote(mktOf(vals), sym);
+      cur.category = vals.category; cur.sym = sym; if (q) cur.name = q.name;
+      openGroups.add(vals.category);
+    }
     state.assets = state.assets.map(a => a.id === editing.id ? { ...a, manualPrice: vals.manualPrice === '' || vals.manualPrice == null ? '' : num(vals.manualPrice), note: String(vals.note || '').trim(), updatedAt: new Date().toISOString() } : a);
     $('editor').close();
     return save();
@@ -1954,7 +1973,7 @@ function bulkRow(v = {}) {
 }
 async function openBulk() {
   if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
-  await Stocks.load();
+  await Stocks.load(); Stocks.tail().then(() => { if ($('bulkDialog').open) setBulkMkt(bulkMkt); });
   setBulkMkt(bulkMkt);
   $('bkRows').innerHTML = [0, 1, 2].map(() => bulkRow()).join('');
   $('bulkDialog').showModal();
@@ -1977,14 +1996,18 @@ function bulkName(row) {
   const have = ex ? lotsSummary(ex.lots).shares : 0;
   const note = row.dataset.note ? ' · ' + row.dataset.note : '';
   el.className = 'bk-name ' + (q ? '' : 'neg');
-  const tag = row.dataset.mkt ? `<span class="bk-tag ${cat === '美股' ? 'us' : ''}">${cat}</span>` : '';
+  const tag = row.dataset.mkt ? `<button type="button" class="bk-tag ${cat === '美股' ? 'us' : ''}" data-flip="1" title="點一下切換台股／美股">${cat} ⇄</button>` : '';
   el.innerHTML = tag + (q ? `${esc(q.name)} · 收盤 ${price(q.price, q.ccy)}${esc(note)}${ex ? ` · <span class="neg">已持有 ${have.toLocaleString()} 股，會再加上這列</span>` : ''}` : '找不到報價（仍可加入，之後手動填股價）' + esc(note));
 }
 $('bulkOpen').addEventListener('click', openBulk);
 $('bkMkt').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (b) setBulkMkt(b.dataset.m); });
 $('bkAdd').addEventListener('click', () => { $('bkRows').insertAdjacentHTML('beforeend', bulkRow()); $('bkRows').lastElementChild.querySelector('input').focus(); });
 $('bkRows').addEventListener('input', e => { if (e.target.classList.contains('bk-sym')) bulkName(e.target.closest('.bk-row')); });
-$('bkRows').addEventListener('click', e => { if (e.target.closest('.bk-del')) e.target.closest('.bk-row').remove(); });
+$('bkRows').addEventListener('click', e => {
+  if (e.target.closest('.bk-del')) return e.target.closest('.bk-row').remove();
+  const f = e.target.closest('[data-flip]');
+  if (f) { const r = f.closest('.bk-row'); r.dataset.mkt = r.dataset.mkt === '美股' ? '台股' : '美股'; bulkName(r); }
+});
 $('bkCancel').addEventListener('click', () => { if (shotCtl) shotCtl.abort(); $('bulkDialog').close(); });
 
 // --- 從截圖讀取持股（用設定裡的 AI）---
@@ -2006,8 +2029,12 @@ function shrinkImage(file, maxSide = 1800) {
 }
 // 名稱或代號 → 報價；找不到就在兩個市場都試
 function matchStock(h) {
-  const mkts = h.market === 'us' ? ['us', 'tw'] : ['tw', 'us'];
-  const sym = String(h.symbol || '').toUpperCase().replace(/\.(TW|TWO)$/, '').trim();
+  // AI 有時把市場塞進代號（例如「NVDA,US」「2330.TW」），先清乾淨
+  const raw = String(h.symbol || '').toUpperCase();
+  const sym = raw.split(/[,\s:;/|]+/)[0].replace(/\.(TW|TWO|US)$/, '').trim();
+  // 代號開頭是數字 → 台股；是英文字母 → 美股（比 AI 的判斷可靠）
+  const guess = /^\d/.test(sym) ? 'tw' : /^[A-Z]/.test(sym) ? 'us' : (/\bUS\b|USD/.test(raw) || h.market === 'us' ? 'us' : 'tw');
+  const mkts = guess === 'us' ? ['us', 'tw'] : ['tw', 'us'];
   for (const m of mkts) { const q = sym && Stocks.quote(m, sym); if (q) return { m, q }; }
   const nm = String(h.name || '').replace(/\s+/g, '');
   if (nm) for (const m of mkts) {
@@ -2017,15 +2044,18 @@ function matchStock(h) {
   }
   return { m: mkts[0], q: null, sym };
 }
-const n1 = v => (v === '' || v == null || !isFinite(+v) ? null : +v);
+const n1 = v => { if (v === '' || v == null) return null; const x = typeof v === 'number' ? v : parseFloat(String(v).replace(/[,\s$＄]/g, '').replace(/^\+/, '')); return isFinite(x) ? x : null; };
+// AI 可能用別的欄位名稱，統一一下
+const pickN = (h, ...ks) => { for (const k of ks) { const v = n1(h[k]); if (v != null) return v; } return null; };
 function holdingToRow(h) {
   const { m, q, sym } = matchStock(h);
   const notes = [];
+  h = { ...h, shares: pickN(h, 'shares', 'quantity', 'total_shares', 'qty'), avg_cost: pickN(h, 'avg_cost', 'average_cost', 'avg_price', 'average_price', 'cost_price'), price: pickN(h, 'price', 'last_price', 'current_price'), market_value: pickN(h, 'market_value', 'value'), cost_total: pickN(h, 'cost_total', 'total_cost'), pl_amount: pickN(h, 'pl_amount', 'pnl', 'profit'), pl_pct: pickN(h, 'pl_pct', 'return_pct', 'pnl_pct') };
   const px = n1(h.price) || (q && q.price) || null;
   const mv = n1(h.market_value);
   let shares = n1(h.shares);
   if (!shares && mv && px) { shares = mv / px; notes.push('股數由市值推算'); }
-  if (shares) shares = m === 'tw' ? Math.round(shares) : Math.round(shares * 1e4) / 1e4;
+  if (shares) shares = m === 'tw' ? Math.round(shares) : Math.round(shares * 1e5) / 1e5;
   let cost = n1(h.avg_cost);
   if (!cost && shares) {
     const pl = n1(h.pl_amount), pct = n1(h.pl_pct);
@@ -2038,7 +2068,9 @@ function holdingToRow(h) {
   if (cost) cost = Math.round(cost * (m === 'tw' ? 100 : 1e4)) / (m === 'tw' ? 100 : 1e4);
   return { mkt: m === 'us' ? '美股' : '台股', sym: q ? q.sym : (sym || h.name || ''), shares: shares || '', cost: cost || '', note: notes.join('、'), name: h.name };
 }
-let shotCtl = null;
+let shotCtl = null, lastShotRaw = null;
+document.addEventListener('click', e => { if (e.target.id === 'bkRaw' && lastShotRaw) alert(JSON.stringify(lastShotRaw, null, 1).slice(0, 3000)); });
+document.addEventListener('input', e => { if (e.target.classList && e.target.classList.contains('bk-sh')) e.target.classList.toggle('need', !e.target.value); });
 $('bkShot').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
   if (!files.length) return;
@@ -2050,8 +2082,9 @@ $('bkShot').addEventListener('change', async e => {
     msg(`壓縮 ${files.length} 張圖片…`);
     const imgs = [];
     for (const f of files.slice(0, 20)) imgs.push(await shrinkImage(f));
-    await Stocks.load();
+    await Stocks.load(); await Stocks.tail();
     const hs = await AI.readHoldings(state.ai, imgs, shotCtl.signal, (i, n) => msg(`AI 辨識中…（${Math.min(n, i + 5)}/${n} 張）`));
+    lastShotRaw = hs;
     // 去掉跨截圖重複的同一列
     const seen = new Set(), rows = [];
     for (const h of hs) {
@@ -2066,7 +2099,8 @@ $('bkShot').addEventListener('change', async e => {
     $('bkRows').insertAdjacentHTML('beforeend', rows.map(bulkRow).join(''));
     $('bkRows').querySelectorAll('.bk-row').forEach(bulkName);
     const miss = rows.filter(r => !r.shares).length;
-    msg(`讀到 <b>${rows.length}</b> 檔，請核對後按「全部加入」${miss ? `<span class="neg">（${miss} 檔沒讀到股數，請補上）</span>` : ''}${files.length > 20 ? '（只讀前 20 張）' : ''}`);
+    msg(`讀到 <b>${rows.length}</b> 檔，請核對後按「全部加入」${miss ? `<span class="neg">（${miss} 檔沒讀到股數，紅框請補上）</span>` : ''}${files.length > 20 ? '（只讀前 20 張）' : ''}<br><button type="button" class="link-btn" id="bkRaw">看 AI 讀到的原始內容</button>`);
+    $('bkRows').querySelectorAll('.bk-row.fixed .bk-sh').forEach(i => i.classList.toggle('need', !i.value));
   } catch (err) {
     if (err.name !== 'AbortError') msg(`<span class="neg">${esc(err.message)}</span>`);
   } finally {
@@ -2992,6 +3026,8 @@ renderBkNag();
 if (!locked) scheduleBackup(4000);
 Backup.persist().then(v => { persisted = v; });
 Stocks.load().then(() => {
+  // 美股長尾報價（小型股、槓桿 ETF…）背景載入，載完再更新一次
+  Stocks.tail().then(ok => { if (ok) { levelsKey = ''; render(); } });
   levelsKey = '';
   render();
   const m = Stocks.info();

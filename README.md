@@ -34,7 +34,7 @@
 ## 股價資料
 
 `.github/workflows/stocks.yml` 在台股收盤後（14:23）與美股收盤後（05:41）執行 `scripts/build_stocks.py`：
-台股取自證交所與櫃買中心每日收盤行情；美股（S&P 500＋熱門個股／ETF）與匯率取自 Yahoo Finance 日線。
+台股取自證交所與櫃買中心每日收盤行情；美股（S&P 500＋熱門個股／ETF 存近 30 日走勢；其餘 NASDAQ／NYSE 全部上市股票與 ETF 存最近收盤於 `us-all.json`）與匯率取自 Yahoo Finance 日線。
 清單外的美股可加到 `data/stocks/extra.txt`（repo 公開，寫入的代號別人看得到）。
 
 ## 安裝到手機

@@ -313,6 +313,80 @@ def build_us(budget):
     return info
 
 
+# ---- 美股長尾：NASDAQ／NYSE 全部上市股票與 ETF（只存最近幾天收盤，檔案小）----
+def us_listed():
+    """從 NASDAQ Trader 官方代號清單取得全部美股（含 ETF），排除測試、權證、特別股等。"""
+    out = {}
+    bad = re.compile(r'Warrant|Right|Units?\b|Preferred|Pfd|%|Notes? due|Debenture|Subordinated|When Issued|Test', re.I)
+    for url, sym_col, name_col, test_col, etf_col in [
+        ('https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt', 0, 1, 3, 6),
+        ('https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt', 0, 1, 6, 4),
+    ]:
+        try:
+            txt = get(url, raw=True, timeout=30).decode('utf-8', 'replace')
+        except Exception as e:  # noqa
+            log(f'  代號清單失敗 {url}：{e}')
+            continue
+        for line in txt.splitlines()[1:]:
+            c = line.split('|')
+            if len(c) <= max(sym_col, name_col, test_col, etf_col) or line.startswith('File Creation'):
+                continue
+            sym, name = c[sym_col].strip(), c[name_col].strip()
+            if c[test_col].strip() == 'Y' or not sym or re.search(r'[$=^]', sym) or len(sym) > 6 or bad.search(name):
+                continue
+            name = re.sub(r'\s+-\s+(Common Stock|Ordinary Shares|Class [A-Z] Common Stock|American Depositary Shares).*$', '', name)
+            name = re.sub(r'\s+(Common Stock|Ordinary Shares)$', '', name).strip()
+            out[sym.upper().replace('.', '-')] = name[:60]
+    return out
+
+
+def build_us_all(budget):
+    deadline = time.time() + budget
+    path = os.path.join(OUT, 'us-all.json')
+    old = load(path, {'s': {}})
+    core = load(os.path.join(OUT, 'us.json'), {'s': {}})['s']
+    listed = us_listed()
+    universe = sorted((set(listed) | set(old['s'])) - set(core))
+    log(f'美股長尾：清單 {len(listed)}，要抓 {len(universe)} 檔')
+    if not universe:
+        return {'n': 0}
+    # 平行批次抓最近 5 天收盤
+    res = {}
+    chunks = [universe[i:i + 20] for i in range(0, len(universe), 20)]
+    def job(chunk):
+        if time.time() > deadline - 15:
+            return {}
+        q = urllib.parse.quote(','.join(chunk), safe=',')
+        for host in ('query1', 'query2'):
+            try:
+                return parse_spark(get(f'https://{host}.finance.yahoo.com/v7/finance/spark?symbols={q}&range=5d&interval=1d', timeout=20))
+            except Exception:  # noqa
+                time.sleep(1)
+        return {}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for r in ex.map(job, chunks):
+            res.update(r)
+    s = {}
+    for sym in universe:
+        r = res.get(sym)
+        oldrow = old['s'].get(sym)
+        nm = listed.get(sym) or (oldrow[0] if oldrow else sym)
+        if r and r[1]:
+            closes = [x for x in r[1] if x is not None][-2:]
+            if closes:
+                s[sym] = [nm, closes, r[2]]
+                continue
+        if oldrow:
+            s[sym] = oldrow
+    dates = sorted(v[2] for v in s.values() if len(v) > 2 and v[2])
+    newest = dates[-1] if dates else old.get('date')
+    dump(path, {'date': newest, 's': dict(sorted(s.items()))})
+    info = {'date': newest, 'n': len(s), 'fresh': len(res)}
+    log(f'美股長尾完成：{info}')
+    return info
+
+
 def build_fx(old_fx):
     fx = {'TWD': 1}
     got = yahoo_spark(['TWD=X', 'JPYTWD=X', 'EURTWD=X'], time.time() + 30, rng='5d')
@@ -333,7 +407,7 @@ def build_fx(old_fx):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--only', choices=['tw', 'us'])
+    ap.add_argument('--only', choices=['tw', 'us', 'usall'])
     ap.add_argument('--budget', type=int, default=600, help='每個市場最多花幾秒')
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
@@ -344,10 +418,13 @@ def main():
             meta['tw'] = build_tw(a.budget)
         if a.only in (None, 'us'):
             meta['us'] = build_us(a.budget)
-        meta['fx'] = build_fx(meta.get('fx', {}))
+        if a.only in (None, 'usall'):
+            meta['usall'] = build_us_all(a.budget)
+        if a.only != 'usall':
+            meta['fx'] = build_fx(meta.get('fx', {}))
     finally:
         meta['updated'] = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
-        meta['log'] = (meta.get('log', []) if a.only == 'us' else [])[-40:] + LOG[-60:]
+        meta['log'] = (meta.get('log', []) if a.only in ('us', 'usall') else [])[-40:] + LOG[-60:]
         dump(meta_path, meta)
 
 

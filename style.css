@@ -1064,3 +1064,5 @@ button.cd { border: 0; background: none; font: inherit; color: inherit; padding:
 .loan-row, .ev-row, .fold-head { color: var(--text); }
 .loan-row .grow { font-weight: 600; }
 .loan-row .grow small { font-weight: 400; }
+button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; }
+.bk-sh.need { box-shadow: inset 0 0 0 2px #e53935; }

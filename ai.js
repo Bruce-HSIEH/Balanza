@@ -177,7 +177,11 @@ const AI = (() => {
 - 數字照畫面抄，千分位逗號去掉；紅綠色或 +/- 決定正負，虧損用負數。
 - 「張」要換成股（×1000）。美股可能有小數股。
 - 欄位對照：庫存股數/持有股數/庫存→shares；成交均價/持有均價/平均成本/成本均價→avg_cost；現價/市價/參考價→price；市值/參考市值/現值→market_value；總成本/持有成本/付出成本→cost_total；損益/未實現損益/參考損益→pl_amount；報酬率/損益率→pl_pct。
-- 不是持股的東西（帳戶總覽、交割款、廣告）不要列。`;
+- 不是持股的東西（帳戶總覽、交割款、廣告）不要列。
+- 「整股」「碎股」「定額」這類標籤是同一檔的交易方式，不要拆成多筆；用「總股數」那一行。
+- 欄位對照補充：總股數→shares（保留小數，例如 53.72618）；成交均價 (USD)／平均成本→avg_cost；成交均價後面標 (USD) 代表美股。
+- symbol 只放代號本身（例如 NVDA、QQQ、2330），不要加市場、逗號或交易所。英文代號一律 market=us，數字代號 market=tw。
+- 「總預估損益」如果幣別跟股價不同（例如美股但損益是台幣），pl_amount 不要填，只填 pl_pct。`;
 
   async function visionClaude(key, model, images, signal) {
     const content = [...images.map(im => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } })), { type: 'text', text: VISION_PROMPT }];

@@ -16,6 +16,10 @@ while todo and len(done) < 120:
     except Exception: continue
     for c in set(re.findall(r'["\']((?:chunk-)?[A-Za-z0-9_\-]{6,40}\.js)["\']', t)):
         todo.append(B + c)
+    if 'runtime' in u:
+        out['runtime'] = t[:3000]
+        for a, b in re.findall(r'(\d+):"([0-9a-f]{12,20})"', t):
+            todo.append(f'{B}{a}.{b}.js')
     for m in re.finditer(r'DownloadDocDownloadNav\(|download-nav|navDate|NavDate', t):
         hits.append(u.split('/')[-1] + ' @ ' + t[max(0, m.start() - 600): m.start() + 400].replace('\n', ' '))
 out['n_js'] = len(done)

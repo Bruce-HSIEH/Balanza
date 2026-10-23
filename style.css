@@ -1247,3 +1247,17 @@ svg.scrub { touch-action: pan-y; cursor: crosshair; -webkit-user-select: none; u
 .ask-input textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; font: inherit; font-size: 15px; background: var(--card); color: var(--text); min-height: 42px; }
 .ask-input .btn { flex: none; }
 @media (prefers-color-scheme: dark) { .ask-msg.err { background: #3a1f1c; color: #ff8a80; } }
+
+/* 開 App：資料到齊再一次淡入 */
+main { transition: opacity .28s ease; }
+body.booting main { opacity: 0; }
+/* 更新紀錄：底部面板，可往下拉關閉 */
+.cl-sheet { max-height: 86vh; }
+.cl-sheet[open] { display: flex; flex-direction: column; }
+.cl-sheet h2 { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; font-size: 19px; }
+.cl-scroll { overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.cl-end { justify-content: center; margin: 16px 0 6px; }
+.cl-end .btn { min-width: 60%; }
+.sheet-grip { touch-action: none; cursor: grab; position: relative; }
+.sheet-grip::before { content: ""; position: absolute; inset: -14px -60px; }
+.ask-log { overscroll-behavior: contain; }

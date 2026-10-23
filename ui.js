@@ -98,6 +98,44 @@ const UI = (() => {
     });
   }
 
+  // ---------- 底部面板：手指往下拉就關閉 ----------
+  // 內容捲到最上面時往下拉才算（不會跟捲動打架）；拉超過 90px 或甩得夠快就關
+  (function sheetDrag() {
+    let d = null;
+    const scroller = (el, root) => { for (let n = el; n && n !== root.parentNode; n = n.parentElement) { if (n.scrollHeight > n.clientHeight + 2 && /(auto|scroll)/.test(getComputedStyle(n).overflowY)) return n; } return null; };
+    document.addEventListener('touchstart', e => {
+      const sh = e.target.closest && e.target.closest('dialog.sheet[open]');
+      if (!sh || e.touches.length !== 1 || e.target.closest('textarea, input, select, svg.scrub')) return;
+      const sc = scroller(e.target, sh);
+      d = { sh, sc, y0: e.touches[0].clientY, x0: e.touches[0].clientX, t0: Date.now(), dy: 0, on: false, grip: !!e.target.closest('.sheet-grip, h2, h3, .ask-head') };
+    }, { passive: true });
+    document.addEventListener('touchmove', e => {
+      if (!d) return;
+      const dy = e.touches[0].clientY - d.y0, dx = e.touches[0].clientX - d.x0;
+      if (!d.on) {
+        if (Math.abs(dx) > Math.abs(dy) || dy < 6) { if (dy < -6 || Math.abs(dx) > 10) d = null; return; }
+        if (!d.grip && d.sc && d.sc.scrollTop > 0) { d = null; return; }   // 內容還沒捲到頂，先讓它捲
+        d.on = true; d.sh.style.transition = 'none';
+      }
+      d.dy = Math.max(0, dy);
+      d.sh.style.transform = `translateY(${d.dy}px)`;
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    const end = () => {
+      if (!d) return;
+      const { sh, dy, on, t0 } = d; d = null;
+      if (!on) return;
+      const fast = dy > 40 && dy / Math.max(1, Date.now() - t0) > 0.6;
+      sh.style.transition = 'transform .22s ease';
+      if (dy > 90 || fast) {
+        sh.style.transform = 'translateY(100%)';
+        setTimeout(() => { sh.style.transition = ''; sh.style.transform = ''; sh.close(''); }, 200);
+      } else { sh.style.transform = ''; setTimeout(() => { sh.style.transition = ''; }, 230); }
+    };
+    document.addEventListener('touchend', end);
+    document.addEventListener('touchcancel', end);
+  })();
+
   // ---------- 吉祥物「小秤」 ----------
   // 門檻以新台幣計，k = 1 新台幣換成顯示幣別的倍數
   function levelOf(s, k = 1) {
@@ -540,6 +578,7 @@ const UI = (() => {
   const lastVals = new WeakMap();
   const runs = new WeakMap();   // 每個元素只跑一個動畫，新的數字進來就接著從目前畫面上的值繼續，不會兩個動畫互搶
   function countTo(el, to, fmt, ms = 700) {
+    if (ms <= 0) { runs.delete(el); lastVals.set(el, to); el.textContent = fmt(to); return; }
     const prev = runs.get(el);
     const from = prev ? prev.cur : (lastVals.has(el) ? lastVals.get(el) : 0);
     lastVals.set(el, to);

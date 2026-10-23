@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.26.1';
+const APP_VERSION = '5.26.2';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -257,8 +257,9 @@ function ensureFunds() {
   Stocks.fundHist(codes).then(() => { if (!locked && syncPlanEstimates()) store(); levelsKey = ''; render(); });
 }
 // 剛開 App：股價、基金淨值還在載入時先不跑數字，等資料到齊再一次算好（最多等 2.5 秒）
-let booting = true;
-const cnt = (el, v) => { if (booting) { el.textContent = '…'; return; } UI.countTo(el, v, fmt); };
+let booting = true, firstNums = true;
+// 第一次顯示直接放正確數字（畫面是淡入的），之後變動才用滾動動畫
+const cnt = (el, v) => { if (booting) { el.textContent = '…'; return; } UI.countTo(el, v, fmt, firstNums ? 0 : 700); };
 function render() {
   ensureFunds();
   const s = summary();
@@ -304,8 +305,7 @@ function render() {
     k => { const b = bankOf(k); return b && b.code !== '—' ? `${shortBank(b)} (${b.code})` : (b ? b.name : k); },
     k => payByBank.get(k) ? `<small class="sub">月付 ${fmt(payByBank.get(k))}</small>` : '');
   renderAssetDonut();
-  recordHistory(s);
-  renderNwTrend();
+  if (!booting) { recordHistory(s); renderNwTrend(); }   // 資料還沒載完不要記錄當天淨資產，也不要畫半套的走勢
 
   // 還款時程
   const pl = s.st.filter(x => x.s.balance > 0).sort((a, b) => a.s.monthsLeft - b.s.monthsLeft);
@@ -760,7 +760,7 @@ function renderLevels(s, L) {
     <div class="lv-prog"><div class="lv-track"><div class="lv-fill" style="width:${(prog * 100).toFixed(1)}%"></div></div><div class="small muted">${note}</div></div>`;
 
   // 首頁的升級進度
-  $('homeProg').hidden = !next;
+  $('homeProg').hidden = !next || booting;
   if (next) {
     $('homeProgFill').style.width = (prog * 100).toFixed(1) + '%';
     $('homeProgText').textContent = `距離 Lv.${next.lv} ${next.name} 還差 ${fmt(need)}`;
@@ -816,10 +816,11 @@ function openChangelog(onlyNew) {
 // 新版說明要按「我知道了」才算看過；看過之前每次開 App 都會再顯示
 let clOnlyNew = false, pendingReload = false;
 $('ver').addEventListener('click', () => openChangelog(false));
-$('clClose').addEventListener('click', () => {
+$('clClose').addEventListener('click', () => $('clDialog').close());
+// 按「我知道了」或往下拉關掉，都算看過
+$('clDialog').addEventListener('close', () => {
   if (clOnlyNew) try { localStorage.setItem('balanza.seenVersion', APP_VERSION); } catch (e) { /* ignore */ }
   clOnlyNew = false;
-  $('clDialog').close();
   if (pendingReload) location.reload();
 });
 $('clDialog').addEventListener('cancel', e => { if (clOnlyNew) e.preventDefault(); });
@@ -3780,8 +3781,14 @@ let fundStatus = '';
 {
   // 等股價（含美股長尾）與用到的基金淨值都載入，或最多 2.5 秒，再顯示數字
   const needFund = () => state.assets.some(a => mktOf(a) === 'fund' && a.sym) || state.plans.some(p => planStocksOf(p).some(x => x.mkt === 'fund'));
-  const ready = Stocks.load().then(() => Promise.all([Stocks.tail(), needFund() ? Stocks.fundHist([...state.assets.filter(a => mktOf(a) === 'fund' && a.sym).map(a => a.sym), ...state.plans.flatMap(p => planStocksOf(p).filter(x => x.mkt === 'fund').map(x => x.sym))]) : null]));
-  Promise.race([ready, new Promise(r => setTimeout(r, 2500))]).catch(() => {}).then(() => { booting = false; levelsKey = ''; render(); });
+  // 只有持股不在主要清單時才等美股長尾
+  const needTail = () => state.assets.some(a => mktOf(a) === 'us' && a.sym && !Stocks.quote('us', a.sym));
+  const ready = Stocks.load().then(() => Promise.all([needTail() ? Stocks.tail() : null, needFund() ? Stocks.fundHist([...state.assets.filter(a => mktOf(a) === 'fund' && a.sym).map(a => a.sym), ...state.plans.flatMap(p => planStocksOf(p).filter(x => x.mkt === 'fund').map(x => x.sym))]) : null]));
+  Promise.race([ready, new Promise(r => setTimeout(r, 1800))]).catch(() => {}).then(() => {
+    if (!locked && syncPlanEstimates()) store();
+    booting = false; levelsKey = ''; lastLv = null; render(); firstNums = false;
+    requestAnimationFrame(() => document.body.classList.remove('booting'));   // 一次淡入，不會一格一格跳
+  });
 }
 Stocks.load().then(() => {
   // 美股長尾報價（小型股、槓桿 ETF…）背景載入，載完再更新一次

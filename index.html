@@ -11,9 +11,12 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="color-scheme" content="light dark">
+  <!-- 先上底色，CSS 還沒載入前不會閃白／閃灰 -->
+  <style>html,body{background:#f3f5f1}@media (prefers-color-scheme:dark){html,body{background:#0e1412}}</style>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="booting">
   <div class="statusbar-band" aria-hidden="true"></div>
   <header class="top">
     <h1>Balanza</h1>
@@ -199,10 +202,11 @@
     </form>
   </dialog>
 
-  <dialog id="clDialog" class="cl-dialog">
+  <dialog id="clDialog" class="sheet cl-sheet">
+    <div class="sheet-grip"></div>
     <h2 id="clTitle">更新紀錄</h2>
-    <div id="clBody"></div>
-    <div class="btnrow"><span class="spacer"></span><button type="button" class="btn primary" id="clClose">好</button></div>
+    <div class="cl-scroll"><div id="clBody"></div>
+      <div class="btnrow cl-end"><button type="button" class="btn primary" id="clClose">好</button></div></div>
   </dialog>
 
   <dialog id="periodDialog" class="cl-dialog">

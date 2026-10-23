@@ -2,6 +2,13 @@
 // 版本更新紀錄（App 內「更新紀錄」與 CHANGELOG.md 使用同一份內容）
 const CHANGELOG = [
   {
+    v: '5.19.1', date: '2026-10-23', title: '支援新版 Gemini 金鑰',
+    items: [
+      'Google AI Studio 現在新建的金鑰是「AQ.」開頭的新格式，Balanza 改成兩種都接受（AQ. 與舊的 AIza）',
+      '金鑰改用 Google 文件建議的 x-goog-api-key 標頭送出，新舊金鑰都能用',
+    ],
+  },
+  {
     v: '5.19.0', date: '2026-10-23', title: '還款分頁更清爽',
     items: [
       '扣款月曆只在點某一天時才列出那天的項目，平常只看月曆',

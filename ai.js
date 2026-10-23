@@ -118,9 +118,9 @@ const AI = (() => {
     return o;
   }
   async function callGemini(key, model, text, signal) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST', signal,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system() + '\n\n請只輸出符合 schema 的 JSON：{"items":[...]}。' }] },
         contents: [{ role: 'user', parts: [{ text }] }],
@@ -130,7 +130,7 @@ const AI = (() => {
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = (j.error && j.error.message) || res.statusText;
-      if (res.status === 400 && /API key|API_KEY/i.test(msg)) throw new Error('Gemini API 金鑰無效，請到設定確認');
+      if ((res.status === 400 && /API key|API_KEY/i.test(msg)) || res.status === 401) throw new Error('Gemini API 金鑰無效，請到設定確認（' + msg.slice(0, 80) + '）');
       if (res.status === 403) throw new Error('Gemini API 金鑰沒有權限（請確認已在 AI Studio 啟用）');
       if (res.status === 429) throw new Error('Gemini 使用次數已達上限，稍後再試');
       if (res.status === 404) throw new Error(`找不到模型 ${model}`);
@@ -198,9 +198,9 @@ const AI = (() => {
     return (tool && tool.input && tool.input.holdings) || [];
   }
   async function visionGemini(key, model, images, signal) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST', signal,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [...images.map(im => ({ inlineData: { mimeType: im.mime, data: im.data } })), { text: VISION_PROMPT + '\n只輸出 JSON：{"holdings":[...]}' }] }],
         generationConfig: { responseMimeType: 'application/json', responseSchema: toGemini(HOLD_TOOL.input_schema), temperature: 0 },
@@ -209,7 +209,7 @@ const AI = (() => {
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = (j.error && j.error.message) || res.statusText;
-      if (res.status === 400 && /API key|API_KEY/i.test(msg)) throw new Error('Gemini API 金鑰無效，請到設定確認');
+      if ((res.status === 400 && /API key|API_KEY/i.test(msg)) || res.status === 401) throw new Error('Gemini API 金鑰無效，請到設定確認（' + msg.slice(0, 80) + '）');
       if (res.status === 429) throw new Error('Gemini 使用次數已達上限，稍後再試');
       throw new Error(`Gemini 回應錯誤（${res.status}）：${msg}`);
     }

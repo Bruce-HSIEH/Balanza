@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.19.0';
+const APP_VERSION = '5.19.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -2355,7 +2355,7 @@ function renderAISettings() {
     <span class="flabel" style="margin-top:12px">AI 服務</span>
     <div class="seg" id="aiProv"><button type="button" data-p="claude" class="${g ? '' : 'on'}">Claude<small>Anthropic</small></button><button type="button" data-p="gemini" class="${g ? 'on' : ''}">Gemini<small>Google</small></button></div>
     <span class="flabel">${g ? 'Gemini' : 'Anthropic'} API 金鑰${key ? `（目前：${esc(masked)}）` : ''}</span>
-    <div class="inrow"><input id="aiKey" type="password" autocomplete="off" placeholder="${key ? '輸入新的金鑰可取代' : g ? 'AIza...' : 'sk-ant-...'}" class="ai-key">
+    <div class="inrow"><input id="aiKey" type="password" autocomplete="off" placeholder="${key ? '輸入新的金鑰可取代' : g ? 'AQ.… 或 AIza…' : 'sk-ant-...'}" class="ai-key">
       <button type="button" class="btn mini primary" id="aiSave">儲存</button></div>
     <span class="flabel" style="margin-top:12px">模型</span>
     <div class="seg" id="aiModel">${models.map(m => `<button type="button" data-m="${m.v}" class="${cur === m.v ? 'on' : ''}">${m.label}<small>${m.d}</small></button>`).join('')}</div>
@@ -2374,7 +2374,7 @@ document.addEventListener('click', async e => {
   if (t.dataset.p) { state.ai.provider = t.dataset.p; save(); renderAISettings(); return; }
   if (t.id === 'aiSave') {
     const k = $('aiKey').value.trim();
-    if (g ? !/^AIza[0-9A-Za-z_\-]{20,}$/.test(k) : !/^sk-ant-/.test(k)) return toast(g ? 'Gemini 金鑰應該是 AIza 開頭' : '金鑰應該是 sk-ant- 開頭');
+    if (g ? !/^(AIza|AQ\.)[0-9A-Za-z_.\-]{16,}$/.test(k) : !/^sk-ant-/.test(k)) return toast(g ? 'Gemini 金鑰應該是 AQ. 或 AIza 開頭' : '金鑰應該是 sk-ant- 開頭');
     if (g) state.ai.gkey = k; else state.ai.key = k;
     save(); renderAISettings(); toast('已儲存金鑰');
   } else if (t.id === 'aiDel') {

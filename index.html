@@ -19,7 +19,7 @@
     <h1>Balanza</h1>
     <button type="button" class="ver" id="ver" title="看更新紀錄"></button>
     <span class="spacer"></span>
-    <button type="button" class="top-btn mic-btn" id="micBtn" aria-label="用說的新增"><i data-ic="mic" data-size="28"></i></button>
+    <button type="button" class="top-btn ask-btn" id="askBtn" aria-label="問 AI"><i data-ic="chat" data-size="28"></i></button>
     <button type="button" class="top-btn" data-view="levels" aria-label="等級"><i data-ic="trophy" data-size="28"></i></button>
     <button type="button" class="top-btn" data-view="settings" aria-label="設定"><i data-ic="gear" data-size="28"></i></button>
   </header>
@@ -298,6 +298,22 @@
     <div id="vcResults" class="vc-results"></div>
     <div class="small muted vc-ex-title">可以這樣說（一次說好幾筆也可以，用「還有」隔開）</div>
     <div class="chips" id="vcExamples"></div>
+  </dialog>
+
+  <dialog id="detailDialog" class="sheet detail-sheet">
+    <div class="sheet-grip"></div>
+    <div id="dtBody"></div>
+    <div class="btnrow dt-btns"><button type="button" class="btn" id="dtClose">關閉</button><span class="spacer"></span><button type="button" class="btn primary" id="dtEdit"></button></div>
+  </dialog>
+
+  <dialog id="askDialog" class="sheet ask-sheet">
+    <div class="sheet-grip"></div>
+    <div class="ask-head"><span class="ask-ic"></span><div class="grow"><h3>問 AI <span class="ai-badge" id="askBadge"></span></h3><p class="small muted">App 怎麼用、你的貸款與資產狀況，都可以問</p></div><button type="button" class="link-btn" id="askClear">清除</button></div>
+    <div class="ask-log" id="askLog"></div>
+    <div class="chips ask-sugg" id="askSugg"></div>
+    <label class="ask-ctx"><input type="checkbox" id="askCtx"> <span>讓 AI 參考我的資料摘要<small id="askCtxNote">（金額、利率、月付；不含地址、備註、帳號）</small></span></label>
+    <div class="ask-input"><textarea id="askText" rows="1" placeholder="例如：寬限期結束後我每月要繳多少？"></textarea><button type="button" class="btn primary" id="askSend">送出</button></div>
+    <div class="btnrow"><span class="spacer"></span><button type="button" class="btn" id="askClose">關閉</button></div>
   </dialog>
 
   <div class="toast" id="toast" role="status"></div>

@@ -253,5 +253,37 @@ const AI = (() => {
   }
   const keyOf = cfg => cfg.provider === 'gemini' ? cfg.gkey : cfg.key;
 
-  return { call, test, keyOf, readHoldings, MODELS, GMODELS };
+  // ---- 問問 AI：一般對話（msgs: [{role:'user'|'ai', text}]）----
+  async function chat(cfg, sys, msgs, signal) {
+    if (cfg.provider === 'gemini') {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.gmodel)}:generateContent`, {
+        method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.gkey },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: sys }] }, contents: msgs.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })), generationConfig: { temperature: 0.4, maxOutputTokens: 1500 } }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = (j.error && j.error.message) || res.statusText;
+        if ((res.status === 400 && /API key|API_KEY/i.test(msg)) || res.status === 401) throw new Error('Gemini API 金鑰無效，請到設定確認');
+        if (res.status === 429) throw new Error('Gemini 使用次數已達上限，稍後再試');
+        throw new Error(`Gemini 回應錯誤（${res.status}）：${msg}`);
+      }
+      return (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('').trim() || '（沒有回應）';
+    }
+    const res = await fetch(URL, {
+      method: 'POST', signal,
+      headers: { 'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: cfg.model, max_tokens: 1500, system: sys, messages: msgs.map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text })) }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = j.error && j.error.message || res.statusText;
+      if (res.status === 401) throw new Error('API 金鑰無效，請到設定確認');
+      if (res.status === 429) throw new Error('使用次數太頻繁或額度不足，稍後再試');
+      if (res.status === 400 && /credit|balance/i.test(msg)) throw new Error('Anthropic 帳號餘額不足');
+      throw new Error(`AI 回應錯誤（${res.status}）：${msg}`);
+    }
+    return (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim() || '（沒有回應）';
+  }
+
+  return { call, test, keyOf, readHoldings, chat, MODELS, GMODELS };
 })();

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.25.1';
+const APP_VERSION = '5.26.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -82,6 +82,11 @@ const PREFS_KEY = 'balanza.prefs';
 const prefs = (() => { try { return { autoHide: true, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }; } catch (e) { return { autoHide: true }; } })();
 prefs.bk = { at: 0, err: '', hash: '', exportAt: 0, snooze: 0, ...(prefs.bk || {}) };
 const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* ignore */ } };
+// 文字大小（整個畫面一起縮放，版面比例不變）
+const FS = { s: { k: 0.9, t: '小' }, m: { k: 1, t: '中（預設）' }, l: { k: 1.12, t: '大' } };
+const fsK = () => (FS[prefs.fs] || FS.m).k;
+function applyFs() { const k = fsK(); document.body.style.zoom = k === 1 ? '' : String(k); document.documentElement.dataset.fs = prefs.fs || 'm'; }
+applyFs();
 let hidden = !!prefs.autoHide;
 // 縮小顯示：所有金額除以只有自己知道的倍率（比例、正負不變）
 let scaled = !!prefs.scaleStart;
@@ -470,7 +475,7 @@ function portfolioHTML() {
       <span class="pl-v chg ${plCls(x.i.pl)}">${x.i.pl >= 0 ? '+' : '−'}${short(Math.abs(x.i.pl))}</span></div>`; }).join('');
   return `<div class="pf-box"><h3 class="pf-sub">${Icon.svg('chart', 20)} 持股比重</h3>
     ${donutHTML('pf', slices, '股票市值')}
-    ${withPL.length ? `<h3 class="pf-sub">各檔未實現損益</h3><div class="pl-list">${plRows}</div>` : ''}</div>`;
+    ${withPL.length ? (() => { const tot = withPL.reduce((t, x) => t + x.i.pl, 0); return `<div class="fold pl-fold ${fold.has('pfpl') ? 'open' : ''}" data-f="pfpl"><button type="button" class="fold-head" data-fold="pfpl">${Icon('chart')}<span class="grow"><b>各檔未實現損益</b><small>${withPL.length} 檔・合計 <span class="chg ${plCls(tot)}">${tot >= 0 ? '+' : '−'}${fmt(Math.abs(tot))}</span></small></span><i class="chev">›</i></button><div class="fold-body"><div class="pl-list">${plRows}</div></div></div>`; })() : ''}</div>`;
 }
 
 // 負債頁：負債餘額預測（到全部還清）
@@ -575,9 +580,9 @@ const scrubData = {};   // sid → { pts, tip(p) → [標題, 數字], on(k) }
       const wrap = svg.closest('.chart-wrap'); let tip = wrap.querySelector('.xtip');
       if (!tip) { tip = document.createElement('div'); tip.className = 'xtip'; wrap.appendChild(tip); }
       const [a, b] = S.tip(S.pts[k]); tip.innerHTML = `<small>${a}</small><b>${b}</b>`;
-      const wr = wrap.getBoundingClientRect(), sr = svg.getBoundingClientRect();
-      const px = sr.left - wr.left + (d.kind === 'bar' ? (x0 + (k + .5) * pw / n) : (x0 + (n === 1 ? pw / 2 : k / (n - 1) * pw))) / +d.w * sr.width;
-      tip.style.left = Math.max(4, Math.min(wr.width - tip.offsetWidth - 4, px - tip.offsetWidth / 2)) + 'px';
+      const wr = wrap.getBoundingClientRect(), sr = svg.getBoundingClientRect(), z = wr.width / (wrap.offsetWidth || wr.width) || 1;   // 文字大小縮放
+      const px = (sr.left - wr.left + (d.kind === 'bar' ? (x0 + (k + .5) * pw / n) : (x0 + (n === 1 ? pw / 2 : k / (n - 1) * pw))) / +d.w * sr.width) / z;
+      tip.style.left = Math.max(4, Math.min(wrap.offsetWidth - tip.offsetWidth - 4, px - tip.offsetWidth / 2)) + 'px';
       tip.classList.add('on');
     }
   };
@@ -630,7 +635,7 @@ function renderAssets(s) {
       let eq = '';
       if (isRE(a)) { const L = loansOn(a.id, s.st); if (L.list.length) eq = `<div class="sub eq-line">貸款 <span class="neg">${short(L.debt)}</span> · 淨值 <b class="${v - L.debt >= 0 ? 'pos' : 'neg'}">${short(v - L.debt)}</b> · 成數 ${v ? Math.round(L.debt / v * 100) : '—'}%</div>`; }
       if (a.note) sub += (sub ? ' · ' : '') + a.note;
-      return `<li data-edit="asset" data-id="${a.id}" style="--i:${i++}">${assetIcon(a)}
+      return `<li data-view-item="asset|${a.id}" style="--i:${i++}">${assetIcon(a)}
         <div class="grow"><div class="name">${esc(a.name)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}${eq}</div>
         <div class="amt pos">${fmt(v)}</div></li>`;
     }).join('');
@@ -684,7 +689,8 @@ function drawsHTML(d) {
   rows.sort((a, b) => String(a.ym).localeCompare(String(b.ym)));
   let acc = 0;
   const next = state.plans.filter(p => p.source === d.id).map(p => ({ p, pr: Plan.progress(p, cur) })).find(x => x.pr.nextIdx >= 0 && ['now', 'future'].includes(Plan.periodState(x.p, x.pr.nextIdx, cur)));
-  return `<li class="draws"><ul>${rows.map(r => { acc += r.a; return `<li class="draw-row" ${r.plan ? `data-edit="plan" data-id="${r.plan}"` : ''}><span class="draw-ym">${r.ym ? r.ym.replace('-', '/') : '—'}</span><span class="grow">${esc(r.t)}${r.st === 'assumed' ? ' <span class="chip gray">未確認</span>' : r.st === 'now' ? ' <span class="chip">本月</span>' : ''}<small>累計 ${fmt(acc)}</small></span><span class="neg">+${fmt(r.a)}</span></li>`; }).join('')}
+  const total = rows.reduce((t, r) => t + r.a, 0), fk = 'draws:' + d.id;
+  return `<li class="draws ${fold.has(fk) ? 'open' : ''}"><button type="button" class="draws-head" data-draws="${d.id}"><span class="grow">動用明細 ${rows.length} 筆${next ? '・下一期 ' + Loan.ymAdd(next.p.startYM, next.pr.nextIdx).replace('-', '/') : ''}</span><span class="neg">${fmt(total)}</span><i class="chev">›</i></button><ul>${rows.map(r => { acc += r.a; return `<li class="draw-row" ${r.plan ? `data-edit="plan" data-id="${r.plan}"` : ''}><span class="draw-ym">${r.ym ? r.ym.replace('-', '/') : '—'}</span><span class="grow">${esc(r.t)}${r.st === 'assumed' ? ' <span class="chip gray">未確認</span>' : r.st === 'now' ? ' <span class="chip">本月</span>' : ''}<small>累計 ${fmt(acc)}</small></span><span class="neg">+${fmt(r.a)}</span></li>`; }).join('')}
     ${next ? `<li class="draw-row next"><span class="draw-ym">${Loan.ymAdd(next.p.startYM, next.pr.nextIdx).replace('-', '/')}</span><span class="grow">${Plan.periodState(next.p, next.pr.nextIdx, cur) === 'now' ? '本月' : '下一期'} ${esc(next.p.name)} 第 ${next.pr.nextIdx + 1} 期<small>預計動用，到投資分頁確認後就會算進來</small></span><span class="muted">+${fmt(next.pr.amounts[next.pr.nextIdx])}</span></li>` : ''}</ul></li>`;
 }
 function renderDebts(s) {
@@ -696,7 +702,7 @@ function renderDebts(s) {
   let i = 0;
   const row = ({ d, s: x }, linked) => {
     const b = bankOf(d.bank);
-    return `<li data-edit="debt" data-id="${d.id}" class="${linked ? 'linked' : ''}" style="--i:${i++}"><span class="stack">${UI.bankIcon(b)}<span class="badge">${Icon.svg(typeOf(d.type).ic === 'car' ? 'loan' : typeOf(d.type).ic, 18)}</span></span>
+    return `<li data-view-item="debt|${d.id}" class="${linked ? 'linked' : ''}" style="--i:${i++}"><span class="stack">${UI.bankIcon(b)}<span class="badge">${Icon.svg(typeOf(d.type).ic === 'car' ? 'loan' : typeOf(d.type).ic, 18)}</span></span>
       <div class="grow"><div class="name">${esc(d.name)}${x.inGrace ? ` <span class="chip">寬限期剩 ${x.graceLeft} 月</span>` : ''}</div>
       <div class="sub">${esc(b && b.code !== '—' ? b.code + ' ' + shortBank(b) : (b ? b.name : '—'))} · 年利率 ${pct(rt({ d, s: x }))}${dueTxt(d) ? ` · ${dueTxt(d)}扣` : ''}${d.mode === 'auto' ? ((d.changes || []).length ? ` · 歷程 ${d.changes.length} 筆` : ' · 自動試算') : d.mode === 'revolving' ? ` · 額度 ${short(x.limit)}` : ''}</div></div>
       <div class="amt neg">${fmt(x.balance)}<div class="sub">${x.revolving ? '利息' : '月付'} ${fmt(x.monthly)}</div></div></li>${x.revolving ? drawsHTML(d) : ''}`;
@@ -708,7 +714,7 @@ function renderDebts(s) {
     const debt = p.items.reduce((t, x) => t + x.s.balance, 0), monthly = p.items.reduce((t, x) => t + x.s.monthly, 0), eq = p.v - debt;
     const ltv = p.v ? debt / p.v * 100 : 0;
     return `<li class="prop-group" style="--i:${i++}">
-      <button type="button" class="prop-head" data-edit="asset" data-id="${p.a.id}">${assetIcon(p.a)}
+      <button type="button" class="prop-head" data-view-item="asset|${p.a.id}">${assetIcon(p.a)}
         <div class="grow"><div class="name">${esc(p.a.name)}</div><div class="sub">估值 ${short(p.v)} · ${p.items.length} 筆貸款 · 月付合計 ${fmt(monthly)}</div></div>
         <div class="amt"><div class="${eq >= 0 ? 'pos' : 'neg'}">淨值 ${short(eq)}</div><div class="sub">貸款 ${short(debt)}</div></div></button>
       <div class="ltv"><div class="ltv-bar"><span style="width:${Math.min(100, ltv).toFixed(1)}%"></span></div><small>貸款成數 ${ltv.toFixed(0)}%</small></div>
@@ -1576,11 +1582,173 @@ async function drawLvrPanel() {
   }
 }
 
+// ---- 問 AI：App 使用說明＋（可選）帶入自己的資料摘要 ----
+const ASK_GUIDE = `Balanza 是台灣的個人資產負債 App（PWA），資料只存在使用者手機裡（可加密、可備份到自己的 GitHub Gist）。主要功能：
+- 總覽：淨資產、資產負債比例、等級吉祥物、淨資產走勢（手指可在圖上左右滑看每天數字）。
+- 資產：現金存款、台股、美股（自動收盤價）、基金（境內＋境外，自動淨值，或自己填市值）、債券、加密貨幣、保險、不動產（可用實價登錄估價）、車輛（只算殘值、不計入總資產）。股票基金可記多筆買進賣出、平均成本、損益。右下角 ＋ 可新增一筆、一次輸入股票（可用券商截圖 AI 辨識），或「用說的新增」。
+- 負債：房貸、理財型房貸（額度、只繳息、依投資計畫逐筆動用）、信貸、車貸、學貸、信用卡、親友借款。自動試算本息平均／本金平均／只繳息，支援寬限期、利率調整、延長年限、提前還本、本金校正等歷程，可連結抵押的房子。
+- 還款：扣款月曆（可左右滑、看過去已繳月份）、貸款與訂閱定期扣款、信用卡結帳日、未來每月要繳多少、貸款逐月明細、已經繳出去的利息本金。
+- 投資：投資計畫（總額或每月投入、已投入月數、資金來源可選理財型房貸並自動建立額度與負債），標的可選台股、美股、基金，金額可填台幣或美金；每期確認實際成交後會加進持股。
+- 設定：Face ID 加密鎖、隱私（隱藏金額、縮小顯示倍率）、AI 金鑰（Claude 或 Gemini）、文字大小、幣別、加密自動備份與還原、模擬人生展示。
+點已加入的資產或負債會先顯示詳細內容，按「編輯」才修改。`;
+function askData() {
+  const S = summary(), r = v => Math.round(v);
+  const L = [`今天 ${todayStr()}，金額為新台幣元。`, `總資產 ${r(S.totalAssets)}、總負債 ${r(S.totalDebts)}、淨資產 ${r(S.netWorth)}、負債比 ${S.debtRatio.toFixed(1)}%、每月貸款月付合計 ${r(S.monthlyPay)}（其中利息 ${r(S.monthlyInterest)}）。`];
+  const cats = groupSum(state.assets.filter(countsAsAsset), a => a.category, assetValue);
+  if (cats.length) L.push('資產類別：' + cats.map(([k, v]) => `${k} ${r(v)}`).join('、'));
+  const hs = state.assets.map(a => ({ a, i: stockInfo(a) })).filter(x => x.i);
+  if (hs.length) L.push('持股：' + hs.map(({ a, i }) => `${i.mkt === 'fund' ? (a.name || a.sym) : a.sym}（${mktCat(i.mkt)}）市值 ${r(i.value)}${i.pl != null ? `、未實現損益 ${r(i.pl)}（${i.plPct.toFixed(1)}%）` : ''}`).join('；'));
+  const cars = state.assets.filter(isCar); if (cars.length) L.push('車輛（不計入資產）：' + cars.map(a => `${a.name} 殘值約 ${r(assetValue(a))}`).join('、'));
+  if (S.st.length) L.push('負債：' + S.st.map(({ d, s: x }) => `${d.name}（${d.type || ''}，${shortBank(bankOf(d.bank))}）餘額 ${r(x.balance)}、年利率 ${(x.rate ?? num(d.rate))}%、${x.revolving ? `只繳息 每月利息 ${r(x.monthly)}、額度 ${r(x.limit || 0)}` : `月付 ${r(x.monthly)}`}${x.inGrace ? `、寬限期剩 ${x.graceLeft} 個月，結束後月付 ${r(x.afterGracePay)}` : ''}${isFinite(x.monthsLeft) ? `、${x.payoffYM} 還清` : ''}`).join('；'));
+  if (state.plans.length) L.push('投資計畫：' + state.plans.map(p => `${p.name}（${p.ptype || '股票'}，每期 ${r(planPer(p))}、共 ${p.months} 期，${p.startYM} 起，資金來源 ${p.source === 'self' || !p.source ? '自有資金' : (state.debts.find(d => d.id === p.source) || {}).name || '額度'}）`).join('；'));
+  const subs = state.bills.filter(isSub); if (subs.length) L.push(`訂閱與定期扣款 ${subs.length} 項，每月約 ${r(subs.reduce((t, b) => t + perMonth(b), 0))}`);
+  try { const P = projection(24); L.push('未來 12 個月每月要繳：' + P.months.slice(0, 12).map(m => `${m.ym} ${r(m.total)}`).join('、')); } catch (e) { /* ignore */ }
+  return L.join('\n');
+}
+let askLog = [], askBusy = null;
+const ASK_SUGG = ['這個 App 可以做什麼？', '我每個月要繳多少？哪一筆最重？', '寬限期結束後月付會變多少？', '我的負債比健康嗎？', '怎麼新增基金？', '怎麼設定自動備份？'];
+const ASK_LOCAL = {
+  '這個 App 可以做什麼？': ASK_GUIDE,
+  '怎麼新增基金？': '到「資產」分頁按右下角 ＋ →「新增一筆資產」→ 類別選「基金」。記錄方式選「選基金，每天自動更新淨值」，搜尋名稱（例如「安聯 收益」），再填持有單位數和申購淨值就好。找不到的基金可以選「自己填目前市值」。',
+  '怎麼設定自動備份？': '到「設定 → 備份與還原」，照步驟建立 GitHub token，App 會產生一組恢復金鑰並加密備份到你自己的秘密 Gist。之後資料一有變動就會自動備份；換手機時用恢復金鑰就能還原。',
+};
+function mdLite(t) {
+  return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^#{1,4}\s*(.+)$/gm, '<b>$1</b>').replace(/^\s*[-*•]\s+(.+)$/gm, '<span class="ask-li">$1</span>').replace(/\n/g, '<br>').replace(/<\/span><br>/g, '</span>');
+}
+function drawAsk() {
+  const ready = aiReady();
+  $('askBadge').textContent = ready ? (state.ai.provider === 'gemini' ? 'Gemini' : 'Claude') : '';
+  $('askBadge').hidden = !ready;
+  $('askLog').innerHTML = (askLog.length ? '' : `<div class="ask-msg ai">${ready ? '嗨！我可以回答 App 怎麼用，也可以根據你的資料幫你看看貸款、月付、資產配置。想問什麼？' : `目前還沒設定 AI 金鑰，我只能回答下面幾個常見問題。<br>到「設定 → AI 理解」貼上 Claude 或 Gemini 的 API 金鑰後，就可以自由提問，也能幫你看自己的資料。<br><button type="button" class="btn mini primary" data-sp="ai" data-askclose="1">前往設定 AI</button>`}</div>`)
+    + askLog.map(m => `<div class="ask-msg ${m.role}${m.err ? ' err' : ''}">${m.role === 'ai' ? mdLite(m.text) : esc(m.text)}</div>`).join('')
+    + (askBusy ? '<div class="ask-msg ai typing"><i></i><i></i><i></i></div>' : '');
+  $('askSugg').innerHTML = (ready ? ASK_SUGG : Object.keys(ASK_LOCAL)).filter(q => !askLog.some(m => m.text === q)).slice(0, 4).map(q => `<button type="button" class="chip-btn" data-askq="${esc(q)}">${esc(q)}</button>`).join('');
+  $('askCtx').checked = prefs.askCtx !== false;
+  $('askCtx').disabled = !ready;
+  $('askSend').disabled = !!askBusy;
+  const lg = $('askLog'); lg.scrollTop = lg.scrollHeight;
+}
+function openAsk() {
+  if (locked) return;
+  drawAsk();
+  $('askDialog').showModal();
+}
+async function askSend(q) {
+  q = String(q || $('askText').value).trim();
+  if (!q || askBusy) return;
+  $('askText').value = ''; $('askText').style.height = '';
+  askLog.push({ role: 'user', text: q });
+  if (!aiReady()) {
+    askLog.push({ role: 'ai', text: ASK_LOCAL[q] || '這個問題需要 AI 才能回答。到「設定 → AI 理解」貼上 Claude 或 Gemini 的 API 金鑰後就能自由提問。' });
+    return drawAsk();
+  }
+  const ctl = new AbortController(); askBusy = ctl; drawAsk();
+  const sys = `你是台灣個人資產負債 App「Balanza」裡的小幫手，用繁體中文、口語、精簡（多用條列）回答。
+可以回答：App 功能怎麼用、使用者自己的資產負債與貸款狀況、一般理財觀念。算數字時要列出算法。
+你不是理財顧問：不要叫使用者買賣特定標的，涉及重大決定時提醒他自行判斷或諮詢專業人士。不知道的不要編。
+如果使用者想新增或修改資料，告訴他在 App 哪裡操作（你不能直接改資料）。
+
+【App 說明】
+${ASK_GUIDE}
+${prefs.askCtx !== false ? `\n【使用者的資料摘要】\n${askData()}` : '\n（使用者沒有提供個人資料；需要時請他打開「讓 AI 參考我的資料摘要」）'}`;
+  try {
+    const txt = await AI.chat(state.ai, sys, askLog.slice(-12).filter(m => !m.err), ctl.signal);
+    askLog.push({ role: 'ai', text: txt });
+  } catch (e) {
+    if (e.name !== 'AbortError') askLog.push({ role: 'ai', text: e.message, err: true });
+  }
+  askBusy = null; drawAsk();
+}
+$('askSend').addEventListener('click', () => askSend());
+$('askText').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); askSend(); } });
+$('askText').addEventListener('input', e => { const t = e.target; t.style.height = ''; t.style.height = Math.min(120, t.scrollHeight) + 'px'; });
+$('askSugg').addEventListener('click', e => { const b = e.target.closest('[data-askq]'); if (b) askSend(b.dataset.askq); });
+$('askCtx').addEventListener('change', e => { prefs.askCtx = e.target.checked; savePrefs(); });
+$('askClear').addEventListener('click', () => { if (askBusy) askBusy.abort(); askBusy = null; askLog = []; drawAsk(); });
+$('askClose').addEventListener('click', () => $('askDialog').close());
+$('askLog').addEventListener('click', e => { const b = e.target.closest('[data-askclose]'); if (b) { $('askDialog').close(); showView('settings'); openSetPage(b.dataset.sp); } });
+
+// --- 詳細內容：點一下先看內容，要改再按「編輯」 ---
+let detailCtx = null;
+const kvs = rows => rows.filter(Boolean).map(([a, b]) => `<div class="kv"><span>${a}</span><span>${b}</span></div>`).join('');
+function openDetail(kind, id) {
+  const S = summary();
+  let head = '', body = '', editLabel = '編輯';
+  if (kind === 'asset') {
+    const a = state.assets.find(x => x.id === id); if (!a) return;
+    const v = assetValue(a);
+    head = `<div class="dt-head">${assetIcon(a)}<div class="grow"><h3>${esc(a.name || a.category)}</h3><small>${esc(a.category)}${a.updatedAt ? `・${a.updatedAt.slice(0, 10).replace(/-/g, '/')} 更新` : ''}</small></div><b class="dt-amt ${isCar(a) ? 'muted' : 'pos'}">${fmt(v)}</b></div>`;
+    const rows = [];
+    if (isRE(a)) {
+      const cn = (COUNTIES.find(c => c.k === a.county) || {}).v || '';
+      rows.push(['位置', esc([cn, a.district, a.road].filter(Boolean).join(' ') || '—')]);
+      if (a.btype) rows.push(['建物型態', esc(a.btype)]);
+      if (num(a.ping)) rows.push(['坪數', `${num(a.ping)} 坪${v && num(a.ping) ? `・每坪約 ${short(v / num(a.ping))}` : ''}`]);
+      if (a.lvrAt) rows.push(['估價', `實價登錄估價（${a.lvrAt.slice(0, 10).replace(/-/g, '/')}）`]);
+      const L = loansOn(a.id, S.st);
+      if (L.list.length) {
+        rows.push(['貸款', `${L.list.length} 筆・<span class="neg">${fmt(L.debt)}</span>`]);
+        rows.push(['淨值', `<b class="${v - L.debt >= 0 ? 'pos' : 'neg'}">${fmt(v - L.debt)}</b>・成數 ${v ? Math.round(L.debt / v * 100) : '—'}%`]);
+        rows.push(['每月要繳', fmt(L.monthly)]);
+      }
+    } else if (isCar(a)) {
+      const b = brandOf(a.brand);
+      if (a.brand) rows.push(['車款', esc(`${b ? b.zh : a.brand} ${a.model || ''}`)]);
+      if (a.buyYear) rows.push(['購入', `${a.buyYear} 年${a.buyMonth ? ` ${a.buyMonth} 月` : ''}${num(a.buyPrice) ? `・${fmt(num(a.buyPrice))}` : ''}`]);
+      rows.push(['估算殘值', `${fmt(v)}<small class="muted">（不計入總資產）</small>`]);
+    } else {
+      rows.push(['目前價值', fmt(v)]);
+      if (S.totalAssets && countsAsAsset(a)) rows.push(['占總資產', `${(v / S.totalAssets * 100).toFixed(1)}%`]);
+    }
+    if (a.note) rows.push(['備註', esc(a.note)]);
+    body = kvs(rows);
+  } else {
+    const d = state.debts.find(x => x.id === id); if (!d) return;
+    const x = debtStatus(d) || {};
+    const b = bankOf(d.bank), nd = nextDue(d), prop = propOf(d.collateral);
+    head = `<div class="dt-head"><span class="stack">${UI.bankIcon(b)}</span><div class="grow"><h3>${esc(d.name)}</h3><small>${esc(d.type || '負債')}・${esc(b ? (b.code !== '—' ? b.code + ' ' : '') + shortBank(b) : '—')}</small></div><b class="dt-amt neg">${fmt(x.balance || 0)}</b></div>`;
+    const rows = [
+      [x.revolving ? '已動用' : '剩餘本金', fmt(x.balance || 0)],
+      x.revolving ? ['額度', `${fmt(x.limit || 0)}・還可動用 ${fmt(Math.max(0, (x.limit || 0) - (x.balance || 0)))}`] : null,
+      ['年利率', pct(x.rate ?? num(d.rate))],
+      [x.revolving ? '每月利息' : '每月要繳', `<b>${fmt(x.monthly || 0)}</b>`],
+      ['扣款日', nd ? `${dueTxt(d)}・下次 ${mdTxt(nd.date)}${nd.days === 0 ? '（今天）' : `（${nd.days} 天後）`}` : '<span class="muted">還沒填</span>'],
+      d.mode === 'auto' && num(d.principal) ? ['撥款', `${d.startDate ? d.startDate.replace(/-/g, '/') : d.startYM ? d.startYM.replace('-', '/') : ''}・${fmt(num(d.principal))}・${num(d.years)} 年`] : null,
+      x.inGrace ? ['寬限期', `剩 ${x.graceLeft} 個月，${String(x.graceEndYM || '').replace('-', '/')} 結束後月付 <b class="neg">${fmt(x.afterGracePay || 0)}</b>`] : null,
+      isFinite(x.monthsLeft) ? ['還清', `${String(x.payoffYM || '').replace('-', '/')}（剩 ${x.monthsLeft} 期）`] : null,
+      isFinite(x.interestLeft) && x.interestLeft ? ['剩餘利息', fmt(x.interestLeft)] : null,
+      prop ? ['抵押', esc(prop.name)] : null,
+    ];
+    const paid = Plan.paidSoFar(d, state.plans);
+    if (paid && paid.months) rows.push(['已經繳了', `利息 <span class="neg">${fmt(paid.interest)}</span>${paid.principal ? `・本金 ${fmt(paid.principal)}` : ''}`]);
+    if (d.note) rows.push(['備註', esc(d.note)]);
+    const chg = (d.changes || []).filter(c => CHG[c.type] && c.ym).sort((p, q) => String(p.ym).localeCompare(q.ym));
+    body = kvs(rows) + (chg.length ? `<div class="dt-sub">貸款歷程</div><ul class="dt-tl">${chg.map(c => `<li><span>${String(c.ym).replace('-', '/')}</span><span>${esc(CHG[c.type].d(c))}</span></li>`).join('')}</ul>` : '')
+      + (x.revolving ? (() => { const h = drawsHTML(d); return h ? `<div class="dt-sub">動用明細</div><ul class="list dt-draws">${h.replace('class="draws ', 'class="draws open ')}</ul>` : ''; })() : '');
+  }
+  detailCtx = { kind, id };
+  $('dtBody').innerHTML = head + `<div class="dt-body">${body}</div>`;
+  $('dtEdit').innerHTML = `${Icon.svg('pencil', 18)} ${editLabel}`;
+  $('detailDialog').showModal();
+}
+$('dtClose').addEventListener('click', () => $('detailDialog').close());
+$('dtEdit').addEventListener('click', () => { const c = detailCtx; $('detailDialog').close(); if (c) openEditor(c.kind, c.id); });
+$('detailDialog').addEventListener('click', e => {
+  if (e.target === $('detailDialog')) return $('detailDialog').close();
+  const p = e.target.closest('[data-edit="plan"]');
+  if (p) { $('detailDialog').close(); openEditor('plan', p.dataset.id); }
+});
+
 // --- 點擊：開啟、展開、分組 ---
 document.addEventListener('click', e => {
   if (e.target.closest('dialog')) return;
   const add = e.target.closest('[data-add]');
   if (add && add.id === 'fab' && add.dataset.add === 'asset') return assetAddMenu();
+  if (add && add.id === 'fab' && add.dataset.add === 'debt') return debtAddMenu();
+  const vw = e.target.closest('[data-view-item]');
+  if (vw) { const [k, id] = vw.dataset.viewItem.split('|'); return openDetail(k, id); }
+  const dt = e.target.closest('[data-draws]');
+  if (dt) { const k = 'draws:' + dt.dataset.draws; fold.has(k) ? fold.delete(k) : fold.add(k); dt.closest('.draws').classList.toggle('open', fold.has(k)); return; }
   if (add && add.dataset.add) return openEditor(add.dataset.add);
   const ed = e.target.closest('[data-edit]');
   if (ed) return openEditor(ed.dataset.edit, ed.dataset.id);
@@ -2542,11 +2710,21 @@ function bulkName(row) {
 async function assetAddMenu() {
   if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
   const o = await UI.openPicker({ title: '新增資產', options: [
-    opt('one', '新增一筆資產', Icon('piggy'), '存款、房子、車子、保險、單一檔股票…'),
+    opt('one', '新增一筆資產', Icon('piggy'), '存款、房子、車子、保險、股票、基金…'),
     opt('bulk', '一次輸入股票持股', Icon('chart'), '多檔一起輸入，或用券商 App 的庫存截圖自動辨識'),
+    opt('voice', '用說的新增', Icon('mic'), '例：玉山活存 50 萬、0050 三張 均價 95'),
   ] });
   if (!o) return;
-  if (o.value === 'bulk') openBulk(); else openEditor('asset');
+  if (o.value === 'bulk') openBulk(); else if (o.value === 'voice') openVoice(); else openEditor('asset');
+}
+async function debtAddMenu() {
+  if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
+  const o = await UI.openPicker({ title: '新增負債', options: [
+    opt('one', '新增一筆負債', Icon('card'), '房貸、理財型房貸、信貸、車貸、學貸、信用卡…'),
+    opt('voice', '用說的新增', Icon('mic'), '例：國泰房貸 800 萬 利率 2.1% 30 年'),
+  ] });
+  if (!o) return;
+  if (o.value === 'voice') openVoice(); else openEditor('debt');
 }
 $('bkMkt').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (b) setBulkMkt(b.dataset.m); });
 $('bkAdd').addEventListener('click', () => { $('bkRows').insertAdjacentHTML('beforeend', bulkRow()); $('bkRows').lastElementChild.querySelector('input').focus(); });
@@ -2912,7 +3090,7 @@ $('vcAI').addEventListener('click', () => vcAI(true));
 $('vcMic').addEventListener('click', () => listening ? stopListening() : startListening());
 $('vcClose').addEventListener('click', () => { stopListening(); $('voiceDialog').close(); });
 $('voiceDialog').addEventListener('close', stopListening);
-$('micBtn').addEventListener('click', openVoice);
+$('askBtn').addEventListener('click', () => openAsk());
 
 // ---------- 小提示 ----------
 let toastT;
@@ -3525,6 +3703,7 @@ const SET_GROUPS = [
   ]],
   ['一般', [
     { p: 'ai', ic: 'star', t: 'AI 理解', s: () => { const a = state.ai || {}; return !a.on ? '關閉' : AI.keyOf(a) ? (a.provider === 'gemini' ? 'Gemini' : 'Claude') : '尚未設定金鑰（使用內建規則）'; } },
+    { p: 'textsize', ic: 'search', t: '文字大小', s: () => (FS[prefs.fs] || FS.m).t.replace('（預設）', '') },
     { p: 'currency', ic: () => (CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0]).ic, t: '幣別', s: () => (CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0]).label },
   ]],
   ['資料', [
@@ -3554,6 +3733,11 @@ function renderSetMenu() {
 }
 function openSetPage(p) {
   if (p === 'currency') { $('currencyBtn').click(); return; }
+  if (p === 'textsize') {
+    UI.openPicker({ title: '文字大小', value: prefs.fs || 'm', options: Object.entries(FS).map(([v, x]) => opt(v, x.t, `<span class="fs-demo fs-${v}">字</span>`, v === 's' ? '一頁看到比較多' : v === 'l' ? '字和按鈕都放大，比較好按' : '')) })
+      .then(o => { if (!o) return; prefs.fs = o.value; savePrefs(); applyFs(); renderSetMenu(); toast(`文字大小：${FS[o.value].t.replace('（預設）', '')}`); });
+    return;
+  }
   if (sim && ['backup', 'lock'].includes(p)) { toast('模擬中不能使用，先結束模擬'); p = ''; }
   setPage = p;
   const it = SET_GROUPS.flatMap(g => g[1]).find(x => x.p === p);

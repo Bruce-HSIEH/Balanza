@@ -1,0 +1,159 @@
+{
+ "IN2213_01": {
+  "n": 487,
+  "ccy": [
+   "CNY",
+   "TWD",
+   "USD"
+  ],
+  "sample": [
+   "兆豐台灣豐收主動式 ETF基金 (基金之配息來源可能為收益平準金)",
+   "兆豐第一基金",
+   "兆豐萬全基金-A類型"
+  ]
+ },
+ "IN2213_02": {
+  "n": 487,
+  "ccy": [
+   "CNY",
+   "TWD",
+   "USD"
+  ],
+  "sample": [
+   "兆豐台灣豐收主動式 ETF基金 (基金之配息來源可能為收益平準金)",
+   "兆豐第一基金",
+   "兆豐萬全基金-A類型"
+  ]
+ },
+ "IN2213_03": {
+  "n": 487,
+  "ccy": [
+   "CNY",
+   "TWD",
+   "USD"
+  ],
+  "sample": [
+   "兆豐台灣豐收主動式 ETF基金 (基金之配息來源可能為收益平準金)",
+   "兆豐第一基金",
+   "兆豐萬全基金-A類型"
+  ]
+ },
+ "IN2213_04": {
+  "n": 487,
+  "ccy": [
+   "CNY",
+   "TWD",
+   "USD"
+  ],
+  "sample": [
+   "兆豐台灣豐收主動式 ETF基金 (基金之配息來源可能為收益平準金)",
+   "兆豐第一基金",
+   "兆豐萬全基金-A類型"
+  ]
+ },
+ "IN2213_05": {
+  "n": 487,
+  "ccy": [
+   "CNY",
+   "TWD",
+   "USD"
+  ],
+  "sample": [
+   "兆豐台灣豐收主動式 ETF基金 (基金之配息來源可能為收益平準金)",
+   "兆豐第一基金",
+   "兆豐萬全基金-A類型"
+  ]
+ },
+ "fundclear": [
+  "/api/classStats/offshore/query",
+  "/api/classStats/onshore/query",
+  "/api/detail-statistics/offshore/fund-asset-detail",
+  "/api/detail-statistics/offshore/query-summary-city",
+  "/api/detail-statistics/offshore/query-summary-currency",
+  "/api/detail-statistics/offshore/query-summary-fund",
+  "/api/detail-statistics/onshore/query-fund",
+  "/api/detail-statistics/onshore/query-sale",
+  "/api/file-download",
+  "/api/marketing-statistics/offshore/fund-class",
+  "/api/marketing-statistics/offshore/fund-class/line-chart",
+  "/api/marketing-statistics/offshore/fund-class/line-chart/fund-size",
+  "/api/marketing-statistics/offshore/fund-class/line-chart/net-asset-value",
+  "/api/marketing-statistics/offshore/fund-class/line-chart/trading-volume",
+  "/api/marketing-statistics/offshore/fund-class/query",
+  "/api/marketing-statistics/offshore/line-chart",
+  "/api/marketing-statistics/offshore/line-chart/fund-size",
+  "/api/marketing-statistics/offshore/line-chart/trading-volume",
+  "/api/marketing-statistics/offshore/query",
+  "/api/marketing-statistics/onshore/line-chart",
+  "/api/marketing-statistics/onshore/line-chart/fund-size",
+  "/api/marketing-statistics/onshore/line-chart/net-asset-value",
+  "/api/marketing-statistics/onshore/line-chart/trading-volume",
+  "/api/marketing-statistics/onshore/query",
+  "/api/marketing/offshore/query-fund",
+  "/api/marketing/offshore/query-fund-class",
+  "/api/marketing/onshore/query",
+  "/api/offshore/download-doc",
+  "/api/performance/lipper/query-avg",
+  "/api/performance/lipper/query-fund",
+  "/api/performance/lipper/query-leader",
+  "/api/performance/ntu/query-fund",
+  "/api/performance/ntu/query-fund-asset",
+  "/api/performance/star/query-fund-asset",
+  "/api/performance/star/query-rating",
+  "/api/performance/star/query-star-rating",
+  "https://announce.fundclear.com.tw/MOPSonshoreFundWeb/A01_02.jsp?fundId=",
+  "https://fundclear-tdcc.cdn.hinet.net/"
+ ],
+ "https://www.sitca.org.tw/ROC/Industry/IN2002.aspx?PGMID=IN0202": [
+  "IN2001.aspx?PGMID=IN0201",
+  "IN2002.aspx?PGMID=IN0202",
+  "IN2103.aspx?pid=IN2212_01",
+  "IN2104.aspx?pid=IN2213_01",
+  "IN2105.aspx?pid=IN2212_02",
+  "IN2106.aspx?pid=IN2213_02",
+  "IN2107.aspx?pid=IN2213_03",
+  "IN2201.aspx?pid=IN2221_01",
+  "IN2202.aspx?pid=IN2221_02",
+  "IN2203.aspx?pid=IN2221_03",
+  "IN2204.aspx?pid=IN2221_04",
+  "IN2205.aspx?pid=IN2221_05",
+  "IN2206.aspx?pid=IN2221_06",
+  "IN2207.aspx?pid=IN2221_07",
+  "IN2208.aspx?pid=IN2221_08",
+  "IN2209.aspx?pid=IN2221_09",
+  "IN2210.aspx?pid=IN2221_10",
+  "IN2211.aspx?pid=IN2222_01",
+  "IN2212.aspx?pid=IN2222_02",
+  "IN2213.aspx?pid=IN2222_03",
+  "IN2302.aspx?pid=IN2232_01",
+  "IN2303.aspx?pid=IN2233_01",
+  "IN2304.aspx?pid=IN2233_02",
+  "IN2305.aspx?pid=IN2233_03",
+  "IN2306.aspx?pid=IN2233_04",
+  "IN2307.aspx?pid=IN2232_02",
+  "IN2400.aspx?PGMID=IN0202&PORDER=",
+  "IN2410.aspx?PGMID=IN0202&PORDER=",
+  "IN2420.aspx?PGMID=IN0202&PORDER=",
+  "IN2501.aspx?PGMID=FD0201",
+  "IN2502.aspx?PGMID=FD0202",
+  "IN2503.aspx?PGMID=FD0203",
+  "IN2604.aspx?pid=IN22602_01",
+  "IN2605.aspx?pid=IN22602_02",
+  "IN2607.aspx?pid=IN22602_04",
+  "IN2608.aspx?pid=IN22603_01",
+  "IN2609.aspx?pid=IN22603_02",
+  "IN2610.aspx?pid=IN22603_03",
+  "IN2614.aspx?pid=IN22604_01",
+  "IN2615.aspx?pid=IN22605_01",
+  "IN2616.aspx?pid=IN22605_02",
+  "IN2622.aspx?pid=IN22607_01",
+  "IN2623.aspx?pid=IN22607_02",
+  "IN2624.aspx?pid=IN22607_03",
+  "IN2628.aspx?pid=IN22609_01",
+  "IN2629.aspx?pid=IN22601_04",
+  "IN2630.aspx?pid=IN22601_05"
+ ],
+ "https://www.sitca.org.tw/ROC/Industry/IN2105.aspx": [
+  "IN2105.aspx"
+ ]
+}

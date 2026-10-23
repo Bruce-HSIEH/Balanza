@@ -1104,3 +1104,6 @@ button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; c
 .pf-box { background: var(--soft); border-radius: 14px; padding: 10px 12px; margin-bottom: 4px; }
 .pf-box .pf-sub:first-child { margin-top: 0; }
 .pf-sub { display: flex; align-items: center; gap: 6px; }
+.group.not-counted { opacity: .85; }
+.group.not-counted .group-head .sub .chip { margin-right: 4px; }
+.group.not-counted .amt.pos { color: var(--muted); }

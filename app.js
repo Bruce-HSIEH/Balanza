@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.20.0';
+const APP_VERSION = '5.20.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -182,12 +182,16 @@ function stockInfo(a) {
 }
 function assetValue(a) {
   const s = stockInfo(a);
-  return s ? s.value : num(a.amount);
+  if (s) return s.value;
+  if (a.category === '車輛' && num(a.buyPrice) && num(a.buyYear)) return carValue(num(a.buyPrice), num(a.buyYear));   // 殘值每年自動重算
+  return num(a.amount);
 }
+// 車子只看殘值，不算進總資產／淨資產
+const countsAsAsset = a => a.category !== '車輛';
 
 function summary() {
   const st = state.debts.map(d => ({ d, s: debtStatus(d) }));
-  const totalAssets = state.assets.reduce((s, a) => s + assetValue(a), 0);
+  const totalAssets = state.assets.filter(countsAsAsset).reduce((s, a) => s + assetValue(a), 0);
   const totalDebts = st.reduce((s, x) => s + x.s.balance, 0);
   const monthlyPay = st.reduce((s, x) => s + x.s.monthly, 0);
   const monthlyInterest = st.reduce((s, x) => s + x.s.monthlyInterest, 0);
@@ -376,7 +380,7 @@ document.addEventListener('click', e => {
   if (id === 'cat') renderAssetDonut(); else if (id === 'pf') renderPortfolio();
 });
 function renderAssetDonut() {
-  const rows = groupSum(state.assets, a => a.category, assetValue).filter(r => r[1] > 0);
+  const rows = groupSum(state.assets.filter(countsAsAsset), a => a.category, assetValue).filter(r => r[1] > 0);
   $('assetByCat').innerHTML = rows.length ? donutHTML('cat', rows.map(([k, v]) => ({ key: k, label: k, icon: icCat(k), value: v, color: catColor(k) })), '總資產')
     : `<div class="empty">${Icon('sleep', 'ico-lg')}<p>尚無資料</p></div>`;
 }
@@ -557,7 +561,7 @@ function renderAssets(s) {
     const rows = g.items.map(({ a, v }) => {
       if (g.c.stock && a.sym) return stockRow(a, i++);
       let sub = '';
-      if (a.category === '車輛' && a.brand) { const b = brandOf(a.brand); sub = `${b ? b.zh : a.brand}${a.model ? ' ' + a.model : ''}${a.buyYear ? ' · ' + a.buyYear : ''}`; }
+      if (a.category === '車輛' && a.brand) { const b = brandOf(a.brand); sub = `${b ? b.zh : a.brand}${a.model ? ' ' + a.model : ''}${a.buyYear ? ' · ' + a.buyYear + ' 年購入' : ''}${num(a.buyPrice) ? ' · 買價 ' + short(num(a.buyPrice)) : ''}`; }
       if (a.category === '不動產' && a.district) sub = `${a.district}${a.road || ''}${a.ping ? ' · ' + a.ping + ' 坪' : ''}${a.lvrAt ? ' · 實價估' : ''}`;
       let eq = '';
       if (isRE(a)) { const L = loansOn(a.id, s.st); if (L.list.length) eq = `<div class="sub eq-line">貸款 <span class="neg">${short(L.debt)}</span> · 淨值 <b class="${v - L.debt >= 0 ? 'pos' : 'neg'}">${short(v - L.debt)}</b> · 成數 ${v ? Math.round(L.debt / v * 100) : '—'}%</div>`; }
@@ -566,10 +570,11 @@ function renderAssets(s) {
         <div class="grow"><div class="name">${esc(a.name)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}${eq}</div>
         <div class="amt pos">${fmt(v)}</div></li>`;
     }).join('');
-    return `<div class="group ${open ? 'open' : ''}">
+    const nc = g.c.v === '車輛';
+    return `<div class="group ${open ? 'open' : ''} ${nc ? 'not-counted' : ''}">
       <button type="button" class="group-head" data-group="${esc(g.c.v)}">${icCat(g.c.v)}
-        <div class="grow"><div class="name">${esc(g.c.v)} <small>${g.items.length} 項</small></div><div class="sub">${share.toFixed(0)}% ${extra}</div>${plLine}</div>
-        <div class="amt pos">${fmt(g.total)}</div><i class="chev">›</i></button>
+        <div class="grow"><div class="name">${esc(g.c.v)} <small>${g.items.length} 項</small></div><div class="sub">${nc ? '<span class="chip gray">不計入總資產</span>估算殘值' : `${share.toFixed(0)}% ${extra}`}</div>${plLine}</div>
+        <div class="amt ${nc ? 'muted' : 'pos'}">${fmt(g.total)}</div><i class="chev">›</i></button>
       <div class="sub-list-wrap">${g.c.stock ? trendHTML('tr-' + g.c.stock, [g.c.v], `${g.c.v}資產走勢`) : ''}<ul class="list sub-list">${rows}</ul></div></div>`;
   };
   // 台股、美股收進「股票」大分類
@@ -593,7 +598,7 @@ function renderAssets(s) {
         ${stockGs.map(groupHTML).join('')}
       </div></div>`;
   }
-  const all = [...others.map(g => ({ t: g.total, h: groupHTML(g) })), ...(stockGs.length ? [{ t: sTotal, h: stockBlock }] : [])].sort((a, b) => b.t - a.t);
+  const all = [...others.map(g => ({ t: g.c.v === '車輛' ? -1 : g.total, h: groupHTML(g) })), ...(stockGs.length ? [{ t: sTotal, h: stockBlock }] : [])].sort((a, b) => b.t - a.t);
   $('assetList').innerHTML = all.map(x => x.h).join('');
 }
 
@@ -925,8 +930,8 @@ const FIELDS = {
     { k: 'buyYear', label: '購入年份', type: 'number', ph: String(new Date().getFullYear()), show: isCar, half: true },
     { k: 'buyPrice', label: '購入價格', type: 'number', show: isCar, half: true },
     { panel: 'carPanel', show: isCar },
-    { sec: ['wallet', '價值'], show: v => !isStock(v) },
-    { k: 'amount', label: '目前價值', type: 'number', req: true, show: v => !isStock(v) },
+    { sec: ['wallet', '價值'], show: v => !isStock(v) && !(isCar(v) && num(v.buyPrice) && num(v.buyYear)) },
+    { k: 'amount', label: '目前價值', type: 'number', req: true, show: v => !isStock(v) && !(isCar(v) && num(v.buyPrice) && num(v.buyYear)) },
     { k: 'note', label: '備註', type: 'text' },
   ],
   debt: [
@@ -1118,7 +1123,7 @@ $('editFields').addEventListener('input', e => {
   }
   if (editing.kind === 'debt') { drawLoanPanel(); drawChgPanel(); }
   if (editing.kind === 'plan') drawPlanPanel();
-  if (editing.kind === 'asset' && isCar(vals) && ['buyYear', 'buyPrice', 'model'].includes(e.target.name)) drawCarPanels();
+  if (editing.kind === 'asset' && isCar(vals) && ['buyYear', 'buyPrice', 'model'].includes(e.target.name)) refreshForm();
   if (editing.kind === 'asset' && isRE(vals) && e.target.name === 'ping') drawLvrPanel();
   if (editing.kind === 'asset' && isRE(vals) && vals.id && e.target.name === 'amount') drawPropLoanPanel();
   if (editing.kind === 'asset' && isStock(vals) && ['shares', 'cost', 'manualPrice'].includes(e.target.name)) drawStockPanel();
@@ -1404,11 +1409,11 @@ function drawCarPanels() {
   const el = $('carPanel');
   if (!el) return;
   const pr = num(vals.buyPrice), year = num(vals.buyYear);
-  if (!pr || !year) { el.innerHTML = `<div class="hint-row">${Icon('down')}<span>填入購入年份與價格，可估算目前殘值</span></div>`; return; }
+  if (!pr || !year) { el.innerHTML = `<div class="hint-row">${Icon('down')}<span>填入購入年份與價格，就會自動估算目前殘值（車子不計入總資產）</span></div>`; return; }
   const v = carValue(pr, year);
   el.innerHTML = `<div class="kv"><span>估算殘值（車齡 ${Math.max(0, new Date().getFullYear() - year)} 年）</span><b class="accent">${fmt(v)}</b></div>
-    <button type="button" class="btn mini primary" data-apply="${v}">套用為目前價值</button>
-    <div class="muted small">依一般折舊估算（首年約 -20%，之後每年約 -12%），實際以中古車行情為準。</div>`;
+    <div class="kv"><span>已折舊</span><span class="neg">${fmt(pr - v)}（${(100 - v / pr * 100).toFixed(0)}%）</span></div>
+    <div class="muted small">殘值會自動算、每年自動更新，<b>不計入總資產與淨資產</b>。依一般折舊估算（首年約 -20%，之後每年約 -12%），實際以中古車行情為準。</div>`;
 }
 
 // --- 實價登錄 ---

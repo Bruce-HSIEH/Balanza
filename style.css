@@ -988,3 +988,36 @@ main {
 /* v5.17.1：小秤的特效改由 JS 驅動，關掉 CSS 動畫避免 iOS 切頁後卡住 */
 .mascot.js:not(.still) *:not(.aura-l) { animation: none !important; }
 .mascot.js:not(.still) .flame { scale: none; }
+
+/* ===== v5.18 定期扣款 ===== */
+button.cd { border: 0; background: none; font: inherit; color: inherit; padding: 0; cursor: pointer; }
+.cal .cd.has { background: var(--soft); }
+.cal .cd.sel { background: var(--accent); color: #fff; opacity: 1; }
+.cal .cd.sel i span { box-shadow: 0 0 0 1.5px #fff; }
+.cal .cd i { flex-wrap: wrap; justify-content: center; max-width: 30px; }
+.cal .cd i em { font-style: normal; font-size: 9px; line-height: 6px; }
+.mk { display: inline-block; flex: none; width: 10px; height: 10px; }
+.mk-loan, .cal .cd i .mk-loan { border-radius: 50%; background: var(--c); }
+.mk-card, .cal .cd i .mk-card { border-radius: 2px; background: var(--c); }
+.mk-close, .cal .cd i .mk-close { border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+.mk-sub, .cal .cd i .mk-sub { background: var(--c); transform: rotate(45deg) scale(.82); border-radius: 1.5px; }
+.cal .cd i span { width: 6px !important; height: 6px !important; }
+.cal .cd i .mk-close { box-shadow: inset 0 0 0 1.5px var(--c); }
+.due-row { cursor: pointer; }
+.due-row .mk { margin: 0 2px; }
+.due-row.oncard .due-amt { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+.due-split { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); margin: -4px 0 10px; font-variant-numeric: tabular-nums; }
+.due-split i, .cal-legend i { margin-right: 4px; vertical-align: -1px; }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--muted); margin: -2px 0 8px; }
+.cal-legend .mk { width: 8px; height: 8px; }
+.due-filter { font-size: 13px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+.due-filter .link-btn { margin: 0; }
+.bills-card .due-head h2 { margin-bottom: 0; }
+.bill-h { font-size: 14px; margin: 14px 0 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.bill-h small { font-weight: 400; color: var(--muted); font-size: 12px; }
+.bill-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; cursor: pointer; }
+.bill-row .ico { width: 30px; height: 30px; border-radius: 9px; }
+.bill-row .ico svg { width: 24px; height: 24px; }
+.bill-row .grow small { display: block; font-size: 11.5px; color: var(--muted); }
+.due-amt small { display: block; font-weight: 400; font-size: 11px; }
+#repayBody { padding-bottom: 72px; }

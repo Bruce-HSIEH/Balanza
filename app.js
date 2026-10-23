@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.17.1';
+const APP_VERSION = '5.18.0';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -12,6 +12,7 @@ const CAT_MIGRATE = { '股票': '台股', 'ETF/基金': '基金' };
 function migrate(d) {
   d = { currency: 'TWD', assets: [], debts: [], plans: [], ...d };
   d.ai = { on: true, provider: 'claude', key: '', model: 'claude-haiku-5-5', gkey: '', gmodel: 'gemini-3.1-flash-lite', ...(d.ai || {}) };
+  d.bills = Array.isArray(d.bills) ? d.bills : [];
   d.backup = { on: false, token: '', gistId: '', login: '', key: '', salt: '', ...(d.backup || {}) };
   d.plans = d.plans || [];
   d.assets = d.assets.map(a => {
@@ -660,7 +661,7 @@ function showView(name) {
     if (on) { v.style.animation = 'none'; void v.offsetWidth; v.style.animation = ''; }
   });
   const fab = $('fab');
-  const kind = { assets: 'asset', debts: 'debt', invest: 'plan' }[name] || '';
+  const kind = { assets: 'asset', debts: 'debt', invest: 'plan', repay: 'bill' }[name] || '';
   document.querySelectorAll('.top-btn').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   fab.hidden = !kind;
   fab.dataset.add = kind;
@@ -708,6 +709,12 @@ const OPTS = {
     if (!ps.length) throw new Error('還沒有不動產資產，先到「資產」新增這間房子');
     return [opt('', '不指定', Icon('other'), '不和任何房子連結'), ...ps.map(a => opt(a.id, a.name, assetIcon(a), `估值 ${short(assetValue(a))}${a.district ? ' · ' + a.district + (a.road || '') : ''}`))];
   },
+  billKind: () => BILL_KINDS.map(c => opt(c.v, c.label, Icon(c.ic), c.d)),
+  billCat: () => BILL_CATS.map(c => opt(c.v, c.v, Icon(c.ic))),
+  billCcy: () => CURRENCIES.map(c => opt(c.v, c.label, Icon(c.ic))),
+  billCycle: () => BILL_CYCLES.map(c => opt(c.v, c.label, Icon(c.v === 'w' ? 'clock' : 'calendar'))),
+  payWith: () => [opt('', '銀行帳戶自動扣款', Icon('bank')), ...state.bills.filter(isCardBill).map(c => opt(c.id, `刷 ${c.name}`, UI.bankIcon(bankOf(c.bank)), '金額會併入這張卡的帳單')), opt('other', '其他（現金、轉帳…）', Icon('wallet'))],
+  autopay: () => [opt('auto', '自動扣繳', Icon('bank'), '截止日從帳戶自動扣'), opt('manual', '自己繳', Icon('wallet'), '截止日前要記得繳')],
   grace: () => [0, 6, 12, 24, 36, 48, 60].map(m => opt(String(m), m ? `${m} 個月${m % 12 === 0 ? `（${m / 12} 年）` : ''}` : '沒有寬限期', Icon(m ? 'pause' : 'play'), m ? '期間只繳利息、不還本金' : '一撥款就開始還本金')),
   stock: async vals => {
     await Stocks.load();
@@ -726,6 +733,11 @@ const PICK_LABEL = {
   mode: v => (CALC_MODES.find(c => c.v === v) || {}).label || '',
   brand: v => { const b = brandOf(v); return b ? (b.zh === b.v ? b.v : `${b.zh} ${b.v}`) : v; },
   grace: v => +v ? `${v} 個月` : '沒有寬限期',
+  billKind: v => (BILL_KINDS.find(c => c.v === v) || {}).label || '',
+  billCcy: v => (CURRENCIES.find(c => c.v === v) || {}).label || v,
+  billCycle: v => (BILL_CYCLES.find(c => c.v === v) || {}).label || '',
+  payWith: v => !v ? '銀行帳戶自動扣款' : v === 'other' ? '其他（現金、轉帳…）' : `刷 ${(state.bills.find(c => c.id === v) || {}).name || '（已刪除的卡）'}`,
+  autopay: v => v === 'manual' ? '自己繳' : '自動扣繳',
   property: v => { const a = propOf(v); return a ? a.name : v ? '（已刪除的房子）' : '不指定'; },
   stock: (v, vals) => { const q = v && Stocks.quote(mktOf(vals), v); return q ? `${q.sym} ${q.name}` : v; },
 };
@@ -742,6 +754,12 @@ const PICK_ICON = {
   county: () => Icon('pin'), district: () => Icon('city'), road: () => Icon('road'),
   btype: v => Icon((BUILDING_TYPES.find(c => c.v === v) || {}).ic || 'tower'),
   grace: v => Icon(+v ? 'pause' : 'play'),
+  billKind: v => Icon((BILL_KINDS.find(c => c.v === v) || {}).ic || 'calendar'),
+  billCat: v => Icon((BILL_CATS.find(c => c.v === v) || {}).ic || 'other'),
+  billCcy: v => Icon((CURRENCIES.find(c => c.v === v) || {}).ic || 'twd'),
+  billCycle: v => Icon(v === 'w' ? 'clock' : 'calendar'),
+  payWith: v => !v ? Icon('bank') : v === 'other' ? Icon('wallet') : UI.bankIcon(bankOf((state.bills.find(c => c.id === v) || {}).bank)),
+  autopay: v => Icon(v === 'manual' ? 'wallet' : 'bank'),
   property: v => { const a = propOf(v); return a ? assetIcon(a) : Icon('other'); },
   stock: (v, vals) => Icon(mktOf(vals) === 'us' ? 'us' : 'tw'),
 };
@@ -845,10 +863,27 @@ FIELDS.plan = [
   { panel: 'planPanel', show: () => true },
   { k: 'note', label: '備註', type: 'text' },
 ];
-const KEY = { asset: 'assets', debt: 'debts', plan: 'plans' };
-const KIND_NAME = { asset: '資產', debt: '負債', plan: '投資計畫', '': '' };
-const KIND_ICON = { asset: 'piggy', debt: 'card', plan: 'invest' };
-const NUMERIC = new Set(['amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
+const KEY = { asset: 'assets', debt: 'debts', plan: 'plans', bill: 'bills' };
+const KIND_NAME = { asset: '資產', debt: '負債', plan: '投資計畫', bill: '定期扣款', '': '' };
+const KIND_ICON = { asset: 'piggy', debt: 'card', plan: 'invest', bill: 'calendar' };
+const isCardBill = v => v.bkind === 'card', isSub = v => v.bkind !== 'card';
+FIELDS.bill = [
+  { k: 'bkind', label: '種類', type: 'pick', opts: 'billKind', def: 'sub' },
+  { k: 'name', label: '名稱', type: 'text', req: true, phFn: true, ph: '例：Netflix、Claude Pro、中華電信' },
+  { k: 'cat', label: '類別', type: 'pick', opts: 'billCat', def: '其他', show: isSub },
+  { k: 'bank', label: '發卡銀行', type: 'pick', opts: 'bank', search: true, show: isCardBill },
+  { k: 'closeDay', label: '結帳日（每月幾號）', type: 'number', min: 1, max: 31, req: true, half: true, show: isCardBill },
+  { k: 'dueDay', label: '繳款截止日（每月幾號）', type: 'number', min: 1, max: 31, req: true, half: true, show: isCardBill },
+  { k: 'amount', label: '金額', type: 'number', half: true, hintFn: v => isCardBill(v) ? '每期大約要繳多少（選填）；不填就用刷這張卡的訂閱加總' : '' },
+  { k: 'ccy', label: '幣別', type: 'pick', opts: 'billCcy', def: 'TWD', half: true },
+  { k: 'cycle', label: '週期', type: 'pick', opts: 'billCycle', def: '1', show: isSub },
+  { k: 'anchor', label: '某一次扣款的日期', type: 'date', req: true, def: () => todayStr(), show: isSub, hintFn: () => '例如上次扣款那天；之後依週期自動推算' },
+  { k: 'payWith', label: '扣款方式', type: 'pick', opts: 'payWith', def: '', show: isSub },
+  { k: 'autopay', label: '繳款方式', type: 'pick', opts: 'autopay', def: 'auto', show: isCardBill },
+  { k: 'endDate', label: '結束日期（選填，到期或已取消）', type: 'date', show: isSub },
+  { k: 'note', label: '備註', type: 'text' },
+];
+const NUMERIC = new Set(['closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
 
 // ---------- 編輯器 ----------
 let editing = null;
@@ -1391,35 +1426,122 @@ function renderHomeRepay() {
     <div class="hr-spark"><div class="small muted">未來 24 個月總月付</div>${spark}</div>`;
 }
 
-// 這個月的扣款日曆
-let calOff = 0;   // 0 = 這個月，1 = 下個月
+// ---------- 定期扣款（信用卡、訂閱）----------
+const billFx = b => Stocks.fx(b.ccy || 'TWD', state.currency);
+const billColor = b => Charts.PALETTE[(Math.max(0, state.bills.indexOf(b)) + 4) % Charts.PALETTE.length];
+const cardColor = b => (bankOf(b.bank) || {}).c || 'var(--viz-other)';
+const dKey = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+const md2 = dt => `${dt.getMonth() + 1}/${dt.getDate()}`;
+const cardOf = id => id && state.bills.find(c => c.id === id && isCardBill(c));
+// 某個訂閱在 [from, to] 之間的扣款日
+function chargesBetween(b, from, to) {
+  if (!b.anchor) return [];
+  const a = new Date(b.anchor + 'T00:00:00'), end = b.endDate ? new Date(b.endDate + 'T23:59:59') : null;
+  const out = [];
+  if (b.cycle === 'w') {
+    let k = Math.max(0, Math.ceil((from - a) / (7 * 864e5)));
+    for (let dt = new Date(a.getTime() + k * 7 * 864e5); dt <= to; dt = new Date(dt.getTime() + 7 * 864e5)) if (dt >= from && (!end || dt <= end)) out.push(dt);
+    return out;
+  }
+  const n = +b.cycle || 1, aYM = dKey(a).slice(0, 7);
+  for (let ym = dKey(from).slice(0, 7); Loan.ymDiff(ym, dKey(to).slice(0, 7)) >= 0; ym = Loan.ymAdd(ym, 1)) {
+    const k = Loan.ymDiff(aYM, ym);
+    if (k < 0 || k % n) continue;
+    const dt = Loan.dueDate(ym, a.getDate());
+    if (dt >= from && dt <= to && dt >= a && (!end || dt <= end)) out.push(dt);
+  }
+  return out;
+}
+// 一張卡某一期的金額：有填就用填的，沒填就加總刷這張卡的訂閱
+function cardAmount(c, from, to) {
+  if (+c.amount) return +c.amount * billFx(c);
+  return state.bills.filter(b => isSub(b) && b.payWith === c.id).reduce((t, b) => t + chargesBetween(b, from, to).length * (+b.amount || 0) * billFx(b), 0);
+}
+// 某個月份的所有帳單事件
+function billEvents(ym) {
+  const out = [], dim = Loan.daysIn(ym);
+  const [y, m] = ym.split('-').map(Number);
+  for (const b of state.bills) {
+    if (isCardBill(b)) {
+      const cd = +b.closeDay, dd = +b.dueDay;
+      if (!cd || !dd) continue;
+      const cl = Loan.dueDate(ym, cd), pv = Loan.dueDate(Loan.ymAdd(ym, -1), cd);
+      const dueYM = dd > cd ? ym : Loan.ymAdd(ym, 1);
+      out.push({ day: cl.getDate(), kind: 'close', b, from: new Date(pv.getTime() + 864e5), to: cl, dueAt: Loan.dueDate(dueYM, dd) });
+      const stYM = dd > cd ? ym : Loan.ymAdd(ym, -1);                // 這個月繳的是哪一期
+      const sc = Loan.dueDate(stYM, cd), sp = Loan.dueDate(Loan.ymAdd(stYM, -1), cd);
+      const from = new Date(sp.getTime() + 864e5);
+      out.push({ day: Math.min(dd, dim), kind: 'due', b, from, to: sc, amount: cardAmount(b, from, sc) });
+    } else {
+      for (const dt of chargesBetween(b, new Date(y, m - 1, 1), new Date(y, m - 1, dim, 23, 59))) {
+        out.push({ day: dt.getDate(), kind: 'charge', b, amount: (+b.amount || 0) * billFx(b), card: cardOf(b.payWith) });
+      }
+    }
+  }
+  return out;
+}
+const perMonth = b => isCardBill(b) ? 0 : (+b.amount || 0) * billFx(b) * (b.cycle === 'w' ? 52 / 12 : 1 / (+b.cycle || 1));
+
+// 這個月的扣款日曆（貸款＋信用卡＋訂閱）
+let calOff = 0, calSel = 0;   // calOff 0 = 這個月，1 = 下個月；calSel = 選到的日期
 function dueCalHTML(P) {
   const m = P.months[calOff]; if (!m) return '';
   const today = new Date(), isCur = calOff === 0, td = today.getDate();
   const [y, mo] = m.ym.split('-').map(Number), dim = Loan.daysIn(m.ym), first = new Date(y, mo - 1, 1).getDay();
-  const list = state.debts.map(d => ({ d, it: m.items[d.id], day: Loan.dueDay(d) })).filter(x => x.it && x.it.pay > 0);
+  // 統一成同一種項目
+  const E = [];
+  state.debts.forEach(d => { const it = m.items[d.id]; if (!it || it.pay <= 0) return; const day = Loan.dueDay(d);
+    E.push({ day: day ? Math.min(day, dim) : 0, mark: 'loan', color: debtColor(d), name: d.name, sub: `${shortBank(bankOf(d.bank))}${it.grace ? '・寬限期' : ''}${it.revolving ? '・只繳息' : ''}`, amount: it.pay, count: 'loan', edit: ['debt', d.id] }); });
+  billEvents(m.ym).forEach(e => {
+    const b = e.b;
+    if (e.kind === 'close') E.push({ day: e.day, mark: 'close', color: cardColor(b), name: `${b.name} 結帳`, sub: `本期消費 ${md2(e.from)}–${md2(e.to)}，${md2(e.dueAt)} 前繳`, amount: null, tag: '<span class="chip blue">結帳日</span>', edit: ['bill', b.id] });
+    else if (e.kind === 'due') E.push({ day: e.day, mark: 'card', color: cardColor(b), name: `${b.name} 繳款`, sub: `消費 ${md2(e.from)}–${md2(e.to)}・${b.autopay === 'manual' ? '要自己繳' : '自動扣繳'}${+b.amount ? '' : e.amount ? '・訂閱加總' : ''}`, amount: e.amount || null, manual: b.autopay === 'manual', count: 'card', edit: ['bill', b.id] });
+    else E.push({ day: e.day, mark: 'sub', color: billColor(b), name: b.name, sub: `${b.cat || '訂閱'}・${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${e.card ? `・刷 ${e.card.name}（併入卡費）` : b.payWith === 'other' ? '・現金／轉帳' : '・帳戶扣款'}${(b.ccy || 'TWD') !== state.currency ? `・${b.ccy} ${(+b.amount).toLocaleString()}` : ''}`, amount: e.amount, onCard: !!e.card, count: e.card ? '' : 'sub', edit: ['bill', b.id] });
+  });
   const byDay = {};
-  list.forEach(x => { if (x.day) { const k = Math.min(x.day, dim); (byDay[k] = byDay[k] || []).push(x); } });
+  E.forEach(x => { if (x.day) (byDay[x.day] = byDay[x.day] || []).push(x); });
   let cells = '';
   for (let i = 0; i < first; i++) cells += '<span class="cd empty"></span>';
   for (let dday = 1; dday <= dim; dday++) {
     const xs = byDay[dday] || [], past = isCur && dday < td, now = isCur && dday === td;
-    cells += `<span class="cd${xs.length ? ' has' : ''}${past ? ' past' : ''}${now ? ' today' : ''}"><b>${dday}</b>${xs.length ? `<i>${xs.slice(0, 3).map(x => `<span style="--c:${debtColor(x.d)}"></span>`).join('')}</i>` : ''}</span>`;
+    cells += `<button type="button" class="cd${xs.length ? ' has' : ''}${past ? ' past' : ''}${now ? ' today' : ''}${calSel === dday ? ' sel' : ''}" data-cday="${dday}"><b>${dday}</b>${xs.length ? `<i>${xs.slice(0, 4).map(x => `<span class="mk-${x.mark}" style="--c:${x.color}"></span>`).join('')}${xs.length > 4 ? '<em>+</em>' : ''}</i>` : ''}</button>`;
   }
-  const rows = list.slice().sort((a, b) => (a.day || 99) - (b.day || 99)).map(x => {
-    const dd = x.day ? Math.min(x.day, dim) : 0, dt = dd ? new Date(y, mo - 1, dd) : null, left = isCur && dd ? dd - td : null;
-    const st = !dd ? '<span class="chip gray">沒填扣款日</span>' : isCur ? (left < 0 ? '<span class="chip gray">已扣款</span>' : left === 0 ? '<span class="chip red">今天</span>' : `<span class="chip${left <= 3 ? ' red' : ''}">還有 ${left} 天</span>`) : '';
-    return `<div class="due-row ${isCur && dd && left < 0 ? 'done' : ''}"><span class="due-d">${dt ? `<b>${dd}</b><small>週${WD[dt.getDay()]}</small>` : '<small>—</small>'}</span><span class="dot" style="--c:${debtColor(x.d)}"></span><span class="grow">${esc(x.d.name)}<small>${esc(shortBank(bankOf(x.d.bank)))}${x.it.grace ? '・寬限期' : ''}${x.it.revolving ? '・只繳息' : ''}</small></span><span class="due-amt">${fmt(x.it.pay)}${st}</span></div>`;
-  }).join('');
-  const left = isCur ? list.filter(x => x.day && Math.min(x.day, dim) >= td).reduce((t, x) => t + x.it.pay, 0) : m.total;
+  const shown = (calSel ? E.filter(x => x.day === calSel) : E).slice().sort((a, b) => (a.day || 99) - (b.day || 99) || (a.mark === 'close') - (b.mark === 'close'));
+  const rows = shown.map(x => {
+    const dd = x.day, dt = dd ? new Date(y, mo - 1, dd) : null, left = isCur && dd ? dd - td : null;
+    const st = x.tag || (!dd ? '<span class="chip gray">沒填扣款日</span>' : isCur ? (left < 0 ? '<span class="chip gray">已扣款</span>' : left === 0 ? '<span class="chip red">今天</span>' : `<span class="chip${left <= 3 ? ' red' : ''}">還有 ${left} 天</span>`) : '');
+    return `<div class="due-row ${isCur && dd && left < 0 ? 'done' : ''} ${x.onCard ? 'oncard' : ''}" data-edit="${x.edit[0]}" data-id="${x.edit[1]}"><span class="due-d">${dt ? `<b>${dd}</b><small>週${WD[dt.getDay()]}</small>` : '<small>—</small>'}</span><span class="mk mk-${x.mark}" style="--c:${x.color}"></span><span class="grow">${esc(x.name)}${x.manual ? ' <span class="chip red">自己繳</span>' : ''}<small>${esc(x.sub)}</small></span><span class="due-amt">${x.amount != null ? fmt(x.amount) : ''}${st}</span></div>`;
+  }).join('') || '<div class="empty small">這天沒有扣款</div>';
+  const cnt = x => x.count && (!isCur || !x.day || x.day >= td);
+  const sum = k => E.filter(x => x.count === k && cnt(x)).reduce((t, x) => t + (x.amount || 0), 0);
+  const L = sum('loan'), C = sum('card'), Sb = sum('sub');
   return `<div class="card due-card">
     <div class="due-head"><h2>${Icon.svg('calendar', 24)} ${mo} 月扣款日</h2><div class="chips"><button type="button" class="chip-btn ${calOff === 0 ? 'on' : ''}" data-cal="0">這個月</button><button type="button" class="chip-btn ${calOff === 1 ? 'on' : ''}" data-cal="1">下個月</button></div></div>
-    <div class="due-sum"><span>${isCur ? '這個月還要繳' : '下個月要繳'}</span><b>${fmt(left)}</b>${isCur ? `<small>／全月 ${fmt(m.total)}</small>` : ''}</div>
+    <div class="due-sum"><span>${isCur ? '這個月還要繳' : '下個月要繳'}</span><b>${fmt(L + C + Sb)}</b></div>
+    <div class="due-split"><span><i class="mk mk-loan" style="--c:var(--viz-1)"></i>貸款 ${fmt(L)}</span><span><i class="mk mk-card" style="--c:var(--viz-2)"></i>卡費 ${fmt(C)}</span><span><i class="mk mk-sub" style="--c:var(--viz-5)"></i>訂閱 ${fmt(Sb)}</span></div>
     <div class="cal"><span class="cw">日</span><span class="cw">一</span><span class="cw">二</span><span class="cw">三</span><span class="cw">四</span><span class="cw">五</span><span class="cw">六</span>${cells}</div>
+    <div class="cal-legend"><span><i class="mk mk-loan" style="--c:var(--muted)"></i>貸款</span><span><i class="mk mk-card" style="--c:var(--muted)"></i>卡費繳款</span><span><i class="mk mk-close" style="--c:var(--muted)"></i>卡片結帳</span><span><i class="mk mk-sub" style="--c:var(--muted)"></i>訂閱</span></div>
+    ${calSel ? `<div class="due-filter">${mo}/${calSel} 的項目 <button type="button" class="link-btn" data-cday="0">看整個月 ›</button></div>` : ''}
     <div class="due-list">${rows}</div>
+  </div>
+  ${billsCardHTML()}`;
+}
+function billsCardHTML() {
+  const cards = state.bills.filter(isCardBill), subs = state.bills.filter(isSub);
+  const mon = subs.filter(b => !b.endDate || new Date(b.endDate) >= new Date()).reduce((t, b) => t + perMonth(b), 0);
+  const subRow = b => { const n = chargesBetween(b, new Date(), new Date(Date.now() + 400 * 864e5))[0];
+    return `<div class="bill-row" data-edit="bill" data-id="${b.id}"><span class="mk mk-sub" style="--c:${billColor(b)}"></span>${Icon((BILL_CATS.find(c => c.v === b.cat) || {}).ic || 'other')}<span class="grow">${esc(b.name)}<small>${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${n ? `・下次 ${mdTxt(n)}` : b.endDate ? '・已結束' : ''}${cardOf(b.payWith) ? `・刷 ${esc(cardOf(b.payWith).name)}` : ''}</small></span><span class="due-amt">${(b.ccy || 'TWD') === state.currency ? fmt(+b.amount || 0) : `${b.ccy} ${(+b.amount || 0).toLocaleString()}<small class="muted">≈ ${fmt((+b.amount || 0) * billFx(b))}</small>`}</span></div>`; };
+  const cardRow = c => `<div class="bill-row" data-edit="bill" data-id="${c.id}">${UI.bankIcon(bankOf(c.bank))}<span class="grow">${esc(c.name)}<small>每月 ${c.closeDay} 日結帳・${c.dueDay} 日前繳・${c.autopay === 'manual' ? '自己繳' : '自動扣繳'}</small></span><span class="due-amt">${+c.amount ? fmt(+c.amount * billFx(c)) : `<small class="muted">${state.bills.some(b => b.payWith === c.id) ? '訂閱加總' : '金額未填'}</small>`}</span></div>`;
+  return `<div class="card bills-card">
+    <div class="due-head"><h2>${Icon.svg('repay', 24)} 定期扣款</h2><button type="button" class="btn mini primary" data-add="bill">＋ 新增</button></div>
+    <p class="small muted">信用卡和訂閱只會顯示在扣款月曆，不會算進資產或負債。</p>
+    ${cards.length ? `<h3 class="bill-h">信用卡</h3>${cards.map(cardRow).join('')}` : ''}
+    ${subs.length ? `<h3 class="bill-h">訂閱與定期扣款 <small>每月約 <b>${fmt(mon)}</b>・一年約 ${fmt(mon * 12)}</small></h3>${subs.map(subRow).join('')}` : ''}
+    ${!state.bills.length ? `<div class="hint-row">${Icon('calendar')}<span>加入信用卡的結帳日、繳款日，和 Netflix、Claude、電信費這類定期扣款，就會一起出現在上面的月曆</span></div>` : ''}
   </div>`;
 }
-document.addEventListener('click', e => { const c = e.target.closest('[data-cal]'); if (c) { calOff = +c.dataset.cal; renderRepay(); } });
+document.addEventListener('click', e => { const c = e.target.closest('[data-cday]'); if (c && c.closest('#view-repay')) { const d = +c.dataset.cday; calSel = calSel === d ? 0 : d; renderRepay(); } });
+document.addEventListener('click', e => { const c = e.target.closest('[data-cal]'); if (c) { calOff = +c.dataset.cal; calSel = 0; renderRepay(); } });
 
 // 已經繳出去的錢
 let paidOpen = false;
@@ -1459,7 +1581,7 @@ document.addEventListener('click', e => { if (e.target.closest('#paidMore')) { p
 function renderRepay() {
   const el = $('repayBody');
   if (!state.debts.length) {
-    el.innerHTML = `<div class="card empty big-empty">${Icon('repay', 'ico-xl')}<p>先到「負債」新增貸款，這裡就會推算你未來每個月要繳多少</p></div>`;
+    el.innerHTML = (state.bills.length ? dueCalHTML(projection(2)) : billsCardHTML()) + `<div class="card empty big-empty">${Icon('repay', 'ico-xl')}<p>到「負債」新增貸款，這裡就會推算你未來每個月要繳多少</p></div>`;
     return;
   }
   const all = Plan.horizonAll(state.debts);
@@ -2353,7 +2475,7 @@ async function exportBackup() {
 }
 function applyRestore(d) {
   if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
-  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], ai: state.ai, backup: state.backup });
+  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], bills: d.bills || [], ai: state.ai, backup: state.backup });
   lastLv = null; levelsKey = '';
   save();
 }

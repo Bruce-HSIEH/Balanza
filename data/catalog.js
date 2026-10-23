@@ -83,6 +83,18 @@ const CALC_MODES = [
   { v: 'manual', label: '手動輸入剩餘本金與月付', ic: 'pencil', d: '信用卡、親友借款等' },
 ];
 
+// 定期扣款（不算資產負債，只顯示在扣款月曆）
+const BILL_KINDS = [
+  { v: 'card', label: '信用卡帳單', ic: 'card', d: '結帳日、繳款截止日' },
+  { v: 'sub', label: '訂閱／定期扣款', ic: 'calendar', d: 'Netflix、Claude、電信費、房租…' },
+];
+const BILL_CATS = [
+  { v: '串流影音', ic: 'play' }, { v: 'AI／軟體', ic: 'star' }, { v: '電信網路', ic: 'mic' }, { v: '保險', ic: 'insurance' },
+  { v: '水電瓦斯', ic: 'fire' }, { v: '房租', ic: 'townhouse' }, { v: '健身', ic: 'heart' }, { v: '雲端儲存', ic: 'export' }, { v: '其他', ic: 'other' },
+];
+const BILL_CYCLES = [
+  { v: '1', label: '每月', n: 1 }, { v: '3', label: '每 3 個月', n: 3 }, { v: '6', label: '每半年', n: 6 }, { v: '12', label: '每年', n: 12 }, { v: 'w', label: '每週', n: 0 },
+];
 const CURRENCIES = [
   { v: 'TWD', label: 'TWD 新台幣', ic: 'twd' },
   { v: 'USD', label: 'USD 美元', ic: 'usd' },

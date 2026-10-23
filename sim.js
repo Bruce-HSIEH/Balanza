@@ -79,6 +79,16 @@ const Sim = (() => {
           auto('車貸', '911 低利分期', B.ctbc, 8000000, 0, 3, 8),
           manual('信用卡', '無限卡月結', B.ctbc, 680000, 680000, 0),
         ];
+        const amex = { id: id(), bkind: 'card', name: '富邦無限卡', bank: B.fubon, closeDay: 15, dueDay: 30, autopay: 'auto', ccy: 'TWD', amount: 680000 };
+        const ctbcB = { id: id(), bkind: 'card', name: '中信鼎極卡', bank: B.ctbc, closeDay: 5, dueDay: 20, autopay: 'auto', ccy: 'TWD' };
+        d.bills = [amex, ctbcB,
+          { id: id(), bkind: 'sub', name: '私人管家服務', cat: '其他', amount: 120000, ccy: 'TWD', cycle: '1', anchor: day(10), payWith: '' },
+          { id: id(), bkind: 'sub', name: '遊艇碼頭泊位', cat: '其他', amount: 380000, ccy: 'TWD', cycle: '3', anchor: day(50), payWith: '' },
+          { id: id(), bkind: 'sub', name: 'Claude Max', cat: 'AI／軟體', amount: 200, ccy: 'USD', cycle: '1', anchor: day(6), payWith: ctbcB.id },
+          { id: id(), bkind: 'sub', name: '高爾夫球會年費', cat: '健身', amount: 360000, ccy: 'TWD', cycle: '12', anchor: day(200), payWith: ctbcB.id },
+          { id: id(), bkind: 'sub', name: '豪宅管理費', cat: '房租', amount: 86000, ccy: 'TWD', cycle: '1', anchor: day(20), payWith: '' },
+          { id: id(), bkind: 'sub', name: 'Bloomberg 終端機', cat: 'AI／軟體', amount: 2665, ccy: 'USD', cycle: '1', anchor: day(3), payWith: ctbcB.id },
+        ];
         d.plans = [{ id: id(), name: '美股科技分批布局', total: 120000000, months: 12, startYM: ym(4), day: 10, source: lineDebt.id, targets: 'NVDA 40%、MSFT 30%、VOO 30%', yieldPct: 9 }];
         return d;
       },
@@ -113,8 +123,21 @@ const Sim = (() => {
             auto('學貸', '研究所學貸', B.bot, 150000, 1.15, 8, 70),
             manual('信用卡', '中信 LINE Pay 卡', B.ctbc, 35000, 35000, 0),
           ],
+          bills: [],
           plans: [{ id: id(), name: '每月定期定額 0050', total: 240000, months: 24, startYM: ym(6), day: 6, source: 'self', targets: '0050 100%', yieldPct: 7 }],
         };
+        const ctbc = { id: id(), bkind: 'card', name: '中信 LINE Pay 卡', bank: B.ctbc, closeDay: 22, dueDay: 7, autopay: 'auto', ccy: 'TWD' };
+        const esun = { id: id(), bkind: 'card', name: '玉山 Pi 卡', bank: B.esun, closeDay: 3, dueDay: 18, autopay: 'manual', ccy: 'TWD', amount: 8600 };
+        d.bills = [ctbc, esun,
+          { id: id(), bkind: 'sub', name: 'Netflix 標準方案', cat: '串流影音', amount: 390, ccy: 'TWD', cycle: '1', anchor: day(40), payWith: ctbc.id },
+          { id: id(), bkind: 'sub', name: 'Spotify', cat: '串流影音', amount: 149, ccy: 'TWD', cycle: '1', anchor: day(55), payWith: ctbc.id },
+          { id: id(), bkind: 'sub', name: 'Claude Pro', cat: 'AI／軟體', amount: 20, ccy: 'USD', cycle: '1', anchor: day(12), payWith: ctbc.id },
+          { id: id(), bkind: 'sub', name: 'iCloud+ 200GB', cat: '雲端儲存', amount: 90, ccy: 'TWD', cycle: '1', anchor: day(26), payWith: esun.id },
+          { id: id(), bkind: 'sub', name: '中華電信 5G', cat: '電信網路', amount: 999, ccy: 'TWD', cycle: '1', anchor: day(19), payWith: '' },
+          { id: id(), bkind: 'sub', name: '健身房月費', cat: '健身', amount: 1288, ccy: 'TWD', cycle: '1', anchor: day(8), payWith: esun.id },
+          { id: id(), bkind: 'sub', name: '機車強制險', cat: '保險', amount: 1080, ccy: 'TWD', cycle: '12', anchor: day(300), payWith: 'other' },
+          { id: id(), bkind: 'sub', name: '水電瓦斯', cat: '水電瓦斯', amount: 1600, ccy: 'TWD', cycle: '1', anchor: day(15), payWith: '' },
+        ];
         return d;
       },
       trend: { start: 0.9, vol: 0.02 },
@@ -159,6 +182,17 @@ const Sim = (() => {
           ],
           plans: [],
         };
+        const c1 = { id: id(), bkind: 'card', name: '中信卡', bank: B.ctbc, closeDay: 26, dueDay: 10, autopay: 'manual', ccy: 'TWD', amount: 8400 };
+        const c2 = { id: id(), bkind: 'card', name: '台新卡', bank: B.taishin, closeDay: 2, dueDay: 17, autopay: 'manual', ccy: 'TWD', amount: 5700 };
+        const c3 = { id: id(), bkind: 'card', name: '國泰卡', bank: B.cathay, closeDay: 12, dueDay: 27, autopay: 'manual', ccy: 'TWD', amount: 10500 };
+        d.bills = [c1, c2, c3,
+          { id: id(), bkind: 'sub', name: 'Netflix 高級方案', cat: '串流影音', amount: 490, ccy: 'TWD', cycle: '1', anchor: day(21), payWith: c1.id },
+          { id: id(), bkind: 'sub', name: 'Disney+', cat: '串流影音', amount: 270, ccy: 'TWD', cycle: '1', anchor: day(9), payWith: c2.id },
+          { id: id(), bkind: 'sub', name: '線上遊戲月卡', cat: '其他', amount: 450, ccy: 'TWD', cycle: '1', anchor: day(4), payWith: c3.id },
+          { id: id(), bkind: 'sub', name: '手機月租吃到飽', cat: '電信網路', amount: 1399, ccy: 'TWD', cycle: '1', anchor: day(13), payWith: '' },
+          { id: id(), bkind: 'sub', name: '套房房租', cat: '房租', amount: 16000, ccy: 'TWD', cycle: '1', anchor: day(23), payWith: 'other' },
+          { id: id(), bkind: 'sub', name: '跑車保險', cat: '保險', amount: 68000, ccy: 'TWD', cycle: '12', anchor: day(330), payWith: c1.id },
+        ];
         return d;
       },
       trend: { start: 1.25, vol: 0.03 },

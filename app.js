@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.18.0';
+const APP_VERSION = '5.18.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -883,6 +883,33 @@ FIELDS.bill = [
   { k: 'endDate', label: '結束日期（選填，到期或已取消）', type: 'date', show: isSub },
   { k: 'note', label: '備註', type: 'text' },
 ];
+// ---- 各情境的範例文字 ----
+const EX = {
+  assetName: { '現金/存款': '例：玉山活存、郵局定存', '基金': '例：安聯台灣科技基金、全球股票基金', '債券': '例：美國 10 年期公債、投資等級公司債', '加密貨幣': '例：比特幣 0.1 顆、以太幣', '保險': '例：國泰六年期儲蓄險、富邦還本壽險', '不動產': '例：板橋的家、新豐透天', '車輛': '例：家用休旅、通勤機車', '其他': '例：名錶、黃金存摺、借給朋友的錢' },
+  assetAmount: { '現金/存款': '帳戶餘額', '基金': '目前市值（淨值 × 單位數）', '債券': '目前市值', '加密貨幣': '目前市值（換算台幣）', '保險': '目前保單價值（可領回的解約金）', '不動產': '目前價值（可用上面的實價登錄估價）', '車輛': '目前價值（可用上面的估算）', '其他': '目前價值' },
+  assetNote: { '現金/存款': '例：緊急預備金、年利率 1.7%', '基金': '例：每月定期定額 5,000', '保險': '例：2030 年滿期', '不動產': '例：自住、出租中', '車輛': '例：車牌 ABC-1234', '加密貨幣': '例：放在冷錢包' },
+  debtName: { '房貸': '例：自住房貸', '理財型房貸': '例：理財型房貸額度', '信貸': '例：裝潢信貸', '車貸': '例：Corolla Cross 車貸', '學貸': '例：大學學貸', '信用卡': '例：中信卡循環', '親友借款': '例：跟爸媽借的頭期款', '其他': '例：手機分期、iPhone 0 利率' },
+  debtNote: { '房貸': '例：第一年固定利率', '理財型房貸': '例：抵押家人的房子', '親友借款': '例：每月還 5,000、不算利息', '信用卡': '例：最低應繳 10%' },
+  billName: { card: '例：花旗現金回饋卡、中信 LINE Pay 卡、國泰 CUBE 卡',
+    '串流影音': '例：Netflix、Spotify、Disney+', 'AI／軟體': '例：Claude Pro、ChatGPT Plus、Adobe', '電信網路': '例：中華電信 5G、光世代', '保險': '例：機車強制險、壽險', '水電瓦斯': '例：台電電費、自來水、瓦斯', '房租': '例：套房房租、大樓管理費', '健身': '例：World Gym 月費', '雲端儲存': '例：iCloud+、Google One', '其他': '例：Costco 年費、報紙訂閱' },
+  billAmount: { card: '例：8000', '串流影音': '例：390', 'AI／軟體': '例：20（美元就把幣別改成 USD）', '電信網路': '例：999', '保險': '例：1080', '水電瓦斯': '例：1600', '房租': '例：16000', '健身': '例：1288', '雲端儲存': '例：90', '其他': '例：1350' },
+  billNote: { card: '例：從玉山帳戶扣款、回饋 3%', sub: '例：家庭方案，跟家人分攤' },
+};
+FIELDS.asset.find(f => f.k === 'name').ph = v => EX.assetName[v.category] || '例：玉山活存';
+FIELDS.asset.find(f => f.k === 'amount').labelFn = v => EX.assetAmount[v.category] || '目前價值';
+FIELDS.asset.find(f => f.k === 'note').ph = v => isStock(v) ? '例：長期持有、領股息' : EX.assetNote[v.category] || '';
+FIELDS.debt.find(f => f.k === 'name').ph = v => EX.debtName[v.type] || '例：自住房貸';
+FIELDS.debt.find(f => f.k === 'note').ph = v => EX.debtNote[v.type] || '';
+FIELDS.debt.find(f => f.k === 'rate').ph = v => ({ '房貸': '例：2.185', '理財型房貸': '例：2.6', '信貸': '例：3.5', '車貸': '例：3.9', '學貸': '例：1.15', '信用卡': '例：15', '親友借款': '0' })[v.type] || '';
+FIELDS.debt.find(f => f.k === 'years').ph = v => ({ '房貸': '例：30', '理財型房貸': '例：30', '信貸': '例：7', '車貸': '例：5', '學貸': '例：8' })[v.type] || '';
+FIELDS.debt.find(f => f.k === 'principal').ph = v => ({ '房貸': '例：12000000', '信貸': '例：500000', '車貸': '例：800000', '學貸': '例：200000' })[v.type] || '';
+FIELDS.debt.find(f => f.k === 'limit').ph = v => v.type === '理財型房貸' ? '例：14600000' : '例：3000000';
+FIELDS.plan.find(f => f.k === 'name').ph = v => v.source && v.source !== 'self' ? '例：理財型房貸分批投入' : '例：每月定期定額 0050';
+FIELDS.plan.find(f => f.k === 'targets').ph = v => v.source && v.source !== 'self' ? '例：0050 50%、00878 30%、VOO 20%' : '例：0050 100%';
+FIELDS.bill.find(f => f.k === 'name').ph = v => isCardBill(v) ? EX.billName.card : EX.billName[v.cat] || EX.billName['其他'];
+FIELDS.bill.find(f => f.k === 'amount').ph = v => isCardBill(v) ? EX.billAmount.card : EX.billAmount[v.cat] || '';
+FIELDS.bill.find(f => f.k === 'amount').labelFn = v => isCardBill(v) ? '每期大約金額（選填）' : '每次扣款金額';
+FIELDS.bill.find(f => f.k === 'note').ph = v => isCardBill(v) ? EX.billNote.card : EX.billNote.sub;
 const NUMERIC = new Set(['closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
 
 // ---------- 編輯器 ----------
@@ -902,7 +929,7 @@ function fieldHTML(f) {
   }
   const attrs = f.type === 'number' ? `inputmode="decimal" step="${f.step || 'any'}"${f.min ? ` min="${f.min}"` : ''}${f.max ? ` max="${f.max}"` : ''}` : '';
   return `<label class="${cls}" data-show data-k="${f.k}"><span class="flabel">${f.label}</span>
-    <span class="inrow"><input name="${f.k}" type="${f.type}" ${attrs} value="${esc(v)}" placeholder="${esc(f.ph || '')}" data-req="${f.req ? 1 : ''}">
+    <span class="inrow"><input name="${f.k}" type="${f.type}" ${attrs} value="${esc(v)}" placeholder="${esc((typeof f.ph === 'function' ? f.ph(vals) : f.ph) || '')}" data-req="${f.req ? 1 : ''}">
     ${f.action ? `<button type="button" class="btn mini" id="${f.action.id}">${Icon.svg('search', 18)} ${f.action.text}</button>` : ''}</span>${hint}</label>`;
 }
 
@@ -938,6 +965,10 @@ function refreshForm() {
   fs.forEach((f, i) => {
     const on = !f.show || f.show(vals);
     nodes[i].hidden = !on;
+    // 範例、標題、提示跟著目前選的類別／類型切換
+    if (typeof f.ph === 'function') { const inp = nodes[i].querySelector('input'); if (inp) inp.placeholder = f.ph(vals) || ''; }
+    if (f.labelFn) { const lb = nodes[i].querySelector('.flabel'); if (lb) lb.textContent = f.labelFn(vals); }
+    if (f.hintFn) { const h = nodes[i].querySelector('.hint'); if (h) h.innerHTML = f.hintFn(vals); }
     const inp = nodes[i].querySelector('input');
     if (inp) inp.required = on && inp.dataset.req === '1';
   });

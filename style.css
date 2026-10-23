@@ -984,3 +984,7 @@ main {
 .due-row .grow small { display: block; font-size: 11.5px; color: var(--muted); }
 .due-amt { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .due-amt .chip { font-weight: 600; }
+
+/* v5.17.1：小秤的特效改由 JS 驅動，關掉 CSS 動畫避免 iOS 切頁後卡住 */
+.mascot.js:not(.still) *:not(.aura-l) { animation: none !important; }
+.mascot.js:not(.still) .flame { scale: none; }

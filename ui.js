@@ -412,7 +412,84 @@ const UI = (() => {
     'm-droop': t => { const e = ease((t / 3200) % 1); return { sx: 1.04 + .03 * e, sy: .94 - .04 * e, ty: 2 * e }; },
     'm-shiver': t => { const e = ease((t / 3200) % 1); return { tx: 1.5 * Math.sin(t / 40), sx: 1.04 + .03 * e, sy: .94 - .04 * e, ty: 2 * e }; },
   };
+  // ---------- 特效動畫：全部改由 JS 每一格計算（iOS 切頁回來 CSS 動畫常會卡在第一格） ----------
+  const cyc = p => .5 - .5 * Math.cos(p * TAU);          // 0→1→0（ease-in-out）
+  const tri = p => p < .5 ? p * 2 : 2 - p * 2;            // alternate
+  const triE = p => cyc(p / 2 % 1 * 1) ;                  // 0→1→0 平滑
+  const ramp = (p, a, b) => p < a ? p / a : p > b ? (1 - p) / (1 - b) : 1;
+  const eIn = p => p * p, eOut = p => 1 - (1 - p) * (1 - p);
+  const FXA = [
+    ['coin', 2.4, p => ({ ty: -15 + 180 * p, r: 360 * p, op: ramp(p, .1, .85) })],
+    ['spark', 1.4, p => { const e = cyc(p); return { s: .3 + .8 * e, op: .2 + .8 * e }; }],
+    ['sun', 10, p => ({ r: 360 * p })],
+    ['rays', 14, p => ({ r: 360 * p })],
+    ['swirl', 6, p => ({ r: 360 * p })],
+    ['orbit', 3.5, p => ({ r: 360 * p }), '--od'],
+    ['sweat', 1.4, p => { const q = eIn(p); return { ty: -4 + 18 * q, op: ramp(p, .2, .2) }; }],
+    ['float', 2, p => { const e = cyc(p); return { ty: -8 * e, r: 10 * e }; }],
+    ['cloud', 3, p => ({ tx: 6 * cyc(p) })],
+    ['rain', .8, p => ({ ty: 40 * p, op: ramp(p, .2, .2) })],
+    ['tear', 1.6, p => { const q = eIn(p); return p < .25 ? { s: .4 + .6 * p / .25, op: p / .25 } : { ty: 26 * (q - .0625) / .9375, op: 1 - (p - .25) / .75 }; }],
+    ['zz', 2.4, p => { const q = eOut(p); return { tx: 14 * q, ty: -26 * q, op: ramp(p, .3, .3) }; }],
+    ['leaf', 3, p => ({ tx: 14 * p, ty: -10 + 70 * p, r: 140 * p, op: ramp(p, .2, .2) })],
+    ['flybill', 2.6, p => { const q = eIn(p); return { tx: -40 + 60 * q, ty: 40 - 100 * q, s: .6 + .4 * q, r: -15 * q, op: ramp(p, .2, .2) }; }],
+    ['bolt', 2.4, p => ({ op: (p >= .04 && p < .08) || (p >= .12 && p < .16) ? 1 : 0 })],
+    ['aura', 2, p => { const e = cyc(p); return { s: 1 + .12 * e, op: .35 - .2 * e }; }],
+    ['rainbow', 6, p => ({ op: .6 + .4 * cyc(p) })],
+    ['firework', 2.2, p => ({ s: 1.5 * eOut(p), op: p < .6 ? 1 : 1 - (p - .6) / .4 })],
+    ['crown', 1.6, p => { const e = cyc(p); return { r: -6 * e, ty: -2 * e }; }],
+    ['cape', 2.4, p => { const t = cyc(p); return { skx: 6 * t, sx: 1 + .04 * t }; }],
+    ['held', 1.3, p => ({ ty: -3 * cyc(p) })],
+    ['seat', 2.4, p => ({ ty: -3 * cyc(p) })],
+    ['ball', 2, p => ({ ty: -3 * cyc(p) })],
+    ['fly', 1.4, p => { const P = [[0, 0], [8, -6], [14, 2], [4, 8], [0, 0]], k = Math.min(3, Math.floor(p * 4)), f = cyc((p * 4 - k) / 2); return { tx: P[k][0] + (P[k + 1][0] - P[k][0]) * f, ty: P[k][1] + (P[k + 1][1] - P[k][1]) * f }; }],
+    ['sprout', 2.4, p => ({ r: 8 * cyc(p) })],
+    ['wing-l', 1.2, p => ({ r: -14 * cyc(p) })],
+    ['wing-r', 1.2, p => ({ r: 14 * cyc(p) })],
+    ['wave', .9, p => ({ r: 25 * cyc(p) })],
+    ['halo', 2.4, p => { const e = cyc(p); return { s: .92 + .16 * e, op: .75 + .25 * e }; }, '--hd'],
+    ['bglow', 2, p => ({ op: 1 - .75 * cyc(p) }), '--hd'],
+    ['flame', 1.6, p => { const t = cyc(p); return { sx: 1 - .1 * t, sy: .82 + .36 * t, op: .75 + .25 * t }; }, '--fd', 2],
+    ['rise', 2.2, p => ({ ty: -120 * eOut(p), op: ramp(p, .2, .2) })],
+    ['streak', 1.1, p => ({ ty: -90 * p, op: .9 * ramp(p, .25, .25) }), '--sd'],
+    ['zap', 1.6, p => ({ op: p < .1 ? 0 : p < .16 ? 1 : p < .22 ? .2 : p < .4 ? 1 : 0 })],
+    ['rim', 2, p => ({ opm: 1 - .5 * cyc(p) })],
+  ];
+  const FX_SEL = FXA.map(x => '.' + x[0]).join(',');
+  const fxCache = new WeakMap();
+  const secs = v => { const m = String(v || '').match(/(-?[\d.]+)(ms|s)/); return m ? (m[2] === 'ms' ? +m[1] / 1000 : +m[1]) : 0; };
+  function fxList(svg) {
+    let L = fxCache.get(svg);
+    if (L) return L;
+    L = [];
+    svg.querySelectorAll(FX_SEL).forEach(el => {
+      const cls = el.getAttribute('class') || '';
+      // 同一元素可能有多個 class（例如 rain fast），取第一個有定義的
+      const spec = FXA.find(x => cls.split(/\s+/).includes(x[0]));
+      if (!spec) return;
+      let dur = spec[1];
+      if (spec[3]) { const v = el.style.getPropertyValue(spec[3]) || getComputedStyle(el).getPropertyValue(spec[3]); if (v) dur = secs(v) * (spec[4] || 1); }
+      if (spec[0] === 'rain' && /\bfast\b/.test(cls)) dur = .5;
+      const delay = secs(el.style.animationDelay);
+      const base = el.getAttribute('opacity');
+      L.push({ el, f: spec[2], dur, delay, base: base == null ? 1 : +base });
+    });
+    fxCache.set(svg, L);
+    return L;
+  }
+  function tickFx(svg, now) {
+    const t = now / 1000;
+    for (const x of fxList(svg)) {
+      const p = (((t - x.delay) / x.dur) % 1 + 1) % 1;
+      const m = x.f(p);
+      x.el.style.transform = `translate(${(m.tx || 0).toFixed(2)}px,${(m.ty || 0).toFixed(2)}px) rotate(${(m.r || 0).toFixed(2)}deg) scale(${((m.sx || 1) * (m.s ?? 1)).toFixed(3)},${((m.sy || 1) * (m.s ?? 1)).toFixed(3)})${m.skx ? ` skewX(${m.skx.toFixed(2)}deg)` : ''}`;
+      if (m.op != null) x.el.style.opacity = Math.max(0, Math.min(1, m.op)).toFixed(3);
+      else if (m.opm != null) x.el.style.opacity = (x.base * m.opm).toFixed(3);
+    }
+  }
+
   function tick(now) {
+    document.querySelectorAll('svg.mascot.js:not(.still)').forEach(svg => { if (svg.getClientRects().length) tickFx(svg, now); });
     document.querySelectorAll('svg.mascot.js:not(.still) g.body[data-anim]').forEach(g => {
       const f = MOTION[g.dataset.anim];
       if (!f) return;

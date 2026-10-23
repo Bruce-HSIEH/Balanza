@@ -2,5 +2,43 @@
  "mains": [
   "https://fundclear-tdcc.cdn.hinet.net/main.a3786120cd82ab33.js"
  ],
- "tb": "Traceback (most recent call last):\n  File \"/home/runner/work/Balanza/Balanza/scripts/probe_funds.py\", line 25, in <module>\n    t = get(B + '/' + mains[0].lstrip('/'))\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/Balanza/Balanza/scripts/probe_funds.py\", line 14, in get\n    raise last\n  File \"/home/runner/work/Balanza/Balanza/scripts/probe_funds.py\", line 11, in get\n    try: return urllib.request.urlopen(urllib.request.Request(u, headers=HB), timeout=40).read().decode('utf-8', 'replace')\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 215, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 521, in open\n    response = meth(req, response)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 630, in http_response\n    response = self.parent.error(\n               ^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 559, in error\n    return self._call_chain(*args)\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 492, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 639, in http_error_default\n    raise HTTPError(req.full_url, code, msg, hdrs, fp)\nurllib.error.HTTPError: HTTP Error 403: Forbidden\n"
+ "orgCtx": "onshoreCommonSelectOrgSelection(i,s=\"body\",u=!1,d){if(null==i)throw new Error(\"Required parameter onshoreOrgSelectionDTO was null or undefined when calling onshoreCommonSelectOrgSelection.\");let l=this.defaultHeaders,c=d&&d.httpHeaderAccept;void 0===c&&(c=this.configuration.selectHeaderAccept([\"application/json\"])),void 0!==c&&(l=l.set(\"Accept\",c));let y=d&&d.context;void 0===y&&(y=new r._y);const A=this.configuration.selectHeaderContentType([\"application/json\"]);void 0!==A&&(l=l.set(\"Content-Type\",A));let _=\"json\";return c&&(_=c.startsWith(\"text\")?\"text\":this.configuration.isJsonMime(c)?\"json\":\"blob\"),this.httpClient.request(\"post\",`${this.configuration.basePath}/api/onshore/common-select/org-selection`,{context:y,body:i,responseType:_,withCredentials:this.configuration.withCredentials,headers:l,observe:s,reportProgress:u})}static#e=this.\\u0275fac=function(s){return new(s||F)(w.KVO(r.Qq",
+ "orgPath": "/api/onshore/common-select/org-selection",
+ "org": {
+  "st": 200,
+  "head": "[{\"name\":\"全部\",\"value\":\"all\"},{\"name\":\"A0001兆豐國際證券投資信託股份有限公司\",\"value\":\"A0001\"},{\"name\":\"A0003第一金證券投資信託股份有限公司\",\"value\":\"A0003\"},{\"name\":\"A0004匯豐證券投資信託股份有限公司\",\"value\":\"A0004\"},{\"name\":\"A0005元大證券投資信託股份有限公司\",\"value\":\"A0005\"},{\"name\":\"A0006景順證券投資信託股份有限公司\",\"value\":\"A0006\"},{\"name\":\"A0007瀚亞證券投資信託股份有限公司\",\"value\":\"A0007\"},{\"name\":\"A0008玉山證券投資信託股份有限公司\",\"value\":\"A0008\"},{\"name\":\"A0009統一證券投資信託股份有限公司\",\"value\":\"A0009\"},{\"name\":\"A0010富邦證券投資信託股份有限公司\",\"value\":\"A0010\"},{\"name\":\"A0011摩根證券投資信託股份有限公司\",\"value\":\"A0011\"},{\"name\":\"A0012華南永昌證券投資信託股份有限公司\",\"value\":\"A0012\"},{\"name\":\"A0015瑞銀證券投資信託股份有限公司\",\"value\":\"A0015\"},{\"name\":\"A0016群益證券投資信託股份有限公司\",\"value\":\"A0016\"},{\"name\":\"A0017台中銀證券投資信託股份有公司\",\"value\":\"A0017\"},{\"name\":\"A0018聯博證券投資信託股份有限公司\",\"value\":\"A0018\"},{\"name\":\"A0021大都會證券投資信託股份有限公司\",\"value\":\"A0021\"},{\"name\":\"A0022復華證券投資信託股份有限公司\",\"value\":\"A0022\"},{\"name\":\"A0025永豐證券投資信託股份有限公司\",\"value\":\"A0025\"},{\"name\":\"A0026中國信託證券投資信託股份有限公司\",\"value\":\"A0026\"},{\"name\":\"A0027宏�"
+ },
+ "n_org": 37,
+ "nav": {
+  "all": {
+   "st": 200,
+   "ct": "application/octet-stream",
+   "len": 41085,
+   "head": "基金統編,基金中文名稱,計價幣別,淨值日期,基金淨值\n00661960,兆豐台灣豐收主動式 ETF基金(基金之配息來源可能為收益平準金),TWD,2026/10/22,12.86000\n00965469,兆豐第一基金,TWD,2026/10/22,62.77000\n00971976A,兆豐萬全基金-A類型,TWD,2026/10/22,82.34000\n00971976B,兆豐萬全基金-R類型,TWD,2026/10/22,21.71000\n01050148A,兆豐國民基金-A類別((基金之配息來源可能為收益平準金)),TWD,2026/10/22,111.52000\n01050148B,兆豐國民基金-TISA類型,TWD,2026/10/22,26.08000\n10341837A,兆豐豐台灣基金-A類別,TWD,2026/10/22,164."
+  },
+  "A0001": {
+   "st": 200,
+   "ct": "application/octet-stream",
+   "len": 1837,
+   "head": "基金統編,基金中文名稱,計價幣別,淨值日期,基金淨值\n00661960,兆豐台灣豐收主動式 ETF基金(基金之配息來源可能為收益平準金),TWD,2026/10/22,12.86000\n00965469,兆豐第一基金,TWD,2026/10/22,62.77000\n00971976A,兆豐萬全基金-A類型,TWD,2026/10/22,82.34000\n00971976B,兆豐萬全基金-R類型,TWD,2026/10/22,21.71000\n01050148A,兆豐國民基金-A類別((基金之配息來源可能為收益平準金)),TWD,2026/10/22,111.52000\n01050148B,兆豐國民基金-TISA類型,TWD,2026/10/22,26.08000\n10341837A,兆豐豐台灣基金-A類別,TWD,2026/10/22,164."
+  },
+  "A0003": {
+   "st": 200,
+   "ct": "application/octet-stream",
+   "len": 1714,
+   "head": "基金統編,基金中文名稱,計價幣別,淨值日期,基金淨值\n00650540,第一金台股趨勢優選主動式ETF基金(本基金配息來源可能為收益平準金),TWD,2026/10/22,15.80000\n00685061,第一金台股趨勢優股息主動式ETF基金(本基金並無保證收益及配息且配息來源可能為收益平準金),TWD,2026/10/22,9.57000\n01032249,第一金全家福貨幣市場基金,TWD,2026/10/22,190.76800\n19341318,第一金電子基金,TWD,2026/10/22,245.67000\n20081472,第一金台灣貨幣市場基金,TWD,2026/10/22,16.41350\n20092528,第一金店頭市場基金,TWD,2026/10"
+  },
+  "": {
+   "st": 400,
+   "ct": null,
+   "len": 47,
+   "head": "{\"message\":\"請選擇期信事業\",\"data\":null}"
+  },
+  "ALL": {
+   "st": 404,
+   "ct": null,
+   "len": 38,
+   "head": "{\"message\":\"查無資料\",\"data\":null}"
+  }
+ }
 }

@@ -2,7 +2,8 @@
 """每天更新基金淨值（只用 Python 標準函式庫）。
 
 來源（政府資料開放平臺登記的官方資料）：
-  境內基金：投信投顧公會「證券投資信託基金每日淨值」 https://www.sitca.org.tw/MemberK0000/F/03/nav.csv
+  境內基金：集保結算所「境內基金資訊觀測站」淨值下載（所有投信，約 4,000 檔級別；跨國投資基金淨值晚一天公布）
+            補充：投信投顧公會「基金淨值（日）」查詢頁（有公司名稱）、「證券投資信託基金每日淨值」CSV
   境外基金：集保結算所「境外基金淨值」               https://opendata.tdcc.com.tw/getOD.ashx?id=3-4
 
 輸出（供 App 讀取）：
@@ -10,7 +11,7 @@
   data/funds/hist/NN.json   {代碼: [[YYYYMMDD, 淨值], ...]}  依代碼分 64 份，App 只下載自己用到的那幾份
 來源檔每天只有最近 1～3 天，所以走勢是每天累積起來的（保留最近 HIST_N 筆）。
 """
-import base64, csv, datetime as dt, html as H, http.cookiejar, io, json, os, re, sys, time, urllib.parse, urllib.request
+import base64, csv, datetime as dt, html as H, http.cookiejar, io, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_stocks import get, log, load, LOG  # noqa: E402
@@ -59,6 +60,55 @@ def sitca_all():
     return []
 
 
+FC = 'https://www.fundclear.com.tw/api/onshore/download-doc/download-nav'   # 集保「境內基金資訊觀測站」淨值下載（所有投信）
+
+
+def clean_name(n):
+    """去掉名稱後面的警語括號，例如（本基金有相當比重投資於非投資等級…）、（基金之配息來源可能為…）"""
+    n = re.sub(r'\s+', ' ', str(n or '')).strip()
+    for _ in range(3):
+        n = re.sub(r'\(\(?[^()]*(?:本基金|配息來源|基金並無|非投資等級|收益平準金|保證收益)[^()]*\)?\)', '', n)
+    return n.strip(' -')
+
+
+def fundclear_days(days):
+    """集保境內基金淨值：一天一個檔（所有投信）。跨國投資的基金淨值晚一天公布，所以要往回抓幾天。
+    回傳 {code: {'name','ccy','navs':{yyyymmdd: nav}}}"""
+    out, n_ok = {}, 0
+    now = dt.datetime.utcnow() + dt.timedelta(hours=8)
+    hdr = {'User-Agent': UA2, 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*',
+           'Origin': 'https://www.fundclear.com.tw', 'Referer': 'https://www.fundclear.com.tw/onshore/fund-doc?type=nav'}
+    for back in range(days):
+        day = now - dt.timedelta(days=back)
+        if day.weekday() >= 5:
+            continue
+        body = json.dumps({'agentId': 'all', 'navDate': day.strftime('%Y/%m/%d')}).encode()
+        try:
+            with urllib.request.urlopen(urllib.request.Request(FC, data=body, headers=hdr), timeout=90) as r:
+                t = r.read().decode('utf-8-sig', 'replace')
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                log(f'  集保 {day:%m/%d}：HTTP {e.code}')
+            continue
+        except Exception as e:  # noqa
+            log(f'  集保 {day:%m/%d}：{e}')
+            continue
+        n = 0
+        for r in csv.DictReader(io.StringIO(t)):
+            code = (r.get('基金統編') or '').strip()
+            nav, d = f(r.get('基金淨值')), d8(r.get('淨值日期'))
+            if not code or not nav or not d:
+                continue
+            x = out.setdefault(code, {'name': clean_name(r.get('基金中文名稱')), 'ccy': (r.get('計價幣別') or 'TWD').strip().upper() or 'TWD', 'navs': {}})
+            x['navs'][d] = nav
+            n += 1
+        if n:
+            n_ok += 1
+        log(f'  集保 {day:%m/%d}：{n} 檔')
+        time.sleep(0.5)
+    return out, n_ok
+
+
 def parse_sitca(t):
     out = []
     for tr in re.findall(r'<tr class=["\']?DT(?:even|odd)["\']?[^>]*>(.*?)</tr>', t, re.S | re.I):
@@ -94,19 +144,31 @@ def d8(v):
     return int(s) if len(s) == 8 else None
 
 
-def collect():
+def collect(fc_days=7):
     """回傳 {code: {'name','ccy','org','co','navs': {yyyymmdd: nav}}}"""
     out, ok = {}, []
+    try:
+        fc, n_ok = fundclear_days(fc_days)
+        for code, y in fc.items():
+            x = out.setdefault(code, {'name': y['name'], 'ccy': y['ccy'], 'org': 'D', 'co': '', 'navs': {}})
+            x['navs'].update(y['navs'])
+        if n_ok:
+            ok.append('D')
+        log(f'境內基金（集保）：{len(fc)} 檔，{n_ok} 天')
+    except Exception as e:  # noqa
+        log(f'集保境內淨值失敗：{e}')
     try:
         for day, co, code, name, ccy, nav, prev in sitca_all():
             nav, prev = f(nav), f(prev)
             if not code or not nav:
                 continue
-            x = out.setdefault(code, {'name': name.split(' (')[0].split(' ((')[0].strip(), 'ccy': ccy or 'TWD', 'org': 'D', 'co': co, 'navs': {}})
-            x['navs'][day] = nav
+            x = out.setdefault(code, {'name': clean_name(name), 'ccy': ccy or 'TWD', 'org': 'D', 'co': co, 'navs': {}})
+            x['navs'].setdefault(day, nav)
+            if not x.get('co'):
+                x['co'] = co
             if prev:
                 x.setdefault('prev', prev)
-        if out:
+        if out and 'D' not in ok:
             ok.append('D')
     except Exception as e:  # noqa
         log(f'投信投顧公會查詢頁失敗：{e}')
@@ -117,7 +179,7 @@ def collect():
             nav, day = f(r.get('基金淨值')), d8(r.get('日期'))
             if not code or not nav or not day:
                 continue
-            x = out.setdefault(code, {'name': (r.get('基金名稱') or '').strip(), 'ccy': (r.get('幣別') or 'TWD').strip().upper() or 'TWD',
+            x = out.setdefault(code, {'name': clean_name(r.get('基金名稱')), 'ccy': (r.get('幣別') or 'TWD').strip().upper() or 'TWD',
                                       'org': 'D', 'co': (r.get('公司名稱') or '').strip(), 'navs': {}})
             x['navs'].setdefault(day, nav)
         if 'D' not in ok and rs:
@@ -150,9 +212,12 @@ def iso(d):
 
 def main():
     os.makedirs(os.path.join(OUT, 'hist'), exist_ok=True)
-    new, ok = collect()
     old_list = load(os.path.join(OUT, 'list.json'), {}).get('s', {})
     hist = [load(os.path.join(OUT, 'hist', f'{i:02d}.json'), {}) for i in range(SHARDS)]
+    # 境內走勢還很短（第一次或補資料）就往回抓 45 天，平常抓 7 天
+    dom = [h.get(c) for c, r in old_list.items() if r[5] == 'D' for h in [hist[shard(c)]]]
+    short = not dom or sorted(len(x or []) for x in dom)[len(dom) // 2] < 10
+    new, ok = collect(45 if short else 7)
 
     # 合併歷史
     for code, x in new.items():
@@ -161,11 +226,8 @@ def main():
         m.update(x['navs'])
         h[code] = [[d, m[d]] for d in sorted(m)[-HIST_N:]]
 
-    # 這次沒抓到的來源，保留舊清單
-    s = {}
-    for code, row in old_list.items():
-        if row[5] not in ok:
-            s[code] = row
+    # 先保留舊清單（這次沒出現的基金，例如還沒公布淨值），再用新資料覆蓋；太久沒更新的下面會清掉
+    s = dict(old_list)
     for code, x in new.items():
         h = hist[shard(code)][code]
         last = h[-1]

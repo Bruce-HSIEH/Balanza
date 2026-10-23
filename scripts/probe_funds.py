@@ -1,27 +1,35 @@
-import os, re, json, urllib.request, socket
-socket.setdefaulttimeout(25)
+import os, re, json, urllib.request, socket, datetime as dt
+socket.setdefaulttimeout(40)
 os.makedirs('data/probe', exist_ok=True)
 out = {}
-UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124 Safari/537.36'}
-B = 'https://www.fundclear.com.tw/'
-def get(u): return urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=25).read().decode('utf-8', 'replace')
-h = get(B)
-todo = [s if s.startswith('http') else B + s.lstrip('/') for s in re.findall(r'src="([^"]+\.js)"', h)]
-done, hits = set(), []
-while todo and len(done) < 120:
-    u = todo.pop()
-    if u in done: continue
-    done.add(u)
-    try: t = get(u)
-    except Exception: continue
-    for c in set(re.findall(r'["\']((?:chunk-)?[A-Za-z0-9_\-]{6,40}\.js)["\']', t)):
-        todo.append(B + c)
-    if 'runtime' in u:
-        out['runtime'] = t[:3000]
-        for a, b in re.findall(r'(\d+):"([0-9a-f]{12,20})"', t):
-            todo.append(f'{B}{a}.{b}.js')
-    for m in re.finditer(r'DownloadDocDownloadNav\(|download-nav|navDate|NavDate', t):
-        hits.append(u.split('/')[-1] + ' @ ' + t[max(0, m.start() - 600): m.start() + 400].replace('\n', ' '))
-out['n_js'] = len(done)
-out['hits'] = hits[:60]
+UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124 Safari/537.36', 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*', 'Origin': 'https://www.fundclear.com.tw', 'Referer': 'https://www.fundclear.com.tw/onshore/fund-doc?type=nav'}
+B = 'https://www.fundclear.com.tw'
+def get(u): return urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': UA['User-Agent']}), timeout=40).read().decode('utf-8', 'replace')
+def post(path, body):
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(B + path, data=json.dumps(body).encode(), headers=UA), timeout=60)
+        return r.status, r.headers.get('Content-Type'), r.read()
+    except urllib.error.HTTPError as e: return e.code, None, e.read()
+h = get(B + '/')
+main = [s for s in re.findall(r'src="([^"]+\.js)"', h) if 'main' in s][0]
+t = get(B + '/' + main.lstrip('/'))
+m = re.search(r'onshoreCommonSelectOrgSelection\(.{0,1500}?`\$\{this\.configuration\.basePath\}([^`]+)`', t, re.S)
+path = m.group(1) if m else None
+out['orgPath'] = path
+st, ct, b = post(path, {'all': True}) if path else (0, 0, b'')
+out['org'] = {'st': st, 'head': b[:1500].decode('utf-8', 'replace')}
+try:
+    orgs = json.loads(b.decode('utf-8'))
+    data = orgs.get('data', orgs) if isinstance(orgs, dict) else orgs
+except Exception: data = []
+out['n_org'] = len(data) if isinstance(data, list) else str(type(data))
+day = (dt.datetime.utcnow() + dt.timedelta(hours=8) - dt.timedelta(days=1)).strftime('%Y/%m/%d')
+res = {}
+cands = []
+if isinstance(data, list):
+    cands = [d.get('value') or d.get('uuid') or d.get('id') for d in data[:3] if isinstance(d, dict)]
+for aid in cands + ['', 'ALL', 'all']:
+    st, ct, b = post('/api/onshore/download-doc/download-nav', {'agentId': aid, 'navDate': day})
+    res[str(aid)] = {'st': st, 'ct': ct, 'len': len(b), 'head': b[:600].decode('utf-8-sig', 'replace')}
+out['nav'] = res
 json.dump(out, open('data/probe/out.json', 'w'), ensure_ascii=False, indent=1)

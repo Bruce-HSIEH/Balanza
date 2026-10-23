@@ -1142,3 +1142,6 @@ button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; c
 .pd-st-in input { width: 100%; }
 .pd-sub { grid-column: 1 / -1; text-align: right; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 #periodDialog { max-height: 86vh; overflow-y: auto; }
+.lots li.est { opacity: .75; border-left: 3px dashed var(--line); }
+.lots li[data-goplan] { cursor: pointer; }
+.lots .chip { font-size: 10.5px; padding: 1px 6px; vertical-align: 1px; }

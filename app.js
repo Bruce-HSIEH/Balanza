@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.22.0';
+const APP_VERSION = '5.22.1';
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -69,6 +69,7 @@ function store() {
   }
 }
 function save() {
+  if (typeof syncPlanEstimates === 'function') syncPlanEstimates();
   store();
   render();
   if (typeof scheduleBackup === 'function') scheduleBackup();
@@ -341,12 +342,14 @@ function stockRow(a, i) {
       ${si.costVal ? `<div class="kv"><span>總成本</span><span>${fmt(si.costVal)}</span></div>` : ''}
       ${si.pl != null ? `<div class="kv"><span>未實現損益</span><b class="chg ${plCls(si.pl)}">${plTxt(si.pl, si.plPct)}</b></div>` : `<div class="small muted">有買進沒有填價格，無法計算損益</div>`}
       ${si.realized ? `<div class="kv"><span>已實現損益</span><span class="chg ${plCls(si.realized)}">${plTxt(si.realized)}</span></div>` : ''}
-      <div class="lot-title">交易紀錄（${lots.length} 筆）</div>
+      <div class="lot-title">交易紀錄（${lots.length} 筆${lots.some(l => String(l.src || '').startsWith('plan:')) ? `，其中 ${lots.filter(l => String(l.src || '').startsWith('plan:')).length} 筆來自投資計畫` : ''}）</div>
       <ul class="lots">${lots.map(l => {
         const isSell = l.type === 'sell';
         const lp = !isSell && num(l.price) && si.px ? (si.px - num(l.price)) * num(l.shares) * Stocks.fx(si.ccy, state.currency) : null;
-        return `<li data-lot="${a.id}|${l.id}"><span class="lot-tag ${isSell ? 'sell' : 'buy'}">${isSell ? '賣' : '買'}</span>
-          <span class="grow">${l.date ? esc(l.date.replace(/-/g, '/')) : '原有持股'}<small>${unitTxt(si.mkt, num(l.shares))}${num(l.price) ? ` @ ${price(num(l.price), si.ccy)}` : ' · 未填價格'}</small></span>
+        const fromPlan = String(l.src || '').startsWith('plan:');
+        const pp = fromPlan ? l.src.split(':') : null;
+        return `<li ${fromPlan ? `data-goplan="${pp[1]}|${pp[2]}" class="${l.est ? 'est' : ''}"` : `data-lot="${a.id}|${l.id}"`}><span class="lot-tag ${isSell ? 'sell' : 'buy'}">${isSell ? '賣' : '買'}</span>
+          <span class="grow">${l.date ? esc(l.date.replace(/-/g, '/')) : '原有持股'} ${fromPlan ? `<span class="chip ${l.est ? 'gray' : 'blue'}">投資計畫・${l.est ? '預估' : '已確認'}</span>` : '<span class="chip">自己輸入</span>'}<small>${unitTxt(si.mkt, num(l.shares))}${num(l.price) ? ` @ ${price(num(l.price), si.ccy)}` : ' · 未填價格'}${fromPlan && l.note ? ` · ${esc(l.note)}` : ''}${l.est ? ' · 點一下去確認實際成交' : ''}</small></span>
           <span class="lot-pl">${isSell ? (l.realized != null ? `<span class="chg ${plCls(l.realized)}">實現 ${plTxt(l.realized * Stocks.fx(si.ccy, state.currency))}</span>` : '') : lp != null ? `<span class="chg ${plCls(lp)}">${plTxt(lp, (si.px / num(l.price) - 1) * 100)}</span>` : ''}</span></li>`;
       }).join('')}</ul>
       <div class="btnrow">
@@ -2041,15 +2044,77 @@ document.addEventListener('click', e => {
 });
 // 股票計畫：每期依標的填實際成交股數與價格，確認後同步寫進股票持股（之後還能再改）
 const lotSrc = (p, i, sym) => `plan:${p.id}:${i}:${sym}`;
+// 計畫的股票標的（舊計畫的「0050 50%、VOO 50%」文字也算）
+function planStocksOf(p) {
+  if (p.ptype === '股票' && (p.stocks || []).some(x => x.sym)) return p.stocks.filter(x => x.sym);
+  if (!p.ptype || p.ptype === '股票') {
+    const ts = parseTargets(p.targets);
+    if (ts.length) return ts.map(t => { const sym = t.name.toUpperCase(); return { mkt: /^\d/.test(sym) ? 'tw' : 'us', sym, pct: t.pct }; });
+  }
+  return [];
+}
+// 某一天的收盤價（30 個交易日內用當天收盤，更早的先用現價估）
+function estPrice(mkt, sym, dt) {
+  const q = Stocks.quote(mkt, sym); if (!q) return null;
+  if (q.series && q.series.length > 1 && q.date) {
+    const ds = prevTradingDays(q.date, q.series.length);
+    let idx = -1; ds.forEach((d, k) => { if (d <= dt) idx = k; });
+    if (idx >= 0) return q.series[idx];
+  }
+  return q.price;
+}
+// 已經過去但還沒確認的期數：在股票持股放一筆「預估」交易，確認後換成實際成交
+function syncPlanEstimates() {
+  if (!Stocks.ready()) return false;
+  const sig = () => JSON.stringify(state.assets.filter(a => mktOf(a)).map(a => [a.id, (a.lots || []).filter(l => l.est).map(l => [l.id, l.shares, l.price])]));
+  const before = sig() + state.assets.length;
+  for (const a of state.assets) if (a.lots && a.lots.some(l => l.est)) a.lots = a.lots.filter(l => !l.est);
+  const cur = Loan.nowYM();
+  for (const p of state.plans) {
+    const ss = planStocksOf(p);
+    if (!ss.length || !p.startYM) continue;
+    const per = planPer(p), am = Plan.amounts(p);
+    am.forEach((amount, i) => {
+      if (Plan.periodState(p, i, cur) !== 'assumed') return;
+      const ym = Loan.ymAdd(p.startYM, i), day = String(Math.min(Loan.daysIn(ym), Math.round(num(p.day)) || 1)).padStart(2, '0'), dt = `${ym}-${day}`;
+      for (const x of ss) {
+        const amt = stockAmt(x, per) * (per ? amount / per : 1);
+        const px = estPrice(x.mkt, x.sym, dt);
+        if (!px || !amt) continue;
+        const fx = Stocks.fx(x.mkt === 'us' ? 'USD' : 'TWD', state.currency);
+        const sh = x.mkt === 'us' ? Math.round(amt / (px * fx) * 1e4) / 1e4 : Math.floor(amt / (px * fx));
+        if (!sh) continue;
+        const cat = x.mkt === 'us' ? '美股' : '台股', key = lotSrc(p, i, Stocks.norm(x.mkt, x.sym));
+        let h = findHolding(cat, x.sym);
+        if (h && (h.lots || []).some(l => l.src === key && !l.est)) continue;   // 已有實際成交
+        if (!h) { const q = Stocks.quote(x.mkt, x.sym); h = { id: 'plan-' + p.id + '-' + Stocks.norm(x.mkt, x.sym), category: cat, sym: Stocks.norm(x.mkt, x.sym), name: q ? q.name : x.sym, lots: [], fromPlan: true }; state.assets.push(h); }
+        h.lots.push({ id: `est-${p.id}-${i}-${x.sym}`, type: 'buy', date: dt, shares: sh, price: Math.round(px * 100) / 100, src: key, est: true, note: `${p.name} 第 ${i + 1} 期` });
+      }
+    });
+  }
+  state.assets = state.assets.filter(a => !(a.fromPlan && mktOf(a) && !(a.lots || []).length));
+  return sig() + state.assets.length !== before;
+}
+document.addEventListener('click', e => {
+  const g = e.target.closest('[data-goplan]');
+  if (!g) return;
+  e.stopPropagation();
+  const [pid, i] = g.dataset.goplan.split('|');
+  showView('invest');
+  setTimeout(() => { const r = document.querySelector(`.prow[data-plan="${pid}"][data-i="${i}"]`); if (r) { r.scrollIntoView({ block: 'center' }); r.click(); } }, 250);
+}, true);
+
 function findPlanLot(p, i, x) {
   const cat = x.mkt === 'us' ? '美股' : '台股';
   const h = findHolding(cat, x.sym);
-  const lot = h && (h.lots || []).find(l => l.src === lotSrc(p, i, Stocks.norm(x.mkt, x.sym)));
-  return { h, lot, cat };
+  const key = lotSrc(p, i, Stocks.norm(x.mkt, x.sym));
+  const lots = h ? (h.lots || []).filter(l => l.src === key) : [];
+  const lot = lots.find(l => !l.est) || lots[0];
+  return { h, lot, cat, key };
 }
 function drawPdStocks(p, i, planned) {
   const el = $('pdStocks');
-  const list = p.ptype === '股票' ? (p.stocks || []).filter(x => x.sym) : [];
+  const list = planStocksOf(p);
   periodCtx.stocks = list;
   $('pdAmtLabel').textContent = list.length ? '這期實際動用金額（新台幣）' : '實際投入金額';
   if (!list.length) { el.innerHTML = ''; return; }
@@ -2079,9 +2144,9 @@ function pdRecalc(setAmount) {
 $('pdStocks').addEventListener('input', () => pdRecalc(true));
 $('pdAmount').addEventListener('input', () => { periodCtx.manual = true; });
 function syncPlanLots(p, i, remove) {
-  for (const x of (p.stocks || []).filter(x => x.sym)) {
-    const { h, lot, cat } = findPlanLot(p, i, x);
-    if (lot) h.lots = h.lots.filter(l => l !== lot);
+  for (const x of planStocksOf(p)) {
+    const { h, key } = findPlanLot(p, i, x);
+    if (h) h.lots = h.lots.filter(l => l.src !== key);
     if (h && !h.lots.length) state.assets = state.assets.filter(a => a !== h);
   }
   if (remove) return;
@@ -2091,15 +2156,17 @@ function syncPlanLots(p, i, remove) {
     const sh = num(r.querySelector('.pd-sh').value), px = num(r.querySelector('.pd-px').value);
     if (!sh) return;
     const cat = x.mkt === 'us' ? '美股' : '台股';
-    addLot(cat, x.sym, { id: uid(), type: 'buy', date: `${ym}-${day}`, shares: sh, price: px || '', src: lotSrc(p, i, Stocks.norm(x.mkt, x.sym)), note: `${p.name} 第 ${i + 1} 期` });
+    const had = findHolding(cat, x.sym);
+    const { h } = addLot(cat, x.sym, { id: uid(), type: 'buy', date: `${ym}-${day}`, shares: sh, price: px || '', src: lotSrc(p, i, Stocks.norm(x.mkt, x.sym)), note: `${p.name} 第 ${i + 1} 期` });
+    if (!had) h.fromPlan = true;
   });
 }
 function savePeriod(mode) {
   const { p, i } = periodCtx;
   const v = num($('pdAmount').value);
-  if (mode === 'done') { p.done = { ...(p.done || {}), [i]: v }; if (p.ptype === '股票') syncPlanLots(p, i); UI.burst('coin'); }
+  if (mode === 'done') { p.done = { ...(p.done || {}), [i]: v }; if (planStocksOf(p).length) syncPlanLots(p, i); UI.burst('coin'); }
   if (mode === 'plan') { p.custom = { ...(p.custom || {}) }; p.custom[i] = v; }
-  if (mode === 'undo' && p.done) { delete p.done[i]; if (p.ptype === '股票') syncPlanLots(p, i, true); }
+  if (mode === 'undo' && p.done) { delete p.done[i]; if (planStocksOf(p).length) syncPlanLots(p, i, true); }
   $('periodDialog').close();
   save();
 }
@@ -3114,6 +3181,7 @@ async function tryFaceID(silent) {
 function finishUnlock(plain) {
   try { state = migrate(JSON.parse(plain)); } catch (e) { state = migrate({}); }
   locked = false;
+  if (Stocks.ready()) syncPlanEstimates();
   $('lockScreen').classList.add('opening');
   setTimeout(() => { $('lockScreen').hidden = true; $('lockScreen').classList.remove('opening'); document.body.classList.remove('is-locked'); }, 350);
   lastLv = null; levelsKey = '';
@@ -3129,6 +3197,7 @@ async function enterSim(kind) {
   if (!sim) sim = { kind, real: state };
   sim.kind = kind;
   state = migrate({ ...Sim.build(kind), ai: sim.real.ai, backup: { on: false } });
+  syncPlanEstimates();
   const s0 = summary();
   state.history = Sim.history(kind, s0.totalAssets, s0.totalDebts);
   openGroups.clear(); ASSET_CATS.forEach(c => openGroups.add(c.v));
@@ -3339,6 +3408,7 @@ Backup.persist().then(v => { persisted = v; });
 Stocks.load().then(() => {
   // 美股長尾報價（小型股、槓桿 ETF…）背景載入，載完再更新一次
   Stocks.tail().then(ok => { if (ok) { levelsKey = ''; render(); } });
+  if (!locked && syncPlanEstimates()) store();
   levelsKey = '';
   render();
   const m = Stocks.info();

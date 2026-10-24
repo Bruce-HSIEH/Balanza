@@ -1281,6 +1281,8 @@ body.booting .mascot-lv { background: none !important; padding: 0; box-shadow: n
 
 /* 開機 → 首頁的銜接動畫 */
 #splash.sp-exit { opacity: 0; transition: opacity .55s ease .1s; }
+#splash.sp-exit .sp-scene { transform: translateX(-50%) translateY(22px) scale(.97); transition: transform .6s cubic-bezier(.4,0,.2,1); }
+#splash.sp-exit .sp-tag { opacity: 0 !important; transition: opacity .25s; animation: none; }
 .sp-fly { position: fixed; z-index: 10000; pointer-events: none; transform-origin: 0 0; will-change: transform, opacity; }
 .sp-fly svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .sp-fly .sp-wm-fly { fill: currentColor; }

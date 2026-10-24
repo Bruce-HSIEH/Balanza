@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.27.2';
+const APP_VERSION = '5.27.3';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -3818,11 +3818,11 @@ let fundStatus = '';
 // 開機畫面：跟 iPhone 啟動圖片一模一樣，接手後天秤輕輕擺動；資料到齊、畫面排好再淡出（至少停 0.7 秒，避免一閃而過）
 setTimeout(() => { const sp = $('splash'); if (sp) sp.classList.add('sp-live'); }, 150);   // 從空白開始，字母一個一個浮現
 setTimeout(() => { const sp = $('splash'); if (sp && !sp.dataset.out) sp.classList.add('sp-wait'); }, 1900);   // 資料比較慢才顯示載入條
-// 字母全部出現後停一下（至少約 1.4 秒），資料到齊：字標飛到左上角變成標題，首頁卡片依序浮上來
+// 字母全部出現、標語浮現後（至少約 1.9 秒），資料到齊：字標飛到左上角變成標題，首頁卡片依序浮上來
 function splashOut() {
   const sp = $('splash'); if (!sp) { splashDoneR(); return; } if (sp.dataset.out) return;
   sp.dataset.out = '1';
-  const wait = Math.max(0, 1400 - (performance.now() - splashT0));
+  const wait = Math.max(0, 1900 - (performance.now() - splashT0));   // 字母出現、標語浮現、天秤找到平衡後再走
   setTimeout(() => requestAnimationFrame(() => splashExit(sp)), wait);
 }
 function splashExit(sp) {

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.27.3';
+const APP_VERSION = '5.27.4';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -3822,7 +3822,7 @@ setTimeout(() => { const sp = $('splash'); if (sp && !sp.dataset.out) sp.classLi
 function splashOut() {
   const sp = $('splash'); if (!sp) { splashDoneR(); return; } if (sp.dataset.out) return;
   sp.dataset.out = '1';
-  const wait = Math.max(0, 1900 - (performance.now() - splashT0));   // 字母出現、標語浮現、天秤找到平衡後再走
+  const wait = Math.max(0, 2400 - (performance.now() - splashT0));   // 標語出現（約 1.9 秒）後再停 0.5 秒   // 字母出現、標語浮現、天秤找到平衡後再走
   setTimeout(() => requestAnimationFrame(() => splashExit(sp)), wait);
 }
 function splashExit(sp) {

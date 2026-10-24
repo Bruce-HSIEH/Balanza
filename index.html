@@ -54,16 +54,23 @@
 #splash .sp-scene svg{display:block;width:100%;height:auto;overflow:visible}
 #splash .sp-bar{position:absolute;left:50%;bottom:calc(5% + env(safe-area-inset-bottom,0px));width:72px;height:4px;margin-left:-36px;border-radius:2px;background:var(--disc2);overflow:hidden;opacity:0;transition:opacity .4s}
 #splash .sp-bar i{position:absolute;inset:0;width:40%;border-radius:2px;background:var(--sp-wm);animation:spBar 1.1s ease-in-out infinite}
-#splash.sp-live .sp-bar{opacity:.9}
+#splash.sp-wait .sp-bar{opacity:.9}
 #splash .sp-beam{transform-box:view-box;transform-origin:215px 108px}
-#splash.sp-live .sp-beam{animation:spBeam 2.6s ease-in-out infinite}
-#splash.sp-live .sp-msc{animation:spHop 1.3s ease-in-out infinite;transform-origin:110px 170px}
+#splash.sp-live .sp-beam{animation:spBal 1.15s cubic-bezier(.35,.6,.3,1) both,spIdle 2.8s ease-in-out 1.15s infinite}
+#splash .sp-msc{transform-box:view-box;transform-origin:110px 170px}
+#splash.sp-live .sp-msc{animation:spHop .55s cubic-bezier(.3,.7,.4,1) .2s 2}
+#splash .sp-spark{transform-box:fill-box}
+#splash.sp-live .sp-spark path{animation:spTw 1.2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+#splash.sp-live .sp-spark path:nth-child(2){animation-delay:.35s}#splash.sp-live .sp-spark path:nth-child(3){animation-delay:.7s}
+@keyframes spBal{0%{transform:rotate(-6deg)}35%{transform:rotate(3deg)}60%{transform:rotate(-2.5deg)}80%{transform:rotate(1deg)}100%{transform:rotate(-.5deg)}}
+@keyframes spIdle{0%,100%{transform:rotate(-.5deg)}50%{transform:rotate(1.5deg)}}
+@keyframes spTw{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.6)}}
 #splash.sp-out{opacity:0;visibility:hidden}
 #splash.sp-out .sp-scene{transform:translateX(-50%) translateY(10px) scale(.98);transition:transform .5s ease}
 #splash.sp-out .sp-wm{transform:translateX(-50%) translateY(-8px);transition:transform .5s ease}
 @keyframes spBar{0%{left:-40%}100%{left:100%}}
-@keyframes spBeam{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(-2deg)}}
-@keyframes spHop{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}</style>
+
+@keyframes spHop{0%,100%{transform:translateY(0) scale(1,1)}15%{transform:translateY(2px) scale(1.06,.94)}50%{transform:translateY(-14px) scale(.97,1.04)}}</style>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="booting">
@@ -129,7 +136,7 @@
  <!-- 小植物 -->
  <g transform="translate(372 330)"><path d="M0 0 v-30" stroke="#5cc485" stroke-width="3" stroke-linecap="round"/><path d="M0 -18 c-14 0 -16 -12 -15 -16 c9 -1 15 4 15 16z" fill="#8ce0a8"/><path d="M0 -24 c12 0 15 -10 14 -14 c-8 -1 -14 3 -14 14z" fill="#b8f0c8"/><path d="M-12 0 h24 l-3 16 h-18z" fill="#ffb59a"/></g>
  <!-- 閃光 -->
- <g fill="var(--beam2)"><path d="M40 70 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z"/><path d="M388 40 l2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2z" opacity=".8"/><path d="M398 268 l2 4 4 2 -4 2 -2 4 -2 -4 -4 -2 4 -2z" opacity=".7"/></g>
+<g class="sp-spark" fill="var(--beam2)"><path d="M40 70 l3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3z"/><path d="M388 40 l2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2z" opacity=".8"/><path d="M398 268 l2 4 4 2 -4 2 -2 4 -2 -4 -4 -2 4 -2z" opacity=".7"/></g>
  <g fill="var(--wm)" opacity=".35"><circle cx="30" cy="300" r="4"/><circle cx="410" cy="150" r="3"/></g>
 </svg></div>
   <div class="sp-bar"><i></i></div>

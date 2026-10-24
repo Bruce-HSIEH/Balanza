@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.27.1';
+const APP_VERSION = '5.27.2';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -3816,56 +3816,39 @@ fetch('data/funds/meta.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() :
 }).catch(() => {});
 let fundStatus = '';
 // 開機畫面：跟 iPhone 啟動圖片一模一樣，接手後天秤輕輕擺動；資料到齊、畫面排好再淡出（至少停 0.7 秒，避免一閃而過）
-setTimeout(() => { const sp = $('splash'); if (sp && !sp.dataset.out) sp.classList.add('sp-live'); }, 380);
-setTimeout(() => { const sp = $('splash'); if (sp && !sp.dataset.out) sp.classList.add('sp-wait'); }, 1500);   // 資料比較慢才顯示載入條
-// 至少停約 1.2 秒（讓天秤擺動、找到平衡），資料到齊後：字標飛到左上角、小秤飛進首頁的吉祥物位置、首頁卡片依序浮上來
+setTimeout(() => { const sp = $('splash'); if (sp) sp.classList.add('sp-live'); }, 150);   // 從空白開始，字母一個一個浮現
+setTimeout(() => { const sp = $('splash'); if (sp && !sp.dataset.out) sp.classList.add('sp-wait'); }, 1900);   // 資料比較慢才顯示載入條
+// 字母全部出現後停一下（至少約 1.4 秒），資料到齊：字標飛到左上角變成標題，首頁卡片依序浮上來
 function splashOut() {
   const sp = $('splash'); if (!sp) { splashDoneR(); return; } if (sp.dataset.out) return;
   sp.dataset.out = '1';
-  const wait = Math.max(0, 1250 - (performance.now() - splashT0));
+  const wait = Math.max(0, 1400 - (performance.now() - splashT0));
   setTimeout(() => requestAnimationFrame(() => splashExit(sp)), wait);
-}
-function flyTo(el, from, to, { dur = 760, arc = -28, fadeEnd = false } = {}) {
-  const dx = to.left - from.left, dy = to.top - from.top, k = to.width / from.width;
-  const kf = [
-    { transform: 'translate(0,0) scale(1)', opacity: 1 },
-    { transform: `translate(${dx * .5}px,${dy * .5 + arc}px) scale(${1 + (k - 1) * .55})`, opacity: 1, offset: .5 },
-    { transform: `translate(${dx}px,${dy}px) scale(${k})`, opacity: fadeEnd ? 0 : 1 },
-  ];
-  return el.animate(kf, { duration: dur, easing: 'cubic-bezier(.55,0,.15,1)', fill: 'forwards' }).finished;
 }
 function splashExit(sp) {
   const finish = () => { sp.remove(); document.body.classList.remove('sp-flying'); setTimeout(() => document.body.classList.remove('enter'), 900); splashDoneR(); };
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const mSrc = sp.querySelector('.sp-msc svg'), mDst = $('mascot') && $('mascot').querySelector('svg');
   const wSrc = sp.querySelector('.sp-wm'), h1 = document.querySelector('.top h1');
-  if (reduce || locked || currentView !== 'home' || !mSrc || !mDst || !wSrc || !h1) { sp.classList.add('sp-out'); setTimeout(finish, 550); return; }
-  // 首頁內容依序浮上來
-  [...document.querySelectorAll('#view-home > *')].forEach((c, i) => c.style.setProperty('--ed', `${180 + i * 70}ms`));
+  if (reduce || locked || currentView !== 'home' || !wSrc || !h1) { sp.classList.add('sp-out'); setTimeout(finish, 550); return; }
+  [...document.querySelectorAll('#view-home > *')].forEach((c, i) => c.style.setProperty('--ed', `${200 + i * 70}ms`));
   document.body.classList.add('enter', 'sp-flying');
-  const mk = (r, html) => { const d = document.createElement('div'); d.className = 'sp-fly'; Object.assign(d.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' }); d.innerHTML = html; document.body.appendChild(d); return d; };
-  // 小秤：從開機畫面的位置飛進吉祥物卡片，途中漸變成你目前等級的樣子
-  const ms = mSrc.getBoundingClientRect(), md = mDst.getBoundingClientRect();
-  const fm = mk(ms, `<div class="a">${mSrc.outerHTML}</div><div class="b">${mDst.outerHTML}</div>`);
-  sp.querySelector('.sp-msc').style.opacity = '0'; mDst.style.visibility = 'hidden';
-  fm.querySelector('.b').animate([{ opacity: 0 }, { opacity: 0, offset: .35 }, { opacity: 1 }], { duration: 760, fill: 'forwards' });
-  fm.querySelector('.a').animate([{ opacity: 1 }, { opacity: 1, offset: .35 }, { opacity: 0 }], { duration: 760, fill: 'forwards' });
-  // 字標：飛到左上角，最後跟標題交接
+  // 字標拿出來單獨飛（背景淡出時字不會跟著消失）
   const ws = wSrc.getBoundingClientRect(), hr = h1.getBoundingClientRect();
-  const kH = (parseFloat(getComputedStyle(h1).fontSize) * 0.9) / ws.height;
-  const wd = { left: hr.left, top: hr.top + (hr.height - ws.height * kH) / 2, width: ws.width * kH };
-  const fw = mk(ws, wSrc.outerHTML.replace('class="sp-wm"', 'class="sp-wm-fly"'));
-  fw.style.color = getComputedStyle(wSrc).fill;
+  const k = (parseFloat(getComputedStyle(h1).fontSize) * 0.9) / ws.height;
+  const fw = document.createElement('div'); fw.className = 'sp-fly';
+  Object.assign(fw.style, { left: ws.left + 'px', top: ws.top + 'px', width: ws.width + 'px', height: ws.height + 'px', color: getComputedStyle(wSrc).fill });
+  fw.innerHTML = wSrc.outerHTML.replace('class="sp-wm"', 'class="sp-wm-fly"');
+  document.body.appendChild(fw);
   wSrc.style.visibility = 'hidden';
-  // 背景、天秤、標語淡出
   sp.classList.add('sp-exit');
-  Promise.all([
-    flyTo(fm, ms, md, { dur: 780, arc: -36 }),
-    flyTo(fw, ws, wd, { dur: 720, arc: -10 }),
-  ]).then(() => {
-    mDst.style.visibility = ''; fm.remove();
-    document.body.classList.remove('sp-flying');
-    fw.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' }).finished.then(() => fw.remove());
+  const dx = hr.left - ws.left, dy = hr.top + (hr.height - ws.height * k) / 2 - ws.top;
+  fw.animate([
+    { transform: 'translate(0,0) scale(1)' },
+    { transform: `translate(${dx * .35}px,${dy * .55}px) scale(${1 + (k - 1) * .5})`, offset: .45 },
+    { transform: `translate(${dx}px,${dy}px) scale(${k})` },
+  ], { duration: 760, easing: 'cubic-bezier(.6,0,.2,1)', fill: 'forwards' }).finished.then(() => {
+    document.body.classList.remove('sp-flying');   // 標題出現，飛過來的字同時淡掉
+    fw.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' }).finished.then(() => fw.remove());
     finish();
   });
 }

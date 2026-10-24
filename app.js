@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.28.1';
+const APP_VERSION = '5.28.2';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';

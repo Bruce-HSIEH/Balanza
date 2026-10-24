@@ -1,6 +1,8 @@
 'use strict';
 
-const APP_VERSION = '5.26.4';
+const APP_VERSION = '5.27.0';
+const splashT0 = performance.now();
+let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
 const { esc } = UI;
 const $ = id => document.getElementById(id);
@@ -3737,11 +3739,11 @@ $('clList').innerHTML = changelogHTML(CHANGELOG.slice(0, 3));
   try { seen = localStorage.getItem('balanza.seenVersion'); } catch (e) { /* ignore */ }
   const hasData = state.assets.length || state.debts.length;
   if (seen !== APP_VERSION) {
-    if (hasData || locked) afterUnlock.push(() => setTimeout(() => openChangelog(true), 600));
+    if (hasData || locked) afterUnlock.push(() => splashDone.then(() => setTimeout(() => openChangelog(true), 300)));
     else try { localStorage.setItem('balanza.seenVersion', APP_VERSION); } catch (e) { /* ignore */ }
   }
 })();
-if (locked) showLock(true); else afterUnlock.splice(0).forEach(f => f());
+if (locked) { showLock(true); splashOut(); } else afterUnlock.splice(0).forEach(f => f());
 // ---- 設定：先列項目，點進去再看內容 ----
 const SET_GROUPS = [
   ['安全與隱私', [
@@ -3813,6 +3815,17 @@ fetch('data/funds/meta.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() :
   const el = $('stockStatus'); if (el && el.dataset.ok) el.insertAdjacentHTML('beforeend', fundStatus);
 }).catch(() => {});
 let fundStatus = '';
+// 開機畫面：跟 iPhone 啟動圖片一模一樣，接手後天秤輕輕擺動；資料到齊、畫面排好再淡出（至少停 0.7 秒，避免一閃而過）
+setTimeout(() => { const sp = $('splash'); if (sp && !sp.classList.contains('sp-out')) sp.classList.add('sp-live'); }, 450);
+function splashOut() {
+  const sp = $('splash'); if (!sp) { splashDoneR(); return; } if (sp.classList.contains('sp-out')) return;
+  const wait = Math.max(0, 700 - (performance.now() - splashT0));
+  setTimeout(() => requestAnimationFrame(() => {
+    sp.classList.add('sp-out');
+    setTimeout(() => { sp.remove(); splashDoneR(); }, 550);
+  }), wait);
+}
+setTimeout(splashOut, 4000);   // 保險：最多 4 秒
 {
   // 等股價（含美股長尾）與用到的基金淨值都載入，或最多 2.5 秒，再顯示數字
   const needFund = () => state.assets.some(a => mktOf(a) === 'fund' && a.sym) || state.plans.some(p => planStocksOf(p).some(x => x.mkt === 'fund'));
@@ -3822,9 +3835,9 @@ let fundStatus = '';
   Promise.race([ready, new Promise(r => setTimeout(r, 1800))]).catch(() => {}).then(() => {
     if (!locked && syncPlanEstimates()) store();
     booting = false; levelsKey = ''; lastLv = null;
-    document.body.classList.remove('booting'); document.body.classList.add('booted');   // 數字、吉祥物、圖表一起淡入
+    document.body.classList.remove('booting');
     render(); firstNums = false;
-    setTimeout(() => document.body.classList.remove('booted'), 700);
+    splashOut();
     // 先用手機裡的股價開起來，背景再抓最新的；有變才平順更新
     Stocks.refresh().then(ch => { if (ch) { levelsKey = ''; if (!locked && syncPlanEstimates()) store(); render(); } });
   });

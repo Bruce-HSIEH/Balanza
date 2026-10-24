@@ -89,9 +89,66 @@ const BILL_KINDS = [
   { v: 'sub', label: '訂閱／定期扣款', ic: 'calendar', d: 'Netflix、Claude、電信費、房租…' },
 ];
 const BILL_CATS = [
-  { v: '串流影音', ic: 'play' }, { v: 'AI／軟體', ic: 'star' }, { v: '電信網路', ic: 'mic' }, { v: '保險', ic: 'insurance' },
-  { v: '水電瓦斯', ic: 'fire' }, { v: '房租', ic: 'townhouse' }, { v: '健身', ic: 'heart' }, { v: '雲端儲存', ic: 'export' }, { v: '其他', ic: 'other' },
+  { v: '串流影音', ic: 'play', c: '#8e5bc2' }, { v: 'AI／軟體', ic: 'star', c: '#6b5bd6' }, { v: '電信網路', ic: 'mic', c: '#2f80c9' }, { v: '保險', ic: 'insurance', c: '#2e9e6b' },
+  { v: '水電瓦斯', ic: 'fire', c: '#e08a2e' }, { v: '房租', ic: 'townhouse', c: '#8a6a4c' }, { v: '健身', ic: 'heart', c: '#e0563f' }, { v: '雲端儲存', ic: 'export', c: '#3aa0b8' },
+  { v: '購物會員', ic: 'basket', c: '#d0732a' }, { v: '遊戲', ic: 'trophy', c: '#5a6ad0' }, { v: '新聞閱讀', ic: 'pencil', c: '#55616a' }, { v: '學習', ic: 'sprout', c: '#3f9a5a' }, { v: '交通', ic: 'road', c: '#4a7fb0' },
+  { v: '其他', ic: 'other', c: '#7d8790' },
 ];
+// 各類別常見的服務／公司（選了會自動帶入名稱；c：預設幣別、y：預設週期）
+// 格式：[名稱, 搜尋用的別名, 選項]
+const BILL_SVCS = {
+  '串流影音': [
+    ['Netflix', '網飛 奈飛'], ['Disney+', '迪士尼 disney plus'], ['YouTube Premium', 'youtube 油管'], ['Spotify', '聲田'], ['Apple Music', '蘋果音樂'], ['Apple TV+', 'apple tv'],
+    ['Apple One', '蘋果 一次訂'], ['Amazon Prime Video', '亞馬遜'], ['Max', 'hbo max hbo go'], ['KKBOX', 'kk'], ['KKTV', ''], ['friDay影音', '遠傳 friday'], ['myVideo', '台灣大 my video'],
+    ['LINE TV', ''], ['CATCHPLAY+', 'catchplay'], ['Hami Video', '中華電信 hami'], ['愛奇藝', 'iqiyi'], ['中華電信 MOD', 'mod'], ['4gTV', '四季線上'], ['LiTV', '立視'], ['Ofiii 歐飛', 'ofiii'],
+    ['GagaOOLala', 'gaga'], ['YouTube Music', ''], ['Twitch', ''], ['Crunchyroll', ''], ['巴哈姆特動畫瘋', '動畫瘋 巴哈'], ['bilibili 大會員', 'b站'], ['ELTA 愛爾達', '愛爾達 elta'], ['DAZN', ''],
+    ['MyMusic', ''], ['Tidal', ''], ['Podcast 訂閱', 'podcast'], ['Patreon', ''], ['YouTube 頻道會員', '頻道會員'],
+  ],
+  'AI／軟體': [
+    ['ChatGPT Plus', 'openai gpt', { c: 'USD' }], ['ChatGPT Pro', 'openai gpt', { c: 'USD' }], ['Claude Pro', 'anthropic', { c: 'USD' }], ['Claude Max', 'anthropic', { c: 'USD' }], ['Google AI Pro', 'gemini 雙子星'],
+    ['Microsoft 365', 'office word excel'], ['Copilot Pro', 'microsoft'], ['GitHub Copilot', 'github', { c: 'USD' }], ['Cursor', '', { c: 'USD' }], ['Perplexity Pro', '', { c: 'USD' }], ['Midjourney', '', { c: 'USD' }],
+    ['Adobe Creative Cloud', 'photoshop illustrator acrobat'], ['Canva Pro', 'canva'], ['Notion', '', { c: 'USD' }], ['Figma', '', { c: 'USD' }], ['Grammarly', '', { c: 'USD' }], ['1Password', '', { c: 'USD' }],
+    ['Bitwarden', '', { c: 'USD', y: '12' }], ['NordVPN', 'vpn', { c: 'USD' }], ['ExpressVPN', 'vpn', { c: 'USD' }], ['Surfshark', 'vpn', { c: 'USD' }], ['Zoom', ''], ['Evernote', '印象筆記'], ['Todoist', ''],
+    ['Setapp', '', { c: 'USD' }], ['JetBrains', 'intellij', { c: 'USD', y: '12' }], ['Apple Developer Program', '開發者', { c: 'USD', y: '12' }], ['網域續約', 'domain godaddy cloudflare', { y: '12' }], ['主機／VPS', 'aws gcp 伺服器 hosting'],
+    ['防毒軟體', '趨勢 pc-cillin norton 諾頓 卡巴斯基', { y: '12' }],
+  ],
+  '電信網路': [
+    ['中華電信', 'cht 手機 門號'], ['台灣大哥大', 'taiwan mobile 台哥大'], ['遠傳電信', 'fet'], ['中華電信光世代', '光纖 寬頻 網路'], ['中華電信 MOD', 'mod 第四台'], ['台灣大寬頻', '凱擘 有線電視 第四台'],
+    ['中嘉寬頻', '有線電視 第四台 bbtv'], ['凱擘大寬頻', 'kbro 有線電視 第四台'], ['遠傳大寬頻', '寬頻 網路'], ['Seednet 新世紀資通', 'seednet'], ['市話', '室內電話'], ['無框行動', '虛擬電信'],
+    ['Starlink', '星鏈 衛星'], ['國際漫遊／eSIM', '漫遊 esim'],
+  ],
+  '保險': [
+    ['國泰人壽', '國壽'], ['富邦人壽', ''], ['南山人壽', ''], ['新光人壽', ''], ['台灣人壽', '台壽'], ['全球人壽', ''], ['中國人壽', ''], ['三商美邦人壽', '三商'], ['凱基人壽', ''],
+    ['遠雄人壽', ''], ['安聯人壽', 'allianz'], ['保誠人壽', ''], ['元大人壽', ''], ['第一金人壽', ''], ['合作金庫人壽', '合庫'], ['友邦人壽', 'aia'], ['法國巴黎人壽', 'cardif'], ['宏泰人壽', ''],
+    ['富邦產險', '車險 產險'], ['國泰產險', '車險 產險'], ['新安東京海上產險', '車險 產險'], ['和泰產險', '車險 產險'], ['明台產險', '車險 產險'], ['新光產險', '車險 產險'], ['華南產險', '車險 產險'],
+    ['泰安產險', '車險 產險'], ['旺旺友聯產險', '車險 產險'], ['兆豐產險', '車險 產險'], ['第一產險', '車險 產險'], ['台灣產險', '車險 產險'],
+    ['汽車保險', '強制險 第三責任 車體', { y: '12' }], ['機車強制險', '強制險', { y: '12' }], ['勞保', '勞工保險'], ['健保', '全民健保 二代健保'], ['國民年金', '國保'],
+  ],
+  '水電瓦斯': [
+    ['台電電費', '台灣電力公司 電費', { y: '1' }], ['台灣自來水', '水費 自來水公司'], ['臺北自來水', '北水處 水費'], ['大台北區瓦斯', '瓦斯費 天然氣'], ['陽明山瓦斯', '瓦斯費 天然氣'], ['欣欣天然氣', '瓦斯費'],
+    ['新海瓦斯', '瓦斯費 天然氣'], ['欣湖天然氣', '瓦斯費'], ['欣泰石油氣', '瓦斯費'], ['欣隆天然氣', '瓦斯費 基隆'], ['欣桃天然氣', '瓦斯費 桃園'], ['欣中天然氣', '瓦斯費 台中'], ['欣林天然氣', '瓦斯費 台中'],
+    ['欣彰天然氣', '瓦斯費 彰化'], ['欣雄天然氣', '瓦斯費 高雄'], ['欣高石油氣', '瓦斯費 高雄'], ['欣屏天然氣', '瓦斯費 屏東'], ['桶裝瓦斯', '瓦斯行'], ['污水下水道使用費', '下水道'],
+  ],
+  '房租': [['房租', '租金'], ['管理費', '大樓 社區'], ['車位月租', '停車位 停車'], ['機車位月租', '停車'], ['倉儲月租', '迷你倉 倉庫'], ['房東代收電費', '分電錶'], ['清潔費', '打掃 家事'], ['網路分攤', '室友']],
+  '健身': [
+    ['World Gym', '世界健身'], ['健身工廠', 'fitness factory'], ['Anytime Fitness', 'anytime'], ['成吉思汗健身俱樂部', '成吉思汗'], ['Curves 可爾姿', 'curves 女性'], ['true yoga 全真瑜伽', 'true fitness 瑜伽'],
+    ['國民運動中心', '運動中心'], ['游泳池月票', '游泳'], ['瑜伽教室', 'yoga'], ['拳擊／格鬥館', '拳擊 泰拳 格鬥'], ['攀岩館', '抱石'], ['私人教練', '教練課'], ['Apple Fitness+', 'apple'], ['Strava', '', { c: 'USD' }],
+  ],
+  '雲端儲存': [['iCloud+', 'icloud apple'], ['Google One', 'google drive'], ['Dropbox', ''], ['OneDrive', 'microsoft'], ['Box', ''], ['pCloud', ''], ['MEGA', ''], ['Backblaze', '備份']],
+  '購物會員': [
+    ['Costco 好市多', 'costco 會員', { y: '12' }], ['Uber One', 'uber 外送'], ['foodpanda pandapro', '熊貓 外送 pandapro'], ['Amazon Prime', '亞馬遜', { c: 'USD' }], ['蝦皮 VIP', 'shopee 蝦皮'],
+    ['momo 會員', 'momo'], ['家樂福會員', 'carrefour'], ['Apple Care+', '保固', { y: '12' }], ['寵物食品定期購', '飼料'], ['咖啡豆訂閱', '咖啡'],
+  ],
+  '遊戲': [['PlayStation Plus', 'ps plus ps5 sony'], ['Xbox Game Pass', 'xbox'], ['Nintendo Switch Online', '任天堂 ns'], ['Apple Arcade', ''], ['Google Play Pass', ''], ['EA Play', ''], ['Ubisoft+', ''], ['手遊月卡', '月卡'], ['Discord Nitro', 'discord']],
+  '新聞閱讀': [
+    ['天下雜誌', '天下'], ['商業周刊', '商周'], ['今周刊', ''], ['遠見雜誌', ''], ['聯合新聞網 VIP', '聯合報 udn'], ['經濟日報', ''], ['自由時報', ''], ['中國時報', ''], ['報導者', '捐款'],
+    ['讀墨 Readmoo', 'readmoo 電子書'], ['Kobo Plus', 'kobo 樂天'], ['Kindle Unlimited', 'kindle 亞馬遜', { c: 'USD' }], ['Audible', '有聲書', { c: 'USD' }], ['The New York Times', '紐約時報 nyt', { c: 'USD' }],
+    ['The Economist', '經濟學人', { c: 'USD' }], ['Wall Street Journal', '華爾街日報 wsj', { c: 'USD' }], ['Bloomberg', '彭博', { c: 'USD' }], ['Medium', '', { c: 'USD' }], ['Substack', '電子報', { c: 'USD' }],
+  ],
+  '學習': [['Duolingo Super', '多鄰國 duolingo'], ['Hahow 好學校', 'hahow'], ['Coursera Plus', 'coursera'], ['LinkedIn Premium', 'linkedin'], ['Udemy', ''], ['Skillshare', ''], ['補習班', '補習'], ['才藝課', '鋼琴 美術 舞蹈'], ['安親班', ''], ['托嬰／幼兒園', '幼兒園 托育']],
+  '交通': [['TPASS 通勤月票', 'tpass 1200 基北北桃 都會通'], ['高鐵定期票', '高鐵'], ['台鐵定期票', '台鐵 火車'], ['停車月租', '停車'], ['YouBike', 'ubike'], ['GoShare／WeMo', '共享機車 gogoro'], ['Gogoro 電池資費', 'gogoro 電池'], ['iRent', '共享汽車'], ['eTag 儲值', 'etag 國道']],
+  '其他': [['捐款', '慈善 公益'], ['社團會費', '會費 公會'], ['父母孝親費', '孝親'], ['零用錢', ''], ['寵物保險', ''], ['保全／監視器', '保全'], ['信用卡年費', '年費', { y: '12' }]],
+};
 const BILL_CYCLES = [
   { v: '1', label: '每月', n: 1 }, { v: '3', label: '每 3 個月', n: 3 }, { v: '6', label: '每半年', n: 6 }, { v: '12', label: '每年', n: 12 }, { v: 'w', label: '每週', n: 0 },
 ];

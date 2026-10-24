@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.28.2';
+const APP_VERSION = '5.29.0';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -925,7 +925,8 @@ const OPTS = {
   planType: () => ['股票', '基金', '債券', '加密貨幣', '儲蓄／定存', '其他'].map(v => opt(v, v, Icon({ '股票': 'chart', '基金': 'fund', '債券': 'bond', '加密貨幣': 'crypto', '儲蓄／定存': 'cash', '其他': 'other' }[v]), v === '股票' ? '可以選台股、美股標的，看即時收盤價與走勢' : v === '基金' ? '可以選境內、境外基金，看最新淨值與走勢' : '')),
   planMode: () => [opt('total', '投資總額', Icon('invest'), '一筆總額分幾個月投入，例如 1460 萬分 15 個月'), opt('monthly', '每月投入', Icon('calendar'), '每月固定投入多少，例如定期定額每月 1 萬')],
   billKind: () => BILL_KINDS.map(c => opt(c.v, c.label, Icon(c.ic), c.d)),
-  billCat: () => BILL_CATS.map(c => opt(c.v, c.v, Icon(c.ic))),
+  billCat: () => BILL_CATS.map(c => opt(c.v, c.v, Icon(c.ic), (BILL_SVCS[c.v] || []).slice(0, 4).map(x => x[0]).join('、'))),
+  billSvc: vals => [...(BILL_SVCS[vals.cat || '其他'] || []).map(([n, k, o = {}]) => opt(n, n, svcIcon(n, vals.cat), [o.c && o.c !== 'TWD' ? `${o.c} 計價` : '', o.y === '12' ? '通常每年扣款' : ''].filter(Boolean).join('・'), { key: `${n} ${k}` })), opt('', '都不是（自己輸入名稱）', Icon('pencil'))],
   billCcy: () => CURRENCIES.map(c => opt(c.v, c.label, Icon(c.ic))),
   billCycle: () => BILL_CYCLES.map(c => opt(c.v, c.label, Icon(c.v === 'w' ? 'clock' : 'calendar'))),
   payWith: () => [opt('', '銀行帳戶自動扣款', Icon('bank')), ...state.bills.filter(isCardBill).map(c => opt(c.id, `刷 ${c.name}`, UI.bankIcon(bankOf(c.bank)), '金額會併入這張卡的帳單')), opt('other', '其他（現金、轉帳…）', Icon('wallet'))],
@@ -958,6 +959,7 @@ const PICK_LABEL = {
   planMode: v => v === 'monthly' ? '每月投入' : '投資總額',
   planType: v => v || '股票',
   billKind: v => (BILL_KINDS.find(c => c.v === v) || {}).label || '',
+  billSvc: v => v || '',
   billCcy: v => (CURRENCIES.find(c => c.v === v) || {}).label || v,
   billCycle: v => (BILL_CYCLES.find(c => c.v === v) || {}).label || '',
   payWith: v => !v ? '銀行帳戶自動扣款' : v === 'other' ? '其他（現金、轉帳…）' : `刷 ${(state.bills.find(c => c.id === v) || {}).name || '（已刪除的卡）'}`,
@@ -983,6 +985,7 @@ const PICK_ICON = {
   planType: v => Icon({ '股票': 'chart', '基金': 'fund', '債券': 'bond', '加密貨幣': 'crypto', '儲蓄／定存': 'cash', '其他': 'other' }[v || '股票'] || 'other'),
   billKind: v => Icon((BILL_KINDS.find(c => c.v === v) || {}).ic || 'calendar'),
   billCat: v => Icon((BILL_CATS.find(c => c.v === v) || {}).ic || 'other'),
+  billSvc: (v, vals) => svcIcon(v, vals.cat),
   billCcy: v => Icon((CURRENCIES.find(c => c.v === v) || {}).ic || 'twd'),
   billCycle: v => Icon(v === 'w' ? 'clock' : 'calendar'),
   payWith: v => !v ? Icon('bank') : v === 'other' ? Icon('wallet') : UI.bankIcon(bankOf((state.bills.find(c => c.id === v) || {}).bank)),
@@ -992,6 +995,13 @@ const PICK_ICON = {
   fmode: v => Icon(v === 'manual' ? 'pencil' : 'fund'),
 };
 
+// 訂閱服務小圖：類別色的圓角方塊＋名稱第一個字（統一風格，不使用各公司商標）
+function svcIcon(name, cat) {
+  const c = (BILL_CATS.find(x => x.v === cat) || {}).c || '#7d8790';
+  const ch = (String(name || '').trim().match(/^[A-Za-z0-9]/) ? String(name).trim()[0].toUpperCase() : Array.from(String(name || '').trim())[0]) || '?';
+  return `<span class="ico ico-svc" style="--sc:${c}"><b>${esc(ch)}</b></span>`;
+}
+const billIcon = b => b.svc ? svcIcon(b.svc, b.cat) : Icon((BILL_CATS.find(c => c.v === b.cat) || {}).ic || 'other');
 const isRE = v => v.category === '不動產';
 const isMortgage = v => ['房貸', '理財型房貸'].includes(v.type) || !!v.collateral;
 const propOf = id => id && state.assets.find(a => a.id === id && isRE(a));
@@ -1112,6 +1122,7 @@ FIELDS.bill = [
   { k: 'bkind', label: '種類', type: 'pick', opts: 'billKind', def: 'sub' },
   { k: 'name', label: '名稱', type: 'text', req: true, phFn: true, ph: '例：Netflix、Claude Pro、中華電信' },
   { k: 'cat', label: '類別', type: 'pick', opts: 'billCat', def: '其他', show: isSub },
+  { k: 'svc', label: '服務／公司（可搜尋）', type: 'pick', opts: 'billSvc', search: true, show: v => isSub(v) && !!BILL_SVCS[v.cat || '其他'] },
   { k: 'bank', label: '發卡銀行', type: 'pick', opts: 'bank', search: true, show: isCardBill },
   { k: 'closeDay', label: '結帳日（每月幾號）', type: 'number', min: 1, max: 31, req: true, half: true, show: isCardBill },
   { k: 'dueDay', label: '繳款截止日（每月幾號）', type: 'number', min: 1, max: 31, req: true, half: true, show: isCardBill },
@@ -1132,7 +1143,7 @@ const EX = {
   debtName: { '房貸': '例：自住房貸', '理財型房貸': '例：理財型房貸額度', '信貸': '例：裝潢信貸', '車貸': '例：Corolla Cross 車貸', '學貸': '例：大學學貸', '信用卡': '例：中信卡循環', '親友借款': '例：跟爸媽借的頭期款', '其他': '例：手機分期、iPhone 0 利率' },
   debtNote: { '房貸': '例：第一年固定利率', '理財型房貸': '例：抵押家人的房子', '親友借款': '例：每月還 5,000、不算利息', '信用卡': '例：最低應繳 10%' },
   billName: { card: '例：花旗現金回饋卡、中信 LINE Pay 卡、國泰 CUBE 卡',
-    '串流影音': '例：Netflix、Spotify、Disney+', 'AI／軟體': '例：Claude Pro、ChatGPT Plus、Adobe', '電信網路': '例：中華電信 5G、光世代', '保險': '例：機車強制險、壽險', '水電瓦斯': '例：台電電費、自來水、瓦斯', '房租': '例：套房房租、大樓管理費', '健身': '例：World Gym 月費', '雲端儲存': '例：iCloud+、Google One', '其他': '例：Costco 年費、報紙訂閱' },
+    '串流影音': '例：Netflix、Spotify、Disney+', 'AI／軟體': '例：Claude Pro、ChatGPT Plus、Adobe', '電信網路': '例：中華電信 5G、光世代', '購物會員': '例：Costco 好市多、Uber One', '遊戲': '例：PlayStation Plus、Switch Online', '新聞閱讀': '例：天下雜誌、讀墨', '學習': '例：Duolingo、補習班', '交通': '例：TPASS 通勤月票', '保險': '例：機車強制險、壽險', '水電瓦斯': '例：台電電費、自來水、瓦斯', '房租': '例：套房房租、大樓管理費', '健身': '例：World Gym 月費', '雲端儲存': '例：iCloud+、Google One', '其他': '例：Costco 年費、報紙訂閱' },
   billAmount: { card: '例：8000', '串流影音': '例：390', 'AI／軟體': '例：20（美元就把幣別改成 USD）', '電信網路': '例：999', '保險': '例：1080', '水電瓦斯': '例：1600', '房租': '例：16000', '健身': '例：1288', '雲端儲存': '例：90', '其他': '例：1350' },
   billNote: { card: '例：從玉山帳戶扣款、回饋 3%', sub: '例：家庭方案，跟家人分攤' },
 };
@@ -1298,6 +1309,13 @@ $('editFields').addEventListener('click', async e => {
         else if (editing.id && pm && !nm) { vals[k] = prev; toast('股票只能在台股和美股之間切換'); }
         else vals.sym = '';
       }
+    }
+    if (k === 'cat' && prev !== o.value && vals.svc && !(BILL_SVCS[o.value] || []).some(x => x[0] === vals.svc)) { if (vals.name === vals.svc) vals.name = ''; vals.svc = ''; }
+    if (k === 'svc' && o.value) {
+      const it = (BILL_SVCS[vals.cat || '其他'] || []).find(x => x[0] === o.value), op = (it && it[2]) || {};
+      if (!vals.name || vals.name === prev) vals.name = o.value;
+      if (!editing.id && op.c && !+vals.amount) vals.ccy = op.c;
+      if (!editing.id && op.y) vals.cycle = op.y;
     }
     if (k === 'sym' && mktOf(vals) === 'fund') Stocks.fundHist([vals.sym]).then(() => { if ($('editor').open) drawStockPanel(); });
     if (k === 'brand') {
@@ -2102,7 +2120,7 @@ function billsCardHTML() {
   const live = subs.filter(b => !b.endDate || new Date(b.endDate) >= new Date());
   const mon = live.reduce((t, b) => t + perMonth(b), 0);
   const subRow = b => { const n = chargesBetween(b, new Date(), new Date(Date.now() + 400 * 864e5))[0];
-    return `<div class="bill-row" data-edit="bill" data-id="${b.id}"><span class="mk mk-sub" style="--c:${billColor(b)}"></span>${Icon((BILL_CATS.find(c => c.v === b.cat) || {}).ic || 'other')}<span class="grow">${esc(b.name)}<small>${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${n ? `・下次 ${mdTxt(n)}` : b.endDate ? '・已結束' : ''}${cardOf(b.payWith) ? `・刷 ${esc(cardOf(b.payWith).name)}` : ''}</small></span><span class="due-amt">${(b.ccy || 'TWD') === state.currency ? fmt(+b.amount || 0) : `${b.ccy} ${(+b.amount || 0).toLocaleString()}<small class="muted">≈ ${fmt((+b.amount || 0) * billFx(b))}</small>`}</span></div>`; };
+    return `<div class="bill-row" data-edit="bill" data-id="${b.id}"><span class="mk mk-sub" style="--c:${billColor(b)}"></span>${billIcon(b)}<span class="grow">${esc(b.name)}<small>${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${n ? `・下次 ${mdTxt(n)}` : b.endDate ? '・已結束' : ''}${cardOf(b.payWith) ? `・刷 ${esc(cardOf(b.payWith).name)}` : ''}</small></span><span class="due-amt">${(b.ccy || 'TWD') === state.currency ? fmt(+b.amount || 0) : `${b.ccy} ${(+b.amount || 0).toLocaleString()}<small class="muted">≈ ${fmt((+b.amount || 0) * billFx(b))}</small>`}</span></div>`; };
   const open = fold.has('bills');
   return `<div class="card fold bills-card ${open ? 'open' : ''}" data-f="bills">
     ${foldHead('bills', Icon('repay'), '訂閱與定期扣款', subs.length ? `${live.length} 項・每月約 ${fmt(mon)}・一年約 ${fmt(mon * 12)}` : '還沒有加入', '')}

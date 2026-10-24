@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.27.4';
+const APP_VERSION = '5.28.0';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -89,6 +89,7 @@ const FS = { s: { k: 0.9, t: '小' }, m: { k: 1, t: '中（預設）' }, l: { k:
 const fsK = () => (FS[prefs.fs] || FS.m).k;
 function applyFs() { const k = fsK(); document.body.style.zoom = k === 1 ? '' : String(k); document.documentElement.dataset.fs = prefs.fs || 'm'; }
 applyFs();
+UI.setStyle(prefs.mstyle);
 let hidden = !!prefs.autoHide;
 // 縮小顯示：所有金額除以只有自己知道的倍率（比例、正負不變）
 let scaled = !!prefs.scaleStart;
@@ -284,6 +285,10 @@ function render() {
   // 吉祥物
   if (!booting && (L.lv !== lastLv || stress !== lastStress)) {
     $('mascot').innerHTML = UI.mascotSVG(L, { stress });
+    const v2 = UI.isV2();
+    $('mascotBg').innerHTML = v2 ? M2.scene(L) : '';
+    $('mascotCard').classList.toggle('v2', v2);
+    $('mascotCard').classList.toggle('dk', v2 && M2.isDark(L));
     $('mascotCard').dataset.lv = L.lv;
     $('mascotCard').style.setProperty('--g', L.lv > 0 ? Math.min(1, L.lv / 30).toFixed(2) : 0);
     $('mascotCard').classList.toggle('glow', L.lv >= 7);
@@ -768,7 +773,7 @@ function renderLevels(s, L) {
     : !next ? '已經是最高等級了，太強了'
     : L.lv < 0 ? `再減少 ${fmt(need)} 負債（或增加資產）就能升到 Lv.${next.lv} ${next.name}`
     : `再增加 ${fmt(need)} 淨資產就能升到 Lv.${next.lv} ${next.name}`;
-  $('lvNow').innerHTML = `<div class="lv-mascot">${UI.mascotSVG(L)}</div>
+  $('lvNow').innerHTML = `<div class="lv-mascot">${UI.mascotSVG(L, { frame: true })}</div>
     <div class="lv-info"><div class="lv-badge ${L.lv < 0 ? 'neg-bg' : ''}">${lvBadge(L)}${L.tierName ? ' · ' + esc(L.tierName) : ''}</div><h2>${esc(L.name)}</h2>
     <div class="muted">${esc(L.msg)}</div><div class="lv-nw">目前淨資產 <b class="${nw < 0 ? 'neg' : 'pos'}">${fmt(nw)}</b></div></div>
     <div class="lv-prog"><div class="lv-track"><div class="lv-fill" style="width:${(prog * 100).toFixed(1)}%"></div></div><div class="small muted">${note}</div></div>`;
@@ -797,20 +802,21 @@ function renderLevels(s, L) {
     const tag = cur ? '<span class="lv-tag cur">你在這裡</span>' : reached ? '<span class="lv-tag ok">已達成</span>' : (X.lv > 0 && X.lv > L.lv) ? `<span class="lv-tag lock">${Icon.svg('lock', 13)}</span>` : '';
     const g = sel ? gap(X) : null;
     return `<li class="lv-row ${cur ? 'cur' : ''} ${sel ? 'sel' : ''} ${X.lv < 0 ? 'negative' : ''}" data-lvsel="${X.lv}" ${cur ? 'id="lvCurRow"' : ''}>
-      <div class="lv-mini">${UI.mascotSVG(X, { still: !cur && !sel })}</div>
+      <div class="lv-mini">${UI.mascotSVG(X, { still: !cur && !sel, lite: true })}</div>
       <div class="grow"><div class="lv-name"><b>Lv.${X.lv}</b> ${esc(X.name)} ${tag}</div>
       <div class="lv-range">${rangeText(X, k)}</div>
       ${g ? `<div class="lv-gap"><b class="${g.cls}">${g.txt}</b>${g.sub ? `<small>${g.sub}</small>` : ''}
         ${g.prog != null && g.prog < 1 ? `<div class="lv-track sm"><div class="lv-fill" style="width:${(g.prog * 100).toFixed(1)}%"></div></div>` : ''}
         <small class="muted">${esc(X.msg)}</small></div>` : '<div class="lv-hint">點我看這一級</div>'}</div></li>`;
   };
+  const tdesc = X => UI.isV2() ? M2.descOf(X) : X.desc;
   const tierBlock = (list, title, desc) => `<li class="lv-tier"><b>${esc(title)}</b><small>${esc(desc)}</small></li>${list.map(row).join('')}`;
   const pos = [], neg = [];
-  for (let t = 10; t >= 1; t--) { const g = LEVELS.filter(x => x.tier === t); pos.push(tierBlock(g, `${g[0].tierName} · Lv.${g.at(-1).lv} ～ ${g[0].lv}`, g[0].desc)); }
-  for (let t = -1; t >= -10; t--) { const g = LEVELS.filter(x => x.tier === t); neg.push(tierBlock(g, `${g[0].tierName} · Lv.${g[0].lv} ～ ${g.at(-1).lv}`, g[0].desc)); }
+  for (let t = 10; t >= 1; t--) { const g = LEVELS.filter(x => x.tier === t); pos.push(tierBlock(g, `${g[0].tierName} · Lv.${g.at(-1).lv} ～ ${g[0].lv}`, tdesc(g[0]))); }
+  for (let t = -1; t >= -10; t--) { const g = LEVELS.filter(x => x.tier === t); neg.push(tierBlock(g, `${g[0].tierName} · Lv.${g[0].lv} ～ ${g.at(-1).lv}`, tdesc(g[0]))); }
   $('lvList').innerHTML = `<li class="lv-sep pos-sep">${Icon.svg('star', 18)} 正資產 30 級</li>${pos.join('')}
     <li class="lv-sep neg-sep">${Icon.svg('warn', 18)} 負資產 30 級</li>${neg.join('')}`;
-  $('lvNoteCcy').textContent = state.currency === 'TWD' ? '每 3 級是一個階段，造型會變；同階段用星星數區分。' : `門檻以新台幣設定，依目前匯率換算成 ${state.currency}。`;
+  $('lvNoteCcy').textContent = state.currency === 'TWD' ? (UI.isV2() ? '每 3 級是一個階段，造型和背景會變；同階段等級越高配件越多。' : '每 3 級是一個階段，造型會變；同階段用星星數區分。') : `門檻以新台幣設定，依目前匯率換算成 ${state.currency}。`;
 }
 
 // --- 更新紀錄 ---
@@ -3626,7 +3632,7 @@ function renderSimBar() {
 }
 function renderSimSettings() {
   $('simSet').innerHTML = `<p class="muted small">展示用：切換成三種完全不同的人生，看看 App 在各種情況下的樣子。模擬時的資料只在畫面上，<b>不會儲存、不會備份，也不會動到你的資料</b>；按上方的「結束」或重新打開 App 就回到你的資料。</p>
-    <div class="sim-cards">${Object.entries(Sim.PERSONAS).map(([k, v]) => `<button type="button" class="sim-card ${k}" data-sim="${k}"><span class="sim-face">${UI.mascotSVG(LEVELS.find(L => L.lv === (k === 'rich' ? 30 : k === 'normal' ? 6 : -18)) || LEVELS[0])}</span><span><b>${esc(v.name)}</b><small>${esc(v.who)}</small><small class="muted">${esc(v.desc)}</small></span></button>`).join('')}</div>
+    <div class="sim-cards">${Object.entries(Sim.PERSONAS).map(([k, v]) => `<button type="button" class="sim-card ${k}" data-sim="${k}"><span class="sim-face">${UI.mascotSVG(LEVELS.find(L => L.lv === (k === 'rich' ? 30 : k === 'normal' ? 6 : -18)) || LEVELS[0], { lite: true })}</span><span><b>${esc(v.name)}</b><small>${esc(v.who)}</small><small class="muted">${esc(v.desc)}</small></span></button>`).join('')}</div>
     ${sim ? '<button type="button" class="btn" id="simExit2">結束模擬，回到我的資料</button>' : ''}`;
 }
 document.addEventListener('click', e => {
@@ -3752,6 +3758,7 @@ const SET_GROUPS = [
   ]],
   ['一般', [
     { p: 'ai', ic: 'star', t: 'AI 理解', s: () => { const a = state.ai || {}; return !a.on ? '關閉' : AI.keyOf(a) ? (a.provider === 'gemini' ? 'Gemini' : 'Claude') : '尚未設定金鑰（使用內建規則）'; } },
+    { p: 'mstyle', ic: 'sprout', t: '小秤造型', s: () => prefs.mstyle === 'classic' ? '經典版' : '新版（有背景與配件）' },
     { p: 'textsize', ic: 'search', t: '文字大小', s: () => (FS[prefs.fs] || FS.m).t.replace('（預設）', '') },
     { p: 'currency', ic: () => (CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0]).ic, t: '幣別', s: () => (CURRENCIES.find(c => c.v === state.currency) || CURRENCIES[0]).label },
   ]],
@@ -3782,6 +3789,11 @@ function renderSetMenu() {
 }
 function openSetPage(p) {
   if (p === 'currency') { $('currencyBtn').click(); return; }
+  if (p === 'mstyle') {
+    UI.openPicker({ title: '小秤造型', value: prefs.mstyle === 'classic' ? 'classic' : 'v2', options: [opt('v2', '新版', '', '成熟可愛，首頁有背景，等級越高越誇張'), opt('classic', '經典版', '', '原本的小秤')] })
+      .then(o => { if (!o) return; prefs.mstyle = o.value; savePrefs(); UI.setStyle(o.value); lastLv = null; levelsKey = ''; render(); renderSetMenu(); toast(`小秤造型：${o.value === 'classic' ? '經典版' : '新版'}`); });
+    return;
+  }
   if (p === 'textsize') {
     UI.openPicker({ title: '文字大小', value: prefs.fs || 'm', options: Object.entries(FS).map(([v, x]) => opt(v, x.t, `<span class="fs-demo fs-${v}">字</span>`, v === 's' ? '一頁看到比較多' : v === 'l' ? '字和按鈕都放大，比較好按' : '')) })
       .then(o => { if (!o) return; prefs.fs = o.value; savePrefs(); applyFs(); renderSetMenu(); toast(`文字大小：${FS[o.value].t.replace('（預設）', '')}`); });

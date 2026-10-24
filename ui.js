@@ -406,7 +406,9 @@ const UI = (() => {
     return { back, defs, front, rim };
   }
 
+  let mStyle = 'v2';
   function mascotSVG(L, opts = {}) {
+    if (mStyle === 'v2' && typeof M2 !== 'undefined') return M2.svg(L, opts);
     const look = lookOf(L);
     const pw = power(L, 'p' + Math.random().toString(36).slice(2, 8));
     const c = L.color;
@@ -494,7 +496,7 @@ const UI = (() => {
     ['zap', 1.6, p => ({ op: p < .1 ? 0 : p < .16 ? 1 : p < .22 ? .2 : p < .4 ? 1 : 0 })],
     ['rim', 2, p => ({ opm: 1 - .5 * cyc(p) })],
   ];
-  const FX_SEL = FXA.map(x => '.' + x[0]).join(',');
+  let FX_SEL = FXA.map(x => '.' + x[0]).join(',');
   const fxCache = new WeakMap();
   const secs = v => { const m = String(v || '').match(/(-?[\d.]+)(ms|s)/); return m ? (m[2] === 'ms' ? +m[1] / 1000 : +m[1]) : 0; };
   function fxList(svg) {
@@ -616,5 +618,14 @@ const UI = (() => {
     setTimeout(() => box.remove(), 1100);
   }
 
-  return { esc, bankIcon, carSVG, carIcon, sparkline, openPicker, levelOf, mascotSVG, countTo, burst, poke, wake };
+  // 新版小秤（mascot2.js）註冊自己的特效與動作
+  function extend({ fx = [], motion = {} } = {}) {
+    fx.forEach(x => { if (!FXA.some(y => y[0] === x[0])) FXA.push(x); });
+    FX_SEL = FXA.map(x => '.' + x[0]).join(',');
+    Object.assign(MOTION, motion);
+  }
+  const setStyle = v => { mStyle = v === 'classic' ? 'classic' : 'v2'; };
+  const isV2 = () => mStyle === 'v2' && typeof M2 !== 'undefined';
+
+  return { esc, bankIcon, carSVG, carIcon, sparkline, openPicker, levelOf, mascotSVG, countTo, burst, poke, wake, extend, setStyle, isV2 };
 })();

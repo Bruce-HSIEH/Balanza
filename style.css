@@ -1292,3 +1292,22 @@ body.enter #view-home > *, body.enter .tabs { animation: homeIn .62s cubic-bezie
 body.enter .top > :not(h1) { animation: homeFade .5s ease both .25s; }
 @keyframes homeIn { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
 @keyframes homeFade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- 新版小秤：首頁背景鋪滿、特效 ---------- */
+.mascot .m2fx { transform-box: fill-box; transform-origin: center; }
+.mascot .m2-nod, .mascot .m2-crownbob { transform-origin: 50% 100%; }
+.mascot .m2-flap-l { transform-origin: 100% 30%; }
+.mascot .m2-flap-r { transform-origin: 0 30%; }
+.m2-bg { display: none; }
+.mascot-card.v2 { background: var(--card); isolation: isolate; }
+.mascot-card.v2 .m2-bg { display: block; position: absolute; inset: 0; z-index: -2; pointer-events: none; }
+.mascot-card.v2 .m2-bg svg.mascot { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: hidden; }
+.mascot-card.v2::after { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(90deg, transparent 36%, color-mix(in srgb, var(--card) 70%, transparent) 60%, color-mix(in srgb, var(--card) 55%, transparent)); }
+.mascot-card.v2 .mascot-text { text-shadow: 0 0 6px color-mix(in srgb, var(--card) 90%, transparent); }
+.mascot-card.v2.dk::after { background: linear-gradient(90deg, transparent 36%, rgba(14, 20, 34, .62) 60%, rgba(14, 20, 34, .48)); }
+.mascot-card.v2.dk .mascot-text { color: #eef2f8; text-shadow: 0 0 6px rgba(0, 0, 0, .8); }
+.mascot-card.v2.dk .mascot-tip, .mascot-card.v2.dk .hp-text { color: #c3cbd8; }
+.mascot-card.v2.dk .link-btn { color: #9fe3c4; }
+.mascot-card.v2 .mascot-wrap svg.mascot { overflow: visible; }
+.lv-mascot svg.m2 { overflow: visible; }

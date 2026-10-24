@@ -1,7 +1,7 @@
 // App 本體：快取優先（開啟很快，每次發版換 CACHE 名稱就會整包更新）；股價、基金等資料：網路優先
-const CACHE = 'balanza-v5-27-4';
+const CACHE = 'balanza-v5-28-0';
 const DATA = 'balanza-data';   // 股價、基金等資料另外放，發新版時不會被清掉
-const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'ui.js', 'loan.js', 'lvr.js', 'icons.js', 'stocks.js', 'cars.js', 'changelog.js', 'lock.js', 'backup.js', 'voice.js', 'ai.js', 'sim.js', 'plan.js', 'charts.js', 'data/catalog.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'ui.js', 'mascot2.js', 'loan.js', 'lvr.js', 'icons.js', 'stocks.js', 'cars.js', 'changelog.js', 'lock.js', 'backup.js', 'voice.js', 'ai.js', 'sim.js', 'plan.js', 'charts.js', 'data/catalog.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
   // cache: 'reload' 跳過瀏覽器快取，確保拿到這一版的檔案

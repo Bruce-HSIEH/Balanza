@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.1.6';
+const APP_VERSION = '6.1.7';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -2479,13 +2479,14 @@ function paidCardHTML() {
     <div class="paid-total"><small>從 ${since.replace('-', '/')} 到現在，貸款一共繳了</small><b>${fmt(T)}</b></div>
     <div class="paid-bar"><span class="pi" style="width:${ip.toFixed(1)}%"></span><span class="pp" style="width:${(100 - ip).toFixed(1)}%"></span></div>
     <div class="paid-legend">
-      <div><span class="dot" style="--c:#ff7a59"></span>利息 <b class="neg">${fmt(I)}</b><small>付給銀行的成本，不會回來</small></div>
-      <div><span class="dot" style="--c:#2fbf71"></span>本金 <b class="pos">${fmt(Pp)}</b><small>還掉的債，變成你的淨資產</small></div>
+      <div><span class="dot" style="--c:#ff7a59"></span>利息 <b class="c-int">${fmt(I)}</b><small>付給銀行的成本，不會回來</small></div>
+      <div><span class="dot" style="--c:#2fbf71"></span>本金 <b class="c-prin">${fmt(Pp)}</b><small>還掉的債，變成你的淨資產</small></div>
     </div>
-    <div class="kv paid-year"><span>${y} 年至今</span><span>利息 <b class="neg">${fmt(yi)}</b>・本金 ${fmt(yp)}</span></div>
+    <div class="kv paid-year"><span>${y} 年至今</span><span>利息 <b class="c-int">${fmt(yi)}</b>・本金 ${fmt(yp)}</span></div>
     <button type="button" class="link-btn" id="paidMore">${paidOpen ? '收起' : '看每筆貸款與每年明細'} ›</button>
     ${paidOpen ? `<div class="paid-detail">
-      ${ok.map(x => `<div class="kv"><span><span class="dot" style="--c:${debtColor(x.d)}"></span>${esc(x.d.name)}<small class="muted"> ${x.p.since.replace('-', '/')} 起${x.p.estimated ? '・估算' : ''}</small></span><span>利息 <span class="neg">${fmt(x.p.interest)}</span>${x.p.principal ? `<br><small>本金 ${fmt(x.p.principal)}</small>` : ''}</span></div>`).join('')}
+      ${ok.map(x => `<div class="paid-row"><div class="pr-top"><span class="dot" style="--c:${debtColor(x.d)}"></span><b class="grow">${esc(x.d.name)}</b><b class="pr-tot">${fmt(x.p.interest + x.p.principal)}</b></div>
+        <div class="pr-sub"><span>${x.p.since.replace('-', '/')} 起${x.p.estimated ? '・估算' : ''}</span><span>利息 ${fmt(x.p.interest)}・${x.p.principal ? `本金 ${fmt(x.p.principal)}` : '只繳息'}</span></div></div>`).join('')}
       <div class="paid-years">${ys.map(k => { const v = years[k]; return `<div class="py"><span>${k}</span><div class="py-bar"><span class="pi" style="width:${(v.i / maxY * 100).toFixed(1)}%"></span><span class="pp" style="width:${(v.p / maxY * 100).toFixed(1)}%"></span></div><small>${short(v.i)} / ${short(v.p)}</small></div>`; }).join('')}</div>
       <div class="small muted">每年：利息 / 本金。依撥款條件與貸款歷程推算，實際金額以銀行對帳單為準${ok.some(x => x.p.partial) ? '；理財型額度有「已動用金額」沒填開始月份的部分沒算進去' : ''}${skipped.length ? `；${skipped.map(esc).join('、')} 是手動輸入，無法回推` : ''}。</div>
     </div>` : ''}

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.0.0';
+const APP_VERSION = '6.1.0';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -250,6 +250,7 @@ function barsHTML(rows, iconFn, labelFn, extraFn) {
 
 // ---------- 畫面 ----------
 let lastLv = null, lastStress = null;
+let reorder = '';   // 正在調整順序的清單：'debts' | 'bills'
 const openGroups = new Set();   // 一開始全部收合，點了才展開
 const openStocks = new Set();
 
@@ -434,7 +435,7 @@ document.addEventListener('click', e => {
   if (!w) return;
   const id = w.dataset.donut;
   donutSel[id] = donutSel[id] === k.dataset.dk ? null : k.dataset.dk;
-  if (id === 'cat') renderAssetDonut(); else if (id === 'pf') renderPortfolio();
+  if (id === 'cat') renderAssetDonut(); else if (id === 'pf') renderPortfolio(); else if (id === 'fx') renderFixed();
 });
 function renderAssetDonut() {
   const rows = groupSum(state.assets.filter(countsAsAsset), a => a.category, assetValue).filter(r => r[1] > 0);
@@ -725,15 +726,16 @@ function drawsHTML(d) {
 function renderDebts(s) {
   renderDebtCurve();
   const rt = x => x.s.rate ?? num(x.d.rate);
-  const ds = [...s.st].sort((a, b) => rt(b) - rt(a));
+  const ds = state.debtSort === 'manual' ? [...s.st].sort((a, b) => state.debts.indexOf(a.d) - state.debts.indexOf(b.d)) : [...s.st].sort((a, b) => rt(b) - rt(a));
   $('debtsSum').textContent = fmt(s.totalDebts);
+  if (reorder === 'debts') { $('debtList').innerHTML = reorderHTML('debts', state.debts.map(d => ({ id: d.id, name: d.name, sub: d.type || '', icon: UI.bankIcon(bankOf(d.bank)) }))); return; }
   if (!ds.length) { $('debtList').innerHTML = `<div class="empty big-empty">${Icon('heart', 'ico-xl')}<p>點右下角 ＋ 新增負債</p></div>`; return; }
   let i = 0;
   const row = ({ d, s: x }, linked) => {
     const b = bankOf(d.bank);
     return `<li data-view-item="debt|${d.id}" class="${linked ? 'linked' : ''}" style="--i:${i++}"><span class="stack">${UI.bankIcon(b)}<span class="badge">${Icon.svg(typeOf(d.type).ic === 'car' ? 'loan' : typeOf(d.type).ic, 18)}</span></span>
       <div class="grow"><div class="name">${esc(d.name)}${x.inGrace ? ` <span class="chip">寬限期剩 ${x.graceLeft} 月</span>` : ''}</div>
-      <div class="sub">${esc(b && b.code !== '—' ? b.code + ' ' + shortBank(b) : (b ? b.name : '—'))} · 年利率 ${pct(rt({ d, s: x }))}${dueTxt(d) ? ` · ${dueTxt(d)}扣` : ''}${d.mode === 'auto' ? ((d.changes || []).length ? ` · 歷程 ${d.changes.length} 筆` : ' · 自動試算') : d.mode === 'revolving' ? ` · 額度 ${short(x.limit)}` : ''}</div></div>
+      <div class="sub">${esc(b && b.code !== '—' ? b.code + ' ' + shortBank(b) : (b ? b.name : '—'))} · 年利率 ${pct(rt({ d, s: x }))}${dueTxt(d) ? ` · ${dueTxt(d)}扣` : ''}${d.mode === 'auto' ? ((d.changes || []).length ? ` · 歷程 ${d.changes.length} 筆` : ' · 自動試算') : d.mode === 'revolving' ? ` · 額度 ${short(x.limit)}${(d.changes || []).length ? ` · 歷程 ${d.changes.length} 筆` : ''}` : ''}</div></div>
       <div class="amt neg">${fmt(x.balance)}<div class="sub">${x.revolving ? '利息' : '月付'} ${fmt(x.monthly)}</div></div></li>${x.revolving ? drawsHTML(d) : ''}`;
   };
   // 依抵押的房子分組
@@ -749,7 +751,7 @@ function renderDebts(s) {
       <div class="ltv"><div class="ltv-bar"><span style="width:${Math.min(100, ltv).toFixed(1)}%"></span></div><small>貸款成數 ${ltv.toFixed(0)}%</small></div>
       <ul class="list linked-list">${p.items.map(x => row(x, true)).join('')}</ul></li>`;
   }).join('');
-  $('debtList').innerHTML = groups + ds.filter(x => !used.has(x.d.id)).map(x => row(x)).join('');
+  $('debtList').innerHTML = groups + ds.filter(x => !used.has(x.d.id)).map(x => row(x)).join('') + (ds.length > 1 ? `<li class="reorder-link"><button type="button" class="link-btn" data-reorder="debts">${Icon.svg('stairs', 16)} 調整順序${state.debtSort === 'manual' ? '' : '（目前依利率高到低）'}</button></li>` : '');
 }
 
 // --- 等級 ---
@@ -863,7 +865,7 @@ function growBars() {
 
 // ---------- 分頁與新增按鈕 ----------
 let currentView = 'home';
-function showView(name) {
+function showView(name, dir) {
   if (!name) name = lastTab || 'home';
   currentView = name;
   if (!['levels', 'settings'].includes(name)) lastTab = name;
@@ -871,11 +873,12 @@ function showView(name) {
   document.querySelectorAll('.view').forEach(v => {
     const on = v.id === 'view-' + name;
     v.classList.toggle('active', on);
-    if (on) { v.style.animation = 'none'; void v.offsetWidth; v.style.animation = ''; }
+    if (on) { v.style.animation = 'none'; void v.offsetWidth; v.style.animation = dir === 'left' ? 'viewL .32s cubic-bezier(.2,.8,.2,1) backwards' : dir === 'right' ? 'viewR .32s cubic-bezier(.2,.8,.2,1) backwards' : ''; }
   });
   const fab = $('fab');
   const kind = { assets: 'asset', debts: 'debt', invest: 'plan', fixed: 'bill', income: 'income' }[name] || '';
   if (name !== 'income') { incOK = false; incShow = false; }
+  if (reorder) { reorder = ''; save(); }
   if (!['levels', 'settings'].includes(name)) tabPage(name === 'income' ? 2 : 1);
   document.querySelectorAll('.top-btn').forEach(x => x.classList.toggle('active', x.dataset.view === name));
   fab.hidden = !kind || (name === 'income' && !incOK);
@@ -899,6 +902,22 @@ $('tabPrev').addEventListener('click', () => { tabPage(1); if (currentView === '
 (() => { let x0 = null; const t = document.querySelector('.tabs');
   t.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
   t.addEventListener('touchend', e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (dx < -40) tabPage(2); else if (dx > 40) { tabPage(1); if (currentView === 'income') showView('home'); } }, { passive: true });
+})();
+// 整個畫面左右滑切換分頁（月曆、年度明細、圖表、可橫向捲動的地方除外；收入不在順序裡）
+(() => {
+  const ORDER = ['home', 'assets', 'debts', 'fixed', 'repay', 'invest'];
+  const SKIP = '#dueCal, .yr-scroll, svg.scrub, input, textarea, select, .chips, .sim-tabs, .tabs, .rkey, .ro-btn, .donut-wrap, [data-noswipe]';
+  let st = null;
+  const main = document.querySelector('main');
+  main.addEventListener('touchstart', e => { if (e.touches.length !== 1 || document.querySelector('dialog[open]') || e.target.closest(SKIP)) { st = null; return; } st = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }; }, { passive: true });
+  main.addEventListener('touchend', e => {
+    if (!st) return;
+    const dx = e.changedTouches[0].clientX - st.x, dy = e.changedTouches[0].clientY - st.y, dt = Date.now() - st.t; st = null;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2 || dt > 700) return;
+    const i = ORDER.indexOf(currentView); if (i < 0) return;
+    const j = i + (dx < 0 ? 1 : -1); if (j < 0 || j >= ORDER.length) return;
+    showView(ORDER[j], dx < 0 ? 'left' : 'right');
+  }, { passive: true });
 })();
 // 離開 App 再回來：回到第一頁、收入要重新驗證
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { incOK = false; incShow = false; if (currentView === 'income') showView('home'); else tabPage(1); } });
@@ -1107,7 +1126,7 @@ const FIELDS = {
     { k: 'drawnYM', label: '這筆動用從哪個月開始（選填，用來算已繳利息）', type: 'month', show: v => isRev(v) && num(v.drawn) > 0 },
     { k: 'endYM', label: '額度到期年月（選填）', type: 'month', show: isRev, half: true },
     { panel: 'loanPanel', show: () => true },
-    { panel: 'chgPanel', show: isAuto },
+    { panel: 'chgPanel', show: v => isAuto(v) || isRev(v) },
     { k: 'note', label: '備註', type: 'text' },
   ],
 };
@@ -1519,10 +1538,19 @@ const CHG = {
   prepay: { ic: 'coin', t: '提前還本', f: [['amount', '還了多少', 'number', 'any']], d: c => `提前還本 ${fmt(+c.amount)}（年限不變，月付重算）` },
   balance: { ic: 'bank', t: '本金校正', f: [['amount', '銀行顯示的剩餘本金', 'number', 'any']], d: c => `以銀行為準，剩餘本金 ${fmt(+c.amount)}` },
 };
+// 理財型房貸（額度型、只繳息）的歷程
+const CHG_REV = {
+  rate: CHG.rate,
+  draw: { ic: 'invest', t: '額外動用', f: [['amount', '動用多少', 'number', 'any']], d: c => `動用 ${fmt(+c.amount)}（下個月起算利息）` },
+  repay: { ic: 'coin', t: '還本', f: [['amount', '還了多少', 'number', 'any']], d: c => `還本 ${fmt(+c.amount)}（下個月起利息變少）` },
+  limit: { ic: 'bank', t: '額度調整', f: [['limit', '新的額度', 'number', 'any']], d: c => `額度改為 ${fmt(+c.limit)}` },
+};
+const chgTypes = () => isRev(vals) ? CHG_REV : CHG;
 let chgEdit = null;   // 正在編輯的變更 {id, type, ym, ...}
 function drawChgPanel() {
   const el = $('chgPanel');
   if (!el) return;
+  if (isRev(vals)) return drawRevChg(el);
   if (!isAuto(vals)) { el.innerHTML = ''; return; }
   const d = { ...vals, changes: vals.changes || [] };
   const ok = num(d.principal) > 0 && num(d.years) > 0 && d.startYM;
@@ -1551,10 +1579,44 @@ function drawChgPanel() {
     items.push({ ym: last.ym, ic: 'heart', t: '還清', d: `共 ${rows.length} 期`, x: `總利息 ${fmt(rows.reduce((t, r) => t + r.interest, 0))}`, auto: true, future: true });
     items.sort((a, b) => Loan.ymDiff(b.ym, a.ym) || (a.now ? 1 : 0) - (b.now ? 1 : 0));
   }
-  const form = chgEdit ? (() => {
-    const info = CHG[chgEdit.type];
+  const form = chgFormHTML();
+  el.innerHTML = chgPanelHTML(ok, items, form, '撥款後發生的事（之後才申請寬限期、利率調整、延長年限、提前還本）都加在這裡，會從撥款一路算到今天，再推算以後。', '先填好原始貸款金額、年限和撥款年月。');
+}
+function chgPanelHTML(ok, items, form, intro, need) {
+  const ymS = ym => ym ? ym.replace('-', '/') : '';
+  return `<div class="panel-title">${Icon('calendar')} 貸款歷程</div>
+    <p class="small muted">${intro}</p>
+    ${ok ? `<ol class="loan-tl">${items.map(it => `<li class="${it.now ? 'now' : ''} ${it.future ? 'future' : ''} ${it.auto ? 'auto' : ''}" ${it.id ? `data-cid="${it.id}"` : ''}>
+        <span class="tl-dot">${Icon.svg(it.ic, 20)}</span>
+        <div class="tl-body"><div class="tl-head"><b>${it.t}</b><span>${it.dl || ymS(it.ym)}</span></div>
+        <div class="small">${it.d}</div>${it.x ? `<div class="small muted">${it.x}</div>` : ''}</div>${it.id ? '<i class="set-chev">›</i>' : ''}</li>`).join('')}</ol>`
+      : `<p class="small muted">${need}</p>`}
+    ${form || (ok ? '<button type="button" class="btn mini" data-ca="add">＋ 新增變更</button>' : '')}`;
+}
+function drawRevChg(el) {
+  const d = { ...vals, changes: vals.changes || [] }, today = Loan.nowYM();
+  const ok = num(d.limit) > 0 || num(d.drawn) > 0 || d.changes.length;
+  const plans = state.plans.filter(p => vals.id && p.source === vals.id);
+  const items = [];
+  const at = ym => Plan.drawnAt(d, state.plans, ym, today);
+  if (num(d.drawn) > 0) items.push({ ym: d.drawnYM || '', dl: d.drawnYM ? '' : '日期未填', ic: 'bank', t: '計畫外動用', d: `已動用 ${fmt(num(d.drawn))}・年利率 ${num(d.rate)}%`, auto: true });
+  plans.forEach(p => items.push({ ym: p.startYM, ic: 'invest', t: `投資計畫「${esc(p.name)}」開始動用`, d: `共 ${Math.round(num(p.months))} 期，合計 ${fmt(num(p.total))}（到投資分頁看每一期）`, auto: true, future: Loan.ymDiff(today, p.startYM) > 0 }));
+  for (const c of d.changes.slice().sort((a, b) => Loan.ymDiff(b.ym, a.ym))) {
+    const info = CHG_REV[c.type]; if (!info || !c.ym) continue;
+    const nx = Loan.ymAdd(c.ym, c.type === 'rate' || c.type === 'limit' ? 0 : 1), b = at(nx), r = Plan.rateAt(d, nx);
+    items.push({ ym: c.ym, ic: info.ic, t: info.t, d: info.d(c), x: `之後已動用 ${fmt(b)}・每月利息 <b>${fmt(b * r / 1200)}</b>`, id: c.id, future: Loan.ymDiff(today, c.ym) > 0 });
+  }
+  const bNow = at(today), rNow = Plan.rateAt(d, today);
+  items.push({ ym: today, ic: 'pin', t: '現在', d: `已動用 ${fmt(bNow)}・年利率 ${rNow}%・額度 ${fmt(Plan.limitAt(d, today))}`, x: `本月利息 <b>${fmt(bNow * rNow / 1200)}</b>`, now: true });
+  items.sort((a, b) => Loan.ymDiff(b.ym || '1900-01', a.ym || '1900-01') || (a.now ? 1 : 0) - (b.now ? 1 : 0));
+  el.innerHTML = chgPanelHTML(ok, items, chgFormHTML(), '之後發生的利率調整、額外動用、還本、額度調整都加在這裡，會從那個月起重新算利息。投資計畫的每一期動用在投資分頁管理。', '先填好額度或已動用金額。');
+}
+function chgFormHTML() {
+  const T = chgTypes();
+  return chgEdit ? (() => {
+    const info = T[chgEdit.type] || Object.values(T)[0];
     return `<div class="chg-form">
-      <div class="seg chg-types">${Object.entries(CHG).map(([k, v]) => `<button type="button" data-ct="${k}" class="${chgEdit.type === k ? 'on' : ''}">${v.t}</button>`).join('')}</div>
+      <div class="seg chg-types">${Object.entries(T).map(([k, v]) => `<button type="button" data-ct="${k}" class="${chgEdit.type === k ? 'on' : ''}">${v.t}</button>`).join('')}</div>
       <label class="field"><span class="flabel">從哪個月的扣款開始</span><input type="month" data-cf="ym" value="${esc(chgEdit.ym || '')}"></label>
       ${info.f.map(([k, label, type, step]) => type === 'pick'
         ? `<label class="field"><span class="flabel">${label}</span><div class="seg">${[6, 12, 24, 36, 48, 60].map(m => `<button type="button" data-cm="${m}" class="${+chgEdit[k] === m ? 'on' : ''}">${m % 12 ? m + ' 月' : m / 12 + ' 年'}</button>`).join('')}</div></label>`
@@ -1562,14 +1624,6 @@ function drawChgPanel() {
       <div class="btnrow">${chgEdit.id && (vals.changes || []).some(c => c.id === chgEdit.id) ? '<button type="button" class="btn mini danger" data-ca="del">刪除</button>' : ''}<span class="spacer"></span><button type="button" class="btn mini" data-ca="cancel">取消</button><button type="button" class="btn mini primary" data-ca="ok">確定</button></div>
     </div>`;
   })() : '';
-  el.innerHTML = `<div class="panel-title">${Icon('calendar')} 貸款歷程</div>
-    <p class="small muted">撥款後發生的事（之後才申請寬限期、利率調整、延長年限、提前還本）都加在這裡，會從撥款一路算到今天，再推算以後。</p>
-    ${ok ? `<ol class="loan-tl">${items.map(it => `<li class="${it.now ? 'now' : ''} ${it.future ? 'future' : ''} ${it.auto ? 'auto' : ''}" ${it.id ? `data-cid="${it.id}"` : ''}>
-        <span class="tl-dot">${Icon.svg(it.ic, 20)}</span>
-        <div class="tl-body"><div class="tl-head"><b>${it.t}</b><span>${it.dl || ymS(it.ym)}</span></div>
-        <div class="small">${it.d}</div>${it.x ? `<div class="small muted">${it.x}</div>` : ''}</div>${it.id ? '<i class="set-chev">›</i>' : ''}</li>`).join('')}</ol>`
-      : '<p class="small muted">先填好原始貸款金額、年限和撥款年月。</p>'}
-    ${form || (ok ? '<button type="button" class="btn mini" data-ca="add">＋ 新增變更</button>' : '')}`;
 }
 $('editFields').addEventListener('click', e => {
   const t = e.target.closest('[data-ca], [data-ct], [data-cm], [data-cid]');
@@ -1580,13 +1634,13 @@ $('editFields').addEventListener('click', e => {
   else if (t.dataset.cm) { chgEdit.months = +t.dataset.cm; }
   else {
     const a = t.dataset.ca;
-    if (a === 'add') chgEdit = { id: uid(), type: 'grace', ym: Loan.nowYM(), months: 36 };
+    if (a === 'add') chgEdit = isRev(vals) ? { id: uid(), type: 'rate', ym: Loan.nowYM() } : { id: uid(), type: 'grace', ym: Loan.nowYM(), months: 36 };
     else if (a === 'cancel') chgEdit = null;
     else if (a === 'del') { vals.changes = vals.changes.filter(c => c.id !== chgEdit.id); chgEdit = null; }
     else if (a === 'ok') {
-      const c = chgEdit, f = CHG[c.type].f[0][0];
+      const c = chgEdit, T = chgTypes(), f = T[c.type].f[0][0];
       if (!c.ym) return toast('請選生效年月');
-      if (c[f] === '' || c[f] == null || !isFinite(+c[f])) return toast('請填' + CHG[c.type].f[0][1]);
+      if (c[f] === '' || c[f] == null || !isFinite(+c[f])) return toast('請填' + T[c.type].f[0][1]);
       const clean = { id: c.id, ym: c.ym, type: c.type, [f]: +c[f] };
       const list = (vals.changes || []).filter(x => x.id !== c.id); list.push(clean);
       vals.changes = list; chgEdit = null;
@@ -1929,6 +1983,7 @@ $('editForm').addEventListener('submit', e => {
       if (prev.custom) obj.custom = prev.custom;
     }
   }
+  if (editing.kind === 'debt' && isRev(vals)) obj.changes = (vals.changes || []).filter(c => c.ym && CHG_REV[c.type]);
   if (editing.kind === 'debt' && isAuto(vals)) {
     obj.changes = (vals.changes || []).filter(c => c.ym);
     if (obj.startDate) obj.startYM = obj.startDate.slice(0, 7);
@@ -2180,7 +2235,7 @@ function fixedHTML() {
   return `<div class="card bills-card fixed-list">
     <h2>${Icon.svg('calendar', 24)} 固定扣繳 <small class="muted">${subs.length ? `${live.length} 項・月均 ${fmt(mon)}` : ''}</small></h2>
     <div>
-      ${subs.length ? subs.map(subRow).join('') : `<div class="hint-row">${Icon('calendar')}<span>每個月（或每年）固定要付的錢都放這裡：Netflix、電信費、保險費、房租、水電瓦斯、小孩教育基金。隨手花的不用記。</span></div>`}
+      ${reorder === 'bills' ? reorderHTML('bills', subs.map(b => ({ id: b.id, name: b.name, sub: b.cat || '', icon: billIcon(b) }))) : subs.length ? subs.map(subRow).join('') + (subs.length > 1 ? `<button type="button" class="link-btn reorder-btn" data-reorder="bills">${Icon.svg('stairs', 16)} 調整順序</button>` : '') : `<div class="hint-row">${Icon('calendar')}<span>每個月（或每年）固定要付的錢都放這裡：Netflix、電信費、保險費、房租、水電瓦斯、小孩教育基金。隨手花的不用記。</span></div>`}
       ${cards.length ? `<div class="fx-sub">信用卡繳款日</div>${cards.map(cardRow).join('')}` : ''}
       <div class="fx-add"><button type="button" class="btn mini" data-addbill="sub">${Icon.svg('plus', 16)} 新增固定扣繳</button><button type="button" class="btn mini" data-addbill="card">${Icon.svg('card', 16)} 信用卡繳款日</button></div>
       <p class="small muted fold-note">不會算進淨資產。年繳、季繳的會換算成月均；信用卡只標繳款日，卡費裡隨手花的不算，只算刷在卡上的固定扣繳。月曆在「還款」分頁。</p>
@@ -2201,18 +2256,44 @@ function baseOf(P) {
   return { debt, fixed, fixedNow, save, base: debt + fixed + save, now: debt + fixedNow + save };
 }
 function baseCardHTML() {
-  const P = state.debts.length ? projection(2) : null, B = baseOf(P);
-  const seg = [['貸款月付', B.debt, 'var(--viz-1)'], ['固定扣繳', B.fixed, 'var(--viz-5)'], ['定期投入', B.save, 'var(--viz-3)']].filter(x => x[1] > 0);
-  const tot = Math.max(1, B.base);
+  const B = baseOf(null), base = B.fixed + B.save;
+  const seg = [['固定扣繳', B.fixed, 'var(--viz-5)'], ['定期投入', B.save, 'var(--viz-3)']].filter(x => x[1] > 0);
+  const tot = Math.max(1, base), now = B.fixedNow + B.save;
   return `<div class="card base-card">
-    <div class="base-top"><span>每月固定支出</span><b>${fmt(B.base)}</b></div>
+    <div class="base-top"><span>每月固定支出</span><b>${fmt(base)}</b></div>
     <div class="base-bar">${seg.map(([t, v, c]) => `<i style="width:${(v / tot * 100).toFixed(2)}%;--c:${c}"></i>`).join('')}</div>
-    <div class="base-legend">${seg.map(([t, v, c]) => `<span><span class="dot" style="--c:${c}"></span>${t} <b>${fmt(v)}</b></span>`).join('') || '<span class="muted">新增貸款或固定扣繳後，這裡會算出每個月固定要付多少</span>'}</div>
-    ${Math.round(B.now) !== Math.round(B.base) ? `<div class="base-now">這個月實際要付 <b>${fmt(B.now)}</b><small>${B.now > B.base ? '有年繳、季繳的項目落在這個月' : '年繳、季繳的項目這個月沒有扣'}</small></div>` : ''}
-    <p class="small muted base-note">貸款月付來自「負債」，定期投入來自「投資」（自有資金的計畫），固定扣繳在下面新增。</p>
+    <div class="base-legend">${seg.map(([t, v, c]) => `<span><span class="dot" style="--c:${c}"></span>${t} <b>${fmt(v)}</b></span>`).join('') || '<span class="muted">新增固定扣繳後，這裡會算出每個月固定要付多少</span>'}</div>
+    ${Math.round(now) !== Math.round(base) ? `<div class="base-now">這個月實際要付 <b>${fmt(now)}</b><small>${now > base ? '有年繳、季繳的項目落在這個月' : '年繳、季繳的項目這個月沒有扣'}</small></div>` : ''}
+    <p class="small muted base-note">不含貸款（貸款在「還款」分頁）。定期投入來自「投資」裡自有資金的計畫。</p>
   </div>`;
 }
-function renderFixed() { const el = $('fixedBody'); if (el) el.innerHTML = baseCardHTML() + fixedHTML(); }
+// 手動調整順序（負債、固定扣繳）：▲▼ 移動，完成就存
+function reorderHTML(kind, items) {
+  return `<div class="reorder-box"><div class="reorder-h"><b>調整順序</b><small>按 ▲▼ 移動，排在上面的會顯示在上面</small></div>
+    ${items.map((x, i) => `<div class="reorder-row">${x.icon || ''}<span class="grow">${esc(x.name)}<small>${esc(x.sub || '')}</small></span>
+      <button type="button" class="ro-btn" data-mv="${kind}|${x.id}|-1" ${i ? '' : 'disabled'} aria-label="往上">▲</button><button type="button" class="ro-btn" data-mv="${kind}|${x.id}|1" ${i < items.length - 1 ? '' : 'disabled'} aria-label="往下">▼</button></div>`).join('')}
+    <button type="button" class="btn primary mini" data-reorder="">完成</button></div>`;
+}
+document.addEventListener('click', e => {
+  const r = e.target.closest('[data-reorder]');
+  if (r) { if (r.dataset.reorder === 'debts' && state.debtSort !== 'manual') { const S = summary(); const rt = x => x.s.rate ?? num(x.d.rate); const ord = [...S.st].sort((a, b) => rt(b) - rt(a)).map(x => x.d); state.debts = ord.concat(state.debts.filter(d => !ord.includes(d))); state.debtSort = 'manual'; } reorder = r.dataset.reorder; if (!reorder) save(); else render(); return; }
+  const m = e.target.closest('[data-mv]');
+  if (!m) return;
+  const [kind, id, dir] = m.dataset.mv.split('|');
+  if (kind === 'debts') { const a = state.debts, i = a.findIndex(x => x.id === id), j = i + +dir; if (i < 0 || j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; }
+  else { const subs = state.bills.filter(isSub), i = subs.findIndex(x => x.id === id), j = i + +dir; if (i < 0 || j < 0 || j >= subs.length) return; const ia = state.bills.indexOf(subs[i]), ja = state.bills.indexOf(subs[j]); [state.bills[ia], state.bills[ja]] = [state.bills[ja], state.bills[ia]]; }
+  render();
+});
+// 固定扣繳占比（甜甜圈）：每一項的月均
+function fixedDonutHTML() {
+  const live = state.bills.filter(b => isSub(b) && (!b.endDate || new Date(b.endDate) >= new Date())).map(b => ({ b, v: perMonth(b) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  if (live.length < 2) return '';
+  const top = live.slice(0, 8), rest = live.slice(8).reduce((t, x) => t + x.v, 0);
+  const slices = top.map((x, i) => ({ key: x.b.id, label: x.b.name, icon: billIcon(x.b), value: x.v, color: Charts.PALETTE[i % Charts.PALETTE.length], sub: x.b.cat || '' }));
+  if (rest > 0) slices.push({ key: '__rest', label: `其他 ${live.length - 8} 項`, value: rest, color: Charts.OTHER });
+  return `<div class="card"><h2>${Icon.svg('chart', 22)} 每月固定扣繳占比</h2>${donutHTML('fx', slices, '每月')}<p class="small muted">年繳、季繳的換算成月均；點圓餅或下面的項目看占多少。</p></div>`;
+}
+function renderFixed() { const el = $('fixedBody'); if (el) el.innerHTML = baseCardHTML() + fixedDonutHTML() + fixedHTML(); }
 async function fixedAddMenu() {
   if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
   const o = await UI.openPicker({ title: '新增固定扣繳', options: [
@@ -2280,7 +2361,7 @@ function renderIncome() {
     <div class="card inc-sum">
       <div class="inc-sum-top"><span>每月實拿</span><button type="button" class="eye-btn" id="incEye">${incShow ? EYE_ON : EYE_OFF}</button></div>
       <b class="inc-big">${incAmt(net)}</b>
-      ${cs.length ? `<div class="inc-free"><span>實拿 − 每月固定支出 ${incAmt(B.base)}</span><b class="${net - B.base >= 0 ? 'pos' : 'neg'}">可自由運用 ${incAmt(net - B.base)}</b></div>` : ''}
+      ${cs.length ? `<div class="inc-free"><span>實拿 − 貸款與固定扣繳 ${incAmt(B.base)}</span><b class="${net - B.base >= 0 ? 'pos' : 'neg'}">可自由運用 ${incAmt(net - B.base)}</b></div>` : ''}
     </div>
     ${cs.length ? cs.map(card).join('') : `<div class="card empty big-empty">${Icon('wallet', 'ico-xl')}<p>點右下角 ＋ 新增你的薪水：填每月應發，勞健保和預扣稅會先幫你估算</p></div>`}
     <div class="card"><h2>${Icon.svg('up', 22)} 調薪紀錄</h2>
@@ -2312,6 +2393,18 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#incFace')) { try { await Vault.verify(); incOK = true; renderIncome(); } catch (err) { toast('沒有通過驗證'); } return; }
   if (e.target.closest('#incPinOk')) { try { await Vault.checkPIN($('incPin').value); incOK = true; renderIncome(); } catch (err) { toast(err.message || 'PIN 不正確'); } }
 });
+// 選的期間裡，每一筆（和合計）最高月付是多少、在哪個月、離現在幾天
+function peakListHTML(months, series) {
+  const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+  const days = (ym, d) => Math.round((Loan.dueDate(ym, (d && Loan.dueDay(d)) || 1) - t0) / 864e5);
+  const when = (ym, d) => { const n = days(ym, d); return n <= 0 ? (ym === Loan.nowYM() ? '本月' : '已過') : `還有 ${n} 天`; };
+  const rows = series.map(s => { let best = null; months.forEach(m => { const it = m.items[s.id]; if (it && it.pay > 0 && (!best || Math.round(it.pay) > Math.round(best.pay))) best = { pay: it.pay, ym: m.ym }; }); return best ? { s, ...best } : null; }).filter(Boolean);
+  if (!rows.length) return '';
+  const tot = months.reduce((a, m) => (Math.round(m.total) > Math.round(a.total) ? m : a), months[0]);
+  return `<div class="peak-list"><div class="peak-h">這段期間的最高月付</div>
+    <div class="peak-row tot"><span>合計</span><span class="muted">${tot.ym.replace('-', '/')}・${when(tot.ym)}</span><b>${fmt(tot.total)}</b></div>
+    ${rows.map(r => `<div class="peak-row"><span><span class="dot" style="--c:${r.s.color}"></span>${esc(r.s.d.name)}</span><span class="muted">${r.ym.replace('-', '/')}・${when(r.ym, r.s.d)}</span><b>${fmt(r.pay)}</b></div>`).join('')}</div>`;
+}
 // 貸款：一筆一列，點了才展開細項
 function loansCardHTML(P) {
   const m0 = P.months[0];
@@ -2410,6 +2503,14 @@ function renderRepay() {
   repaySel = Math.min(repaySel, months.length - 1);
   const series = state.debts.map(d => ({ id: d.id, color: debtColor(d), d }));
   const next12 = P.months.slice(0, 12).reduce((t, m) => t + m.total, 0);
+  const YR = (() => {   // 今年已繳（1/1 到今天）、今年全年
+    const y = Loan.nowYM().slice(0, 4), cur = Loan.nowYM(), paidCur = new Set();
+    let paid = 0;
+    for (const d of state.debts) { const r = Plan.paidSoFar(d, state.plans); if (!r) continue; for (const x of r.rows) if (x.ym.startsWith(y)) { paid += x.interest + x.principal; if (x.ym === cur) paidCur.add(d.id); } }
+    let rest = 0;
+    P.months.forEach((m, k) => { if (!m.ym.startsWith(y)) return; for (const [id, it] of Object.entries(m.items)) if (!(k === 0 && (paidCur.has(id) || it.paid))) rest += it.pay; });
+    return { y, paid, total: paid + rest };
+  })();
   const peak = months.reduce((a, m) => (Math.round(m.total) > Math.round(a.total) ? m : a), months[0]);
   const PA = projection(all);
   const evAll = PA.events.filter(e => e.days >= 0 || e.ym === P.cur);
@@ -2465,10 +2566,11 @@ function renderRepay() {
   }).join('');
   el.innerHTML = `
     <div class="card repay-sum">
-      <div class="rs"><span>本月應繳</span><b>${fmt(P.months[0].total)}</b></div>
-      <div class="rs"><span>下個月</span><b>${fmt(P.months[1]?.total || 0)}</b></div>
-      <div class="rs"><span>未來 12 個月合計</span><b>${fmt(next12)}</b></div>
-      <div class="rs"><span>期間最高月付</span><b class="neg">${fmt(peak.total)}</b><small>${peak.ym.replace('-', '/')} 起</small></div>
+      <div class="rs-title">${Icon('card')} 貸款還款<small>只算負債裡的貸款，不含每月固定扣繳</small></div>
+      <div class="rs"><span>本月貸款應繳</span><b>${fmt(P.months[0].total)}</b></div>
+      <div class="rs"><span>下個月貸款</span><b>${fmt(P.months[1]?.total || 0)}</b></div>
+      <div class="rs"><span>今年已繳</span><b>${fmt(YR.paid)}</b><small>${YR.y}/1/1 到今天</small></div>
+      <div class="rs"><span>今年全年要繳</span><b>${fmt(YR.total)}</b><small>已繳＋到 12 月還要繳</small></div>
     </div>
     ${dueCalHTML(P)}
     ${loansCardHTML(P)}
@@ -2482,6 +2584,7 @@ function renderRepay() {
       <div class="chips">${[[12, '1 年'], [36, '3 年'], [60, '5 年'], [120, '10 年'], [0, '全部']].map(([v, t]) => `<button type="button" class="chip-btn ${repayH === v ? 'on' : ''}" data-h="${v}">${t}</button>`).join('')}</div>
       <div class="chart-wrap" id="repayChart">${Charts.stacked(months, series, { selected: repaySel, markers, sid: 'repay' })}</div>
       <div class="legend">${series.map(s => `<span><span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}</span>`).join('')}<span><span class="tri"></span>寬限期結束</span></div>
+      ${peakListHTML(months, series)}
       <div class="sel-box" id="repaySelBox">${repaySelHTML(sel)}</div>
     </div>
     <div class="card yr-card">
@@ -2567,6 +2670,8 @@ function renderInvest() {
         <div class="small muted">以總額 × ${pct(num(p.yieldPct))} ÷ 12 估算；${src ? `損益兩平的年化報酬約 ${pct(num(src.rate))}。` : ''}實際報酬會波動，僅供參考。</div></div>` : ''}
       <div class="chart-wrap">${Charts.invest(rows, { current: curIdx })}</div>
       <div class="legend"><span><span class="dot" style="--c:#14b8a6"></span>累計投入（左軸）</span>${src ? '<span><span class="dot" style="--c:#ff7043"></span>投入後每月利息（右軸）</span>' : ''}</div>
+      <button type="button" class="plan-more" data-planfold="${p.id}"><span>${fold.has('plan:' + p.id) ? '收起明細' : '展開明細'}</span><small>${(planStocksOf(p).length ? `${planStocksOf(p).length} 個標的・` : '')}${rows.length} 期投入</small><i class="chev">›</i></button>
+      <div class="plan-detail ${fold.has('plan:' + p.id) ? 'open' : ''}">
       ${pickType(p.ptype) && (p.stocks || []).length ? `<div class="plan-stocks">${p.stocks.map(x => { const q = Stocks.quote(x.mkt, x.sym); const amt = stockAmt(x, planPer(p)); const k = q ? Stocks.fx(q.ccy, state.currency) : 1;
         return `<div class="pst">${x.mkt === 'fund' ? Icon('fund') : `<span class="ticker small">${esc(x.sym)}</span>`}<span class="grow">${esc(q ? q.name : x.sym)}<small>${q ? `${q.fund ? '淨值' : '收盤'} ${price(q.price, q.ccy)}・<span class="chg ${q.chg > 0 ? 'up' : q.chg < 0 ? 'down' : ''}">${q.chg >= 0 ? '+' : ''}${q.chgPct.toFixed(2)}%</span>` : '找不到報價'}</small></span>${q ? UI.sparkline(q.series, 70, 24, { tw: x.mkt !== 'us' }) : ''}${amt && q ? `<span class="pst-r">${x.ccy === 'USD' ? `US$${(+x.amt).toLocaleString()}<small>≈ ${fmt(amt)}</small><small>` : `${fmt(amt)}<small>`}≈ ${(amt / (q.price * k)).toFixed(x.mkt === 'tw' ? 0 : 2)} ${unitOf(x.mkt)}</small></span>` : ''}</div>`; }).join('')}</div>` : targets.length ? `<div class="targets"><div class="small muted">每期分配（以每期 ${fmt(pr.amounts[0])} 計）</div>${targets.map(t => `<span class="chip blue">${esc(t.name)} ${t.pct}% · ${short(pr.amounts[0] * t.pct / 100)}</span>`).join('')}</div>` : p.targets ? `<div class="small muted">標的：${esc(p.targets)}</div>` : ''}
       <ul class="plist">${rows.map(r => `<li class="prow ${r.state}" data-plan="${p.id}" data-i="${r.i}">
@@ -2574,10 +2679,12 @@ function renderInvest() {
         <div class="grow"><div><b>${r.ym.replace('-', '/')}${p.day ? '/' + String(p.day).padStart(2, '0') : ''}</b> ${({ done: '<span class="chip green">已確認</span>', assumed: '<span class="chip gray">未確認</span>', now: '<span class="chip red">本月</span>', future: '' })[r.state]}</div>
           <div class="sub">累計 ${short(r.cum)}${src ? ` · 之後每月利息 ${fmt(r.interest)}` : ''}</div></div>
         <div class="pamt">${fmt(r.amt)}${r.state === 'done' && Math.round(r.amt) !== Math.round(r.planned) ? `<small class="muted">計畫 ${fmt(r.planned)}</small>` : ''}</div></li>`).join('')}</ul>
+      </div>
     </div>`;
   }).join('') + `<button type="button" class="btn add-plan" data-add="plan">${Icon.svg('plus', 20)} 再新增一個投資計畫</button>`;
 }
 
+document.addEventListener('click', e => { const b = e.target.closest('[data-planfold]'); if (!b) return; const k = 'plan:' + b.dataset.planfold; fold.has(k) ? fold.delete(k) : fold.add(k); renderInvest(); });
 // 確認某一期
 let periodCtx = null;
 document.addEventListener('click', e => {
@@ -3590,7 +3697,7 @@ async function exportBackup() {
 }
 function applyRestore(d) {
   if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
-  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], bills: d.bills || [], incomes: d.incomes || [], raises: d.raises || [], bonuses: d.bonuses || [], ai: state.ai, backup: state.backup });
+  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], bills: d.bills || [], debtSort: d.debtSort, incomes: d.incomes || [], raises: d.raises || [], bonuses: d.bonuses || [], ai: state.ai, backup: state.backup });
   lastLv = null; levelsKey = '';
   save();
 }

@@ -1354,3 +1354,39 @@ body.enter .top > :not(h1) { animation: homeFade .5s ease both .25s; }
 .inc-net { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 8px; font-size: 16px; }
 .inc-note { padding: 0 6px; }
 #view-fixed, #view-income { padding-bottom: 76px; }
+@keyframes viewL { from { opacity: 0; transform: translateX(36px); } }
+@keyframes viewR { from { opacity: 0; transform: translateX(-36px); } }
+
+/* 還款：貸款總覽標題、期間最高月付 */
+.repay-sum .rs-title { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.repay-sum .rs-title .ico { width: 28px; height: 28px; }
+.repay-sum .rs-title small { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: auto; text-align: right; }
+.peak-list { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.peak-h { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
+.peak-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: baseline; font-size: 13px; padding: 4px 0; }
+.peak-row .dot { margin-right: 4px; }
+.peak-row.tot { font-weight: 700; }
+.peak-row b { font-variant-numeric: tabular-nums; }
+
+/* 投資計畫：明細收合 */
+.plan-more { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 10px; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--soft); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.plan-more small { color: var(--muted); font-weight: 400; margin-left: auto; }
+.plan-more .chev { transition: transform .2s; font-style: normal; }
+.plan-detail { display: none; }
+.plan-detail.open { display: block; }
+.plan-more:has(+ .plan-detail.open) .chev { transform: rotate(90deg); }
+
+/* 負債：房子群組框線包住最後一筆 */
+.linked-list { padding-bottom: 2px; }
+.linked-list > li:last-child { margin-bottom: 8px; }
+
+/* 手動排序 */
+.reorder-link { list-style: none; background: none !important; box-shadow: none !important; padding: 4px 2px !important; }
+.reorder-btn { margin-top: 8px; }
+.reorder-box { background: var(--soft); border-radius: 14px; padding: 10px; margin: 6px 0; }
+.reorder-h small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.reorder-row { display: flex; align-items: center; gap: 8px; background: var(--card); border-radius: 12px; padding: 8px 10px; margin-bottom: 6px; }
+.reorder-row small { display: block; color: var(--muted); font-size: 12px; }
+.ro-btn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); color: var(--text); font-size: 14px; cursor: pointer; }
+.ro-btn:disabled { opacity: .3; }
+.reorder-box .btn { width: 100%; margin-top: 4px; }

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.1.0';
+const APP_VERSION = '6.1.1';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -903,9 +903,9 @@ $('tabPrev').addEventListener('click', () => { tabPage(1); if (currentView === '
   t.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
   t.addEventListener('touchend', e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (dx < -40) tabPage(2); else if (dx > 40) { tabPage(1); if (currentView === 'income') showView('home'); } }, { passive: true });
 })();
-// 整個畫面左右滑切換分頁（月曆、年度明細、圖表、可橫向捲動的地方除外；收入不在順序裡）
+// 整個畫面左右滑切換分頁（月曆、年度明細、圖表、可橫向捲動的地方除外）；投資再往左滑到第二頁的收入
 (() => {
-  const ORDER = ['home', 'assets', 'debts', 'fixed', 'repay', 'invest'];
+  const ORDER = ['home', 'assets', 'debts', 'fixed', 'repay', 'invest', 'income'];
   const SKIP = '#dueCal, .yr-scroll, svg.scrub, input, textarea, select, .chips, .sim-tabs, .tabs, .rkey, .ro-btn, .donut-wrap, [data-noswipe]';
   let st = null;
   const main = document.querySelector('main');
@@ -2179,9 +2179,9 @@ function dueCalHTML(P) {
     E.push({ day: day ? Math.min(day, dim) : 0, mark: 'loan', color: debtColor(d), name: d.name, sub: `${shortBank(bankOf(d.bank))}${it.grace ? '・寬限期' : ''}${it.revolving ? '・只繳息' : ''}`, amount: it.pay, count: 'loan', edit: ['debt', d.id] }); });
   billEvents(m.ym).forEach(e => {
     const b = e.b;
-    if (e.kind === 'close') E.push({ day: e.day, mark: 'close', color: cardColor(b), name: `${b.name} 結帳`, sub: `本期消費 ${md2(e.from)}–${md2(e.to)}，${md2(e.dueAt)} 前繳`, amount: null, tag: '<span class="chip blue">結帳日</span>', edit: ['bill', b.id] });
-    else if (e.kind === 'due') E.push({ day: e.day, mark: 'card', color: cardColor(b), name: `${b.name} 繳款`, sub: `消費 ${md2(e.from)}–${md2(e.to)}・${b.autopay === 'manual' ? '要自己繳' : '自動扣繳'}${+b.amount ? '' : e.amount ? '・訂閱加總' : ''}`, amount: e.amount || null, manual: b.autopay === 'manual', count: 'card', edit: ['bill', b.id] });
-    else E.push({ day: e.day, mark: 'sub', color: billColor(b), name: b.name, sub: `${b.cat || '訂閱'}・${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${e.card ? `・刷 ${e.card.name}（併入卡費）` : b.payWith === 'other' ? '・現金／轉帳' : '・帳戶扣款'}${(b.ccy || 'TWD') !== state.currency ? `・${b.ccy} ${(+b.amount).toLocaleString()}` : ''}`, amount: e.amount, onCard: !!e.card, count: e.card ? '' : 'sub', edit: ['bill', b.id] });
+    // 月曆只放貸款和固定扣繳（信用卡結帳日、卡費不顯示）
+    if (e.kind !== 'charge') return;
+    E.push({ day: e.day, mark: 'sub', color: billColor(b), name: b.name, sub: `${b.cat || '固定扣繳'}・${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${e.card ? `・刷 ${e.card.name}` : b.payWith === 'other' ? '・現金／轉帳' : '・帳戶扣款'}${(b.ccy || 'TWD') !== state.currency ? `・${b.ccy} ${(+b.amount).toLocaleString()}` : ''}`, amount: e.amount, count: 'sub', edit: ['bill', b.id] });
   });
   const byDay = {};
   E.forEach(x => { if (x.day) (byDay[x.day] = byDay[x.day] || []).push(x); });
@@ -2203,11 +2203,11 @@ function dueCalHTML(P) {
   }).join('') || (calSel ? '<div class="empty small">這天沒有扣款</div>' : '<div class="cal-hint">點月曆上的日期，看那天要繳什麼</div>');
   const cnt = x => x.count && (isPast || !isCur || !x.day || x.day >= td);
   const sum = k => E.filter(x => x.count === k && cnt(x)).reduce((t, x) => t + (x.amount || 0), 0);
-  const L = sum('loan'), C = sum('card'), Sb = sum('sub');
+  const L = sum('loan'), Sb = sum('sub');
   return `<div class="card due-card">
     <div class="due-head"><h2>${Icon.svg('calendar', 24)} ${y !== today.getFullYear() ? `${y} 年 ` : ''}${mo} 月扣款日</h2><div class="yr-nav"><button type="button" class="yr-btn" data-calgo="-1" aria-label="上個月" ${calOff <= calMin() ? 'disabled' : ''}>‹</button>${calOff !== 0 ? '<button type="button" class="chip-btn on" data-cal="0">回這個月</button>' : ''}<button type="button" class="yr-btn" data-calgo="1" aria-label="下個月" ${calOff >= CAL_MAX ? 'disabled' : ''}>›</button></div></div>
-    <div class="due-sum"><span>${isPast ? '這個月繳了' : isCur ? '這個月還要繳' : `${mo} 月要繳`}${isPast ? ' <span class="chip gray">已繳費</span>' : ''}</span><b class="${isPast ? 'muted' : ''}">${fmt(L + C + Sb)}</b></div>
-    <div class="due-split"><span><i class="mk mk-loanday" style="--c:var(--viz-1)"></i>貸款 ${fmt(L)}</span><span><i class="mk mk-card" style="--c:var(--viz-2)"></i>卡費 ${fmt(C)}</span><span><i class="mk mk-sub" style="--c:var(--viz-5)"></i>訂閱 ${fmt(Sb)}</span><span><i class="mk mk-close" style="--c:var(--viz-2)"></i>卡片結帳日</span></div>
+    <div class="due-sum"><span>${isPast ? '這個月繳了' : isCur ? '這個月還要繳' : `${mo} 月要繳`}${isPast ? ' <span class="chip gray">已繳費</span>' : ''}</span><b class="${isPast ? 'muted' : ''}">${fmt(L + Sb)}</b></div>
+    <div class="due-split"><span><i class="mk mk-loanday" style="--c:var(--viz-1)"></i>貸款 ${fmt(L)}</span><span><i class="mk mk-sub" style="--c:var(--viz-5)"></i>固定扣繳 ${fmt(Sb)}</span></div>
     <div class="cal${calDir ? (calDir > 0 ? ' slide-l' : ' slide-r') : ''}${isPast ? ' is-past' : ''}" id="dueCal"><span class="cw">日</span><span class="cw">一</span><span class="cw">二</span><span class="cw">三</span><span class="cw">四</span><span class="cw">五</span><span class="cw">六</span>${cells}</div>
     ${calSel ? `<div class="due-filter">${mo}/${calSel}（週${WD[new Date(y, mo - 1, calSel).getDay()]}）<button type="button" class="link-btn" data-cday="0">收起</button></div>` : ''}
     <div class="due-list">${rows}</div>
@@ -2427,8 +2427,8 @@ function loansCardHTML(P) {
       <div class="fold-body">${det.map(([a, b]) => `<div class="kv"><span>${a}</span><span>${b}</span></div>`).join('')}<button type="button" class="btn mini" data-edit="debt" data-id="${d.id}">${Icon.svg('pencil', 16)} 編輯這筆</button></div>
     </div>`;
   };
-  return `<div class="card fold loans-card ${open ? 'open' : ''}" data-f="loans">
-    ${foldHead('loans', Icon('mortgage'), '貸款', `${list.length} 筆・這個月 ${fmt(total)}`, '')}
+  return `<div class="card fold loans-card open" data-f="loans">
+    <div class="fold-head static">${Icon('mortgage')}<span class="grow"><b>貸款</b><small>${list.length} 筆・這個月 ${fmt(total)}</small></span></div>
     <div class="fold-body">${list.map(row).join('')}</div>
   </div>`;
 }

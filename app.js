@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.1.5';
+const APP_VERSION = '6.1.6';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -4163,10 +4163,11 @@ function splashExit(sp) {
   wSrc.style.visibility = 'hidden';
   sp.classList.add('sp-exit');
   const dx = hr.left - ws.left, dy = hr.top + (hr.height - ws.height * k) / 2 - ws.top;
+  const c0 = getComputedStyle(wSrc).fill, c1 = getComputedStyle(h1).color;   // 開機畫面的深藍 → 首頁標題（淺色深藍、深色金色）
   fw.animate([
-    { transform: 'translate(0,0) scale(1)' },
-    { transform: `translate(${dx * .35}px,${dy * .55}px) scale(${1 + (k - 1) * .5})`, offset: .45 },
-    { transform: `translate(${dx}px,${dy}px) scale(${k})` },
+    { transform: 'translate(0,0) scale(1)', color: c0 },
+    { transform: `translate(${dx * .35}px,${dy * .55}px) scale(${1 + (k - 1) * .5})`, color: c0, offset: .45 },
+    { transform: `translate(${dx}px,${dy}px) scale(${k})`, color: c1 },
   ], { duration: 760, easing: 'cubic-bezier(.6,0,.2,1)', fill: 'forwards' }).finished.then(() => {
     document.body.classList.remove('sp-flying');   // 標題出現，飛過來的字同時淡掉
     fw.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' }).finished.then(() => fw.remove());

@@ -6,6 +6,7 @@
   --line: #e3e8e4;
   --soft: #f1f5f2;
   --accent: #0f766e;
+  --brand: #18264a;   /* 品牌字標：深藍（深色模式為金色），跟 App 圖示一樣 */
   --accent-soft: #ccfbf1;
   --pos: #d92d2a;
   --neg: #15803d;
@@ -16,7 +17,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0e1412; --card: #18201d; --text: #e8eeec; --muted: #93a09b; --line: #2a3430; --soft: #1f2925;
-    --accent: #2dd4bf; --accent-soft: #134e4a; --pos: #f87171; --neg: #4ade80;
+    --accent: #2dd4bf; --accent-soft: #134e4a; --brand: #e2ad4c; --pos: #f87171; --neg: #4ade80;
     --bar: linear-gradient(90deg, #2dd4bf, #14b8a6); --shadow: none;
   }
 }
@@ -35,7 +36,7 @@ button { font: inherit; color: inherit; }
   position: sticky; top: 0; z-index: 5; display: flex; align-items: baseline; gap: 8px;
   padding: calc(12px + env(safe-area-inset-top)) 16px 10px; background: var(--bg);
 }
-.top h1 { margin: 0; font-size: 22px; letter-spacing: .5px; color: var(--accent); }
+.top h1 { margin: 0; font-size: 22px; letter-spacing: .5px; color: var(--brand); }
 .ver { font-size: 11px; color: var(--muted); }
 main { padding: 6px 16px 0; max-width: 640px; margin: 0 auto; }
 h2 { font-size: 17px; margin: 2px 0 12px; }

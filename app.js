@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.2.0';
+const APP_VERSION = '6.3.0';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -1769,6 +1769,9 @@ const ASK_LOCAL = {
   '怎麼新增基金？': '到「資產」分頁按右下角 ＋ →「新增一筆資產」→ 類別選「基金」。記錄方式選「選基金，每天自動更新淨值」，搜尋名稱（例如「安聯 收益」），再填持有單位數和申購淨值就好。找不到的基金可以選「自己填目前市值」。',
   '怎麼設定自動備份？': '到「設定 → 備份與還原」，照步驟建立 GitHub token，App 會產生一組恢復金鑰並加密備份到你自己的秘密 Gist。之後資料一有變動就會自動備份；換手機時用恢復金鑰就能還原。',
 };
+function mdAdv(t) {   // 建議用：## 標題變小標，其餘同 mdLite
+  return esc(t).replace(/^#{1,4}\s*(.+)$/gm, '\u0001$1\u0002').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[-*•]\s+(.+)$/gm, '<span class="ask-li">$1</span>').replace(/^\s*(\d+)[.、]\s+(.+)$/gm, '<span class="ask-li num"><i>$1</i>$2</span>').replace(/\n/g, '<br>').replace(/\u0001(.+?)\u0002(<br>)?/g, '<h3>$1</h3>').replace(/<\/span><br>/g, '</span>');
+}
 function mdLite(t) {
   return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^#{1,4}\s*(.+)$/gm, '<b>$1</b>').replace(/^\s*[-*•]\s+(.+)$/gm, '<span class="ask-li">$1</span>').replace(/\n/g, '<br>').replace(/<\/span><br>/g, '</span>');
 }
@@ -2634,12 +2637,12 @@ function planRows(p) {
 function renderInvest() {
   const el = $('investBody');
   if (!state.plans.length) {
-    el.innerHTML = `<div class="card empty big-empty">${Icon('invest', 'ico-xl')}<p>還沒有投資計畫</p>
+    el.innerHTML = adviceCardHTML() + `<div class="card empty big-empty">${Icon('invest', 'ico-xl')}<p>還沒有投資計畫</p>
       <p class="muted">例如把一筆額度分 12 個月投入：新增計畫、資金來源選那筆理財型房貸，就會自動算出每月投入、利息怎麼遞增，還款計畫也會跟著更新。</p>
       <button type="button" class="btn primary" data-add="plan">新增投資計畫</button></div>`;
     return;
   }
-  el.innerHTML = state.plans.map(p => {
+  el.innerHTML = adviceCardHTML() + state.plans.map(p => {
     const pr = Plan.progress(p);
     const rows = planRows(p);
     const src = state.debts.find(d => d.id === p.source);
@@ -2689,6 +2692,119 @@ function renderInvest() {
 }
 
 document.addEventListener('click', e => { const b = e.target.closest('[data-planfold]'); if (!b) return; const k = 'plan:' + b.dataset.planfold; fold.has(k) ? fold.delete(k) : fold.add(k); renderInvest(); });
+// ================= AI 財務建議（投資分頁）=================
+// 隱私：只送區間、比例、利率、年限、股票代號；不送名字、地址路名、銀行、帳號、備註、精確金額。送出前一定先預覽。
+const ADV_Q = {
+  age: ['20–29 歲', '30–39 歲', '40–49 歲', '50–59 歲', '60 歲以上'],
+  risk: ['保守：不太能接受虧損', '穩健：可接受短期下跌 10–20%', '積極：可接受下跌 30% 以上換更高報酬'],
+  horizon: ['3 年內會用到', '3–10 年', '10 年以上', '主要為退休'],
+  goals: ['買（第一間／換）房', '再買一間投資', '提早退休', '小孩教育', '穩定被動收入', '還清負債', '資產快速成長'],
+  family: ['單身', '已婚／伴侶，無小孩', '有小孩', '要照顧父母'],
+};
+function bucket(v) {   // 金額 → 區間（萬），認不出是誰
+  const w = Math.max(0, v) / 1e4;
+  if (w < 10) return '10 萬以下';
+  const steps = [[50, 10], [300, 50], [1000, 100], [3000, 500], [10000, 1000], [Infinity, 5000]];
+  const st = steps.find(([lim]) => w < lim)[1], lo = Math.floor(w / st) * st;
+  return `約 ${lo.toLocaleString()}–${(lo + st).toLocaleString()} 萬`;
+}
+function bucketM(v) {   // 每月金額 → 較細的區間
+  const x = Math.max(0, v);
+  if (x < 1000) return '1,000 以下';
+  const st = x < 10000 ? 2000 : x < 50000 ? 5000 : x < 200000 ? 10000 : 50000, lo = Math.floor(x / st) * st;
+  return `約 ${lo.toLocaleString()}–${(lo + st).toLocaleString()}`;
+}
+const pctOf = (a, b) => b > 0 ? `${Math.round(a / b * 100)}%` : '—';
+function adviceData() {
+  const S = summary(), P = state.advProfile || {}, L = [];
+  const cur = Loan.nowYM();
+  L.push(`【基本】年齡 ${P.age || '未填'}；家庭 ${(P.family || []).join('、') || '未填'}${P.kids ? `；小孩年齡 ${P.kids}` : ''}；風險承受 ${P.risk || '未填'}；這筆錢多久會用到 ${P.horizon || '未填'}；目標 ${(P.goals || []).join('、') || '未填'}。`);
+  if (P.note) L.push(`【補充】${P.note}`);
+  L.push(`【規模】總資產 ${bucket(S.totalAssets)}、總負債 ${bucket(S.totalDebts)}、淨資產 ${bucket(S.netWorth)}、負債比 ${S.debtRatio.toFixed(0)}%。`);
+  const cats = groupSum(state.assets.filter(countsAsAsset), a => a.category, assetValue);
+  if (cats.length) L.push('【資產配置】' + cats.map(([k, v]) => `${k} ${pctOf(v, S.totalAssets)}`).join('、') + '。');
+  const hs = state.assets.map(a => ({ a, i: stockInfo(a) })).filter(x => x.i);
+  const hv = hs.reduce((t, x) => t + x.i.value, 0);
+  if (hs.length) L.push('【持股（占股票基金部位）】' + hs.sort((a, b) => b.i.value - a.i.value).slice(0, 20).map(({ a, i }) => `${i.mkt === 'fund' ? (a.name || a.sym) : a.sym}（${mktCat(i.mkt)}）${pctOf(i.value, hv)}${i.plPct != null ? `、報酬 ${i.plPct.toFixed(0)}%` : ''}`).join('；') + '。');
+  const props = state.assets.filter(isRE);
+  if (props.length) L.push('【房產】' + props.map((a, k) => { const v = assetValue(a), debt = state.debts.filter(d => d.collateral === a.id).reduce((t, d) => t + debtStatus(d).balance, 0); const c = (COUNTIES.find(x => x.k === a.county) || {}).v; return `第 ${k + 1} 間：${c || '縣市未填'}、市值 ${bucket(v)}、貸款成數 ${pctOf(debt, v)}`; }).join('；') + '。');
+  if (S.st.length) L.push('【負債】' + S.st.map(({ d, s: x }) => `${d.type || '貸款'}：餘額 ${bucket(x.balance)}、年利率 ${(x.rate ?? num(d.rate))}%、${x.revolving ? `只繳息、額度已用 ${pctOf(x.balance, x.limit)}` : `月付約占實拿 ${incNetTotal() ? pctOf(x.monthly, incNetTotal()) : '?'}`}${x.inGrace ? `、寬限期剩 ${x.graceLeft} 個月` : ''}${isFinite(x.monthsLeft) ? `、剩 ${Math.ceil(x.monthsLeft / 12)} 年` : ''}`).join('；') + '。');
+  const B = baseOf(state.debts.length ? projection(2) : null), net = incNetTotal(), cash = state.assets.filter(a => a.category === '現金/存款').reduce((t, a) => t + assetValue(a), 0);
+  L.push(`【現金流】每月實拿 ${net ? bucketM(net) : '未填'}；貸款月付 ${bucketM(B.debt)}、固定扣繳 ${bucketM(B.fixed)}、定期投入 ${bucketM(B.save)}；${net ? `每月可自由運用約占實拿 ${pctOf(net - B.base, net)}` : ''}；現金／存款可撐固定支出約 ${B.base > 0 ? (cash / B.base).toFixed(0) : '—'} 個月。`);
+  const yb = state.bonuses.filter(b => (b.ym || '') >= Loan.ymAdd(cur, -12)).reduce((t, b) => t + (+b.amount || 0), 0);
+  if (yb) L.push(`【獎金】近一年 ${bucket(yb)}（不固定）。`);
+  if (state.plans.length) L.push('【投資計畫】' + state.plans.map(p => { const src = state.debts.find(d => d.id === p.source); const pr = Plan.progress(p); return `${p.ptype || '其他'}計畫：每期 ${bucketM(pr.amounts[0] || 0)}、共 ${pr.n} 期、已投入 ${pctOf(pr.invested, pr.total)}、資金來源 ${src ? `${src.type}（利率 ${num(src.rate)}%）` : '自有資金'}`; }).join('；') + '。');
+  return L.join('\n');
+}
+const incNetTotal = () => state.incomes.reduce((t, i) => t + incCalc(i, Loan.nowYM()).net, 0);
+const ADV_SYS = `你是台灣的資深獨立理財顧問（不賣任何商品）。使用者是住在台灣的一般人，金額都是新台幣、以區間表示。
+請先上網查「今天」台灣的房貸利率、央行利率、美國與台灣公債殖利率、金價、台股與美股大致位置、房價趨勢，再依使用者的實際狀況給建議。
+回答用繁體中文、Markdown，結構如下：
+## 現況診斷（3–5 點，直接講優缺點）
+## 你可能沒想到的 3–5 個方向
+每個方向要具體：做什麼、大概多少比例或金額區間、為什麼適合他、預期好處。請刻意包含一般人比較想不到的做法，例如：買房或增貸後再投入、用房屋增值再融資、債券或債券 ETF 的時機、黃金、還款順序、保險缺口、稅務（例如勞退自提）、現金部位該放哪裡。
+## 每個方向的風險與壓力測試
+用他的數字估算：利率上升 1%、房價下跌 20%、股市下跌 30%、收入中斷 6 個月時，每月還撐不撐得住。
+## 建議的優先順序（第一步到第三步）
+最後加一句：這是一般性分析，不是個人化投資建議，重大決定前請諮詢專業人士。`;
+let advCtl = null;
+function adviceCardHTML() {
+  const a = state.advice, P = state.advProfile;
+  const ready = aiReady();
+  return `<div class="card adv-card">
+    <div class="adv-head"><h2>${Icon.svg('star', 24)} AI 財務建議</h2>${P ? '<button type="button" class="link-btn" data-adv="profile">我的目標與風險 ›</button>' : ''}</div>
+    <p class="small muted">依你現在的資產、負債、現金流和目標，請 AI 找出可以考慮的方向（包含買房、增貸、債券、黃金等）。只送出區間和比例，送出前會先讓你看內容。</p>
+    ${!ready ? '<p class="small neg">要先到「設定 → AI 理解」加入 Gemini 或 Claude 金鑰。</p>' : ''}
+    <button type="button" class="btn primary adv-go" data-adv="go" ${ready ? '' : 'disabled'}>${P ? (a ? '重新產生建議' : '產生建議') : '先填目標與風險（約 30 秒）'}</button>
+    ${a ? `<div class="adv-out"><div class="adv-meta">${(d => `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)(new Date(a.at))}・${esc(a.model || '')}${a.search ? '・有上網查市場' : ''}</div><div class="ask-md">${mdAdv(a.text)}</div></div>` : ''}
+  </div>`;
+}
+function openAdvProfile(then) {
+  const P = state.advProfile || {};
+  const one = (k, title) => `<div class="adv-q"><b>${title}</b><div class="seg wrap">${ADV_Q[k].map(v => `<button type="button" data-aq="${k}" data-v="${esc(v)}" class="${P[k] === v ? 'on' : ''}">${esc(v)}</button>`).join('')}</div></div>`;
+  const many = (k, title) => `<div class="adv-q"><b>${title}<small>可複選</small></b><div class="seg wrap">${ADV_Q[k].map(v => `<button type="button" data-aqm="${k}" data-v="${esc(v)}" class="${(P[k] || []).includes(v) ? 'on' : ''}">${esc(v)}</button>`).join('')}</div></div>`;
+  $('advQ').innerHTML = one('age', '年齡') + many('family', '家庭狀況') + `<label class="field"><span class="flabel">小孩年齡（選填，例如 2 歲、5 歲）</span><input id="advKids" value="${esc(P.kids || '')}"></label>` + one('risk', '能接受的虧損') + one('horizon', '這些錢多久會用到') + many('goals', '目標') + `<label class="field"><span class="flabel">其他想讓 AI 知道的（選填，不要寫名字、地址、公司）</span><input id="advNote" value="${esc(P.note || '')}" placeholder="例：明年可能換工作、想 50 歲退休"></label>`;
+  $('advQDialog').dataset.then = then ? '1' : '';
+  $('advQDialog').showModal();
+}
+$('advQ').addEventListener('click', e => {
+  const b = e.target.closest('[data-aq], [data-aqm]'); if (!b) return;
+  if (b.dataset.aq) { b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }
+  else b.classList.toggle('on');
+});
+$('advQSave').addEventListener('click', () => {
+  const P = {};
+  $('advQ').querySelectorAll('[data-aq].on').forEach(b => { P[b.dataset.aq] = b.dataset.v; });
+  $('advQ').querySelectorAll('[data-aqm].on').forEach(b => { (P[b.dataset.aqm] = P[b.dataset.aqm] || []).push(b.dataset.v); });
+  P.kids = $('advKids').value.trim(); P.note = $('advNote').value.trim();
+  state.advProfile = P; save();
+  const then = $('advQDialog').dataset.then; $('advQDialog').close();
+  if (then) advPreview();
+});
+$('advQCancel').addEventListener('click', () => $('advQDialog').close());
+function advPreview() {
+  $('advSend').textContent = adviceData();
+  $('advPDialog').showModal();
+}
+$('advPCancel').addEventListener('click', () => $('advPDialog').close());
+$('advPGo').addEventListener('click', async () => {
+  const text = $('advSend').textContent;
+  $('advPDialog').close();
+  const btn = document.querySelector('[data-adv="go"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'AI 正在查市場並分析，約 20–60 秒…'; }
+  if (advCtl) advCtl.abort(); advCtl = new AbortController();
+  try {
+    const r = await AI.advise(state.ai, ADV_SYS, `以下是我的財務狀況（已匿名化，金額為區間）：\n${text}\n\n請依系統指示給我建議。`, advCtl.signal);
+    state.advice = { at: new Date().toISOString(), text: r.text, model: r.model, search: r.search };
+    save(); toast('建議產生好了');
+  } catch (e) { if (e.name !== 'AbortError') toast(e.message); renderInvest(); }
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-adv]'); if (!b) return;
+  if (b.dataset.adv === 'profile') return openAdvProfile(false);
+  if (b.dataset.adv === 'go') return state.advProfile ? advPreview() : openAdvProfile(true);
+});
+
 // 確認某一期
 let periodCtx = null;
 document.addEventListener('click', e => {
@@ -3701,7 +3817,7 @@ async function exportBackup() {
 }
 function applyRestore(d) {
   if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
-  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], bills: d.bills || [], debtSort: d.debtSort, incomes: d.incomes || [], raises: d.raises || [], bonuses: d.bonuses || [], ai: state.ai, backup: state.backup });
+  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], bills: d.bills || [], debtSort: d.debtSort, advProfile: d.advProfile, advice: d.advice, incomes: d.incomes || [], raises: d.raises || [], bonuses: d.bonuses || [], ai: state.ai, backup: state.backup });
   lastLv = null; levelsKey = '';
   save();
 }

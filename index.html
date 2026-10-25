@@ -410,6 +410,21 @@
     </div>
   </div>
 
+  <dialog id="advQDialog" class="sheet adv-sheet">
+    <div class="sheet-grip"></div>
+    <h3>我的目標與風險</h3>
+    <p class="small muted">讓 AI 的建議貼近你。只會送出這些選項，不含名字或地址。</p>
+    <div id="advQ"></div>
+    <div class="btnrow"><button type="button" class="btn" id="advQCancel">取消</button><button type="button" class="btn primary" id="advQSave">儲存</button></div>
+  </dialog>
+  <dialog id="advPDialog" class="sheet adv-sheet">
+    <div class="sheet-grip"></div>
+    <h3>要送給 AI 的內容</h3>
+    <p class="small muted">這就是全部會送出的內容：金額都是區間、只有比例和利率，沒有名字、地址路名、銀行、帳號或備註。確認後才會送出。</p>
+    <pre class="adv-send" id="advSend"></pre>
+    <div class="btnrow"><button type="button" class="btn" id="advPCancel">取消</button><button type="button" class="btn primary" id="advPGo">確定送出</button></div>
+  </dialog>
+
   <dialog id="voiceDialog" class="sheet voice-sheet">
     <div class="sheet-grip"></div>
     <div class="vc-head"><div class="vc-mascot" id="vcMascot"></div>

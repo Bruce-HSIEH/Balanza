@@ -285,5 +285,41 @@ const AI = (() => {
     return (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim() || '（沒有回應）';
   }
 
-  return { call, test, keyOf, readHoldings, chat, MODELS, GMODELS };
+  // ---- AI 財務建議：較強的模型＋（Gemini）上網查目前利率、金價等市場狀況 ----
+  async function advise(cfg, sys, text, signal) {
+    if (cfg.provider === 'gemini') {
+      const go = async (model, search) => {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+          method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.gkey },
+          body: JSON.stringify({ systemInstruction: { parts: [{ text: sys }] }, contents: [{ role: 'user', parts: [{ text }] }], ...(search ? { tools: [{ google_search: {} }] } : {}), generationConfig: { temperature: 0.7, maxOutputTokens: 6000 } }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) { const e = new Error((j.error && j.error.message) || res.statusText); e.status = res.status; throw e; }
+        const out = (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('').trim();
+        if (!out) { const e = new Error('沒有回應'); e.status = 0; throw e; }
+        return { text: out, model, search };
+      };
+      const tries = [['gemini-3.6-flash', true], ['gemini-3.6-flash', false], [cfg.gmodel, true], [cfg.gmodel, false]];
+      let last;
+      for (const [m, sr] of tries) {
+        try { return await go(m, sr); } catch (e) {
+          last = e;
+          if (e.name === 'AbortError') throw e;
+          if (e.status === 401 || /API key|API_KEY/i.test(e.message)) throw new Error('Gemini API 金鑰無效，請到設定確認');
+          if (e.status === 429 && m === cfg.gmodel && !sr) throw new Error('Gemini 免費額度暫時用完了，稍後再試');
+        }
+      }
+      throw new Error(`Gemini 回應錯誤：${last && last.message}`);
+    }
+    const res = await fetch(URL, {
+      method: 'POST', signal,
+      headers: { 'content-type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: cfg.model, max_tokens: 6000, system: sys, messages: [{ role: 'user', content: text }] }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(res.status === 401 ? 'API 金鑰無效，請到設定確認' : `AI 回應錯誤（${res.status}）：${(j.error && j.error.message) || res.statusText}`);
+    return { text: (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim() || '（沒有回應）', model: cfg.model, search: false };
+  }
+
+  return { call, test, keyOf, readHoldings, chat, advise, MODELS, GMODELS };
 })();

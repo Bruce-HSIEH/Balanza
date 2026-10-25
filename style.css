@@ -1420,3 +1420,19 @@ body.enter .top > :not(h1) { animation: homeFade .5s ease both .25s; }
 .lock-screen.on-splash .pin-dots i.on { background: #18264a; border-color: #18264a; }
 .lock-screen.on-splash .pin-keys button { background: rgba(24, 38, 74, .07); color: #18264a; width: 64px; height: 64px; }
 .lock-screen.on-splash .pin-keys { grid-template-columns: repeat(3, 64px); gap: 10px 20px; }
+
+/* AI 財務建議 */
+.adv-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.adv-head h2 { margin: 0; }
+.adv-go { width: 100%; margin-top: 8px; }
+.adv-out { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.adv-meta { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
+.adv-out .ask-md h2, .adv-out .ask-md h3 { font-size: 16px; margin: 14px 0 6px; }
+.adv-sheet .seg.wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.adv-sheet .seg.wrap button { flex: none; padding: 8px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--soft); color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer; }
+.adv-sheet .seg.wrap button.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.adv-q { margin: 12px 0; }
+.adv-q b { display: block; margin-bottom: 6px; }
+.adv-q b small { font-weight: 400; color: var(--muted); margin-left: 6px; font-size: 12px; }
+.adv-send { white-space: pre-wrap; font: 12.5px/1.6 ui-monospace, Menlo, monospace; background: var(--soft); border-radius: 12px; padding: 12px; max-height: 50vh; overflow: auto; }
+.ask-li.num::before { content: none; } .ask-li.num { padding-left: 20px; } .ask-li.num i { position: absolute; left: 0; font-style: normal; font-weight: 700; color: var(--accent); }

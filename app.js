@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.1.3';
+const APP_VERSION = '6.1.4';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -2246,26 +2246,35 @@ function fixedHTML() {
 function planSaveAt(ym) {
   return state.plans.filter(p => (!p.source || p.source === 'self') && p.startYM).reduce((t, p) => { const k = Loan.ymDiff(p.startYM, ym), am = Plan.amounts(p); return t + (k >= 0 && k < am.length ? am[k] : 0); }, 0);
 }
+// 自有資金的投資計畫：進行中的算這個月那期；還沒開始的先算第一期（標示幾月起）；已結束的不算
+function planCommit() {
+  const cur = Loan.nowYM();
+  return state.plans.filter(p => (!p.source || p.source === 'self') && p.startYM).map(p => {
+    const am = Plan.amounts(p), k = Loan.ymDiff(p.startYM, cur);
+    if (k >= am.length) return null;
+    return { p, amt: k < 0 ? am[0] : am[k], from: k < 0 ? p.startYM : null };
+  }).filter(x => x && x.amt > 0);
+}
 function baseOf(P) {
   const ym = P ? P.cur : Loan.nowYM();
   const debt = P ? P.months[0].total : 0;
   const live = state.bills.filter(b => isSub(b) && (!b.endDate || new Date(b.endDate) >= new Date()));
   const fixed = live.reduce((t, b) => t + perMonth(b), 0);
   const fixedNow = billEvents(ym).filter(e => e.kind === 'charge').reduce((t, e) => t + e.amount, 0);
-  const save = planSaveAt(ym);
-  return { debt, fixed, fixedNow, save, base: debt + fixed + save, now: debt + fixedNow + save };
+  const plans = planCommit(), save = plans.reduce((t, x) => t + x.amt, 0), saveNow = planSaveAt(ym);
+  return { debt, fixed, fixedNow, save, saveNow, plans, base: debt + fixed + save, now: debt + fixedNow + saveNow };
 }
 // 每月固定支出：一個總數＋圓餅拆解（固定扣繳每一項，有自有資金的定期投入也算一塊）
 function baseCardHTML() {
-  const B = baseOf(null), base = B.fixed + B.save, now = B.fixedNow + B.save;
+  const B = baseOf(null), base = B.fixed + B.save, now = B.fixedNow + B.saveNow;
   const live = state.bills.filter(b => isSub(b) && (!b.endDate || new Date(b.endDate) >= new Date())).map(b => ({ b, v: perMonth(b) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
   const top = live.slice(0, 8), rest = live.slice(8).reduce((t, x) => t + x.v, 0);
   const slices = top.map((x, i) => ({ key: x.b.id, label: x.b.name, icon: billIcon(x.b), value: x.v, color: Charts.PALETTE[i % Charts.PALETTE.length], sub: x.b.cat || '' }));
   if (rest > 0) slices.push({ key: '__rest', label: `其他 ${live.length - 8} 項`, value: rest, color: Charts.OTHER });
-  if (B.save > 0) slices.push({ key: '__save', label: '定期投入', icon: Icon('invest'), value: B.save, color: 'var(--accent)', sub: '投資計畫（自有資金）' });
+  B.plans.forEach((x, i) => slices.push({ key: '__save' + i, label: x.p.name, icon: Icon('invest'), value: x.amt, color: i % 2 ? 'var(--viz-3)' : 'var(--accent)', sub: x.from ? `定期投入・${+x.from.slice(5)} 月起` : '定期投入' }));
   return `<div class="card base-card">
     <div class="base-top"><span>每月固定支出</span><b>${fmt(base)}</b></div>
-    ${Math.round(now) !== Math.round(base) ? `<div class="base-now">這個月實際要付 <b>${fmt(now)}</b><small>${now > base ? '有年繳、季繳的項目落在這個月' : '年繳、季繳的項目這個月沒有扣'}</small></div>` : ''}
+    ${Math.round(now) !== Math.round(base) ? `<div class="base-now">這個月實際要付 <b>${fmt(now)}</b><small>${[B.fixedNow > B.fixed ? '有年繳、季繳的項目落在這個月' : B.fixedNow < B.fixed ? '年繳、季繳的項目這個月沒有扣' : '', B.plans.some(x => x.from) ? '還沒開始的定期投入這個月不用付' : ''].filter(Boolean).join('；')}</small></div>` : ''}
     ${slices.length ? donutHTML('fx', slices, '', { noTotal: true }) : '<p class="muted small">新增固定扣繳後，這裡會算出每個月固定要付多少</p>'}
     <p class="small muted base-note">年繳、季繳換算成月均；不含貸款（貸款在「還款」分頁）。點圓餅或項目看占多少。</p>
   </div>`;

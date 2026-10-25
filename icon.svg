@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0f766e"/>
-  <g fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="256" y1="120" x2="256" y2="392"/>
-    <line x1="136" y1="170" x2="376" y2="170"/>
-    <line x1="176" y1="392" x2="336" y2="392"/>
-    <path d="M136 170 L96 280 Q136 320 176 280 Z"/>
-    <path d="M376 170 L336 280 Q376 320 416 280 Z"/>
-  </g>
-  <circle cx="256" cy="120" r="18" fill="#fff"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="nv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#18264a"/><stop offset="1" stop-color="#0a1022"/></linearGradient><linearGradient id="au" gradientUnits="userSpaceOnUse" x1="100" y1="100" x2="412" y2="412"><stop offset="0" stop-color="#ffe6a3"/><stop offset=".5" stop-color="#e2ad4c"/><stop offset="1" stop-color="#a87418"/></linearGradient></defs><rect width="512" height="512" fill="url(#nv)"/><rect x="40" y="40" width="432" height="432" rx="92" fill="none" stroke="url(#au)" stroke-width="3" opacity=".6"/><g fill="none" stroke="url(#au)" stroke-width="9" stroke-linecap="round"><path d="M256 126 V384"/><path d="M196 384 H316"/><path d="M116 176 H396"/><path d="M116 176 L84 276 M116 176 L148 276 M396 176 L364 276 M396 176 L428 276"/><path d="M76 276 H156 Q152 310 116 310 Q80 310 76 276Z M356 276 H436 Q432 310 396 310 Q360 310 356 276Z"/></g><circle cx="256" cy="120" r="11" fill="url(#au)"/><text x="256" y="448" text-anchor="middle" font-family="Georgia, 'Times New Roman', 'Noto Serif', serif" font-size="36" letter-spacing="9" fill="url(#au)">BALANZA</text></svg>

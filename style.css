@@ -1399,3 +1399,24 @@ body.enter .top > :not(h1) { animation: homeFade .5s ease both .25s; }
 .pr-tot { font-variant-numeric: tabular-nums; }
 .pr-sub { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--muted); margin: 3px 0 0 18px; font-variant-numeric: tabular-nums; }
 .c-int { color: #f0643f; } .c-prin { color: #22a85f; } @media (prefers-color-scheme: dark) { .c-int { color: #ff8a66; } .c-prin { color: #3ed184; } }
+
+/* 開機時上鎖：開機動畫跑完，在開機畫面上浮出一張卡片問 Face ID 或密碼 */
+.lock-screen.on-splash { z-index: 10001; background: transparent; align-items: flex-end; padding-bottom: calc(28px + env(safe-area-inset-bottom)); animation: none; }
+.lock-screen.on-splash .lock-inner { max-width: 360px; padding: 22px 20px 18px; border-radius: 28px; background: rgba(255, 255, 255, .78); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4); box-shadow: 0 18px 50px rgba(24, 38, 74, .22), inset 0 0 0 1px rgba(255, 255, 255, .7); color: #18264a; animation: spCard .5s cubic-bezier(.2, .9, .3, 1.1) both; }
+.lock-screen.on-splash .lock-mascot { display: none; }
+.lock-screen.on-splash h2 { font-size: 19px; color: #18264a; }
+.lock-screen.on-splash .muted { color: #5f6b85; }
+.lock-screen.on-splash .lock-face { background: linear-gradient(135deg, #22335f, #18264a); color: #fff; width: 100%; justify-content: center; box-shadow: 0 6px 16px rgba(24, 38, 74, .3); }
+.lock-screen.on-splash .lock-face svg { stroke: #e2ad4c; }
+.lock-screen.on-splash #lockUsePin { width: 100%; padding: 12px; border-radius: 16px; border: 1.5px solid rgba(24, 38, 74, .2); background: rgba(255, 255, 255, .6); color: #18264a; font-weight: 700; font-size: 15px; margin-top: 4px; }
+.lock-screen.on-splash.pin-mode .lock-face, .lock-screen.on-splash.pin-mode #lockUsePin { display: none; }
+.lock-screen.on-splash .neg { color: #c0392b; }
+.lock-screen.on-splash.opening { animation: none; }
+.lock-screen.on-splash.opening .lock-inner { animation: spCardOut .3s ease forwards; }
+#splash.sp-locked .sp-scene { opacity: .35; transition: opacity .4s; }
+@keyframes spCard { from { opacity: 0; transform: translateY(40px) scale(.96); } }
+@keyframes spCardOut { to { opacity: 0; transform: translateY(30px) scale(.97); } }
+.lock-screen.on-splash .pin-dots i { border-color: #8c96ad; }
+.lock-screen.on-splash .pin-dots i.on { background: #18264a; border-color: #18264a; }
+.lock-screen.on-splash .pin-keys button { background: rgba(24, 38, 74, .07); color: #18264a; width: 64px; height: 64px; }
+.lock-screen.on-splash .pin-keys { grid-template-columns: repeat(3, 64px); gap: 10px 20px; }

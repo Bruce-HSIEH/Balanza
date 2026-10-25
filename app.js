@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.1.8';
+const APP_VERSION = '6.2.0';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -3865,15 +3865,18 @@ function pinPad(el, onDone, len = 6) {
 
 function closeDialogs() { document.querySelectorAll('dialog[open]').forEach(d => d.close()); }
 
-function showLock(auto) {
+function showLock(auto, onSplash) {
   closeDialogs();
   const info = Vault.info();
   const lk = $('lockScreen');
   lk.hidden = false;
+  lk.classList.toggle('on-splash', !!onSplash); lk.classList.remove('pin-mode');
   document.body.classList.add('is-locked');
   $('lockMascot').innerHTML = UI.mascotSVG(LEVEL_EMPTY);
   $('lockFace').hidden = !info.faceID;
-  $('lockMsg').textContent = info.faceID ? '用 Face ID 解鎖，或輸入 PIN' : '輸入 PIN 解鎖';
+  $('lockMsg').textContent = info.faceID ? (onSplash ? '要用哪一種方式解鎖？' : '用 Face ID 解鎖，或輸入 PIN') : '輸入密碼（PIN）解鎖';
+  $('lockUsePin').hidden = !info.faceID;
+  $('lockUsePin').textContent = onSplash ? '用密碼' : '改用 PIN';
   $('lockErr').textContent = '';
   $('lockPinWrap').hidden = info.faceID;
   const pad = pinPad($('lockPin'), async pin => {
@@ -3889,6 +3892,7 @@ async function tryFaceID(silent) {
   catch (e) {
     if (!silent || e.name !== 'NotAllowedError') $('lockErr').textContent = e.name === 'NotAllowedError' ? 'Face ID 已取消，可以再按一次或改用 PIN' : e.message;
     $('lockPinWrap').hidden = false;
+    $('lockScreen').classList.add('pin-mode');
   }
 }
 function finishUnlock(plain) {
@@ -3896,9 +3900,11 @@ function finishUnlock(plain) {
   locked = false;
   if (Stocks.ready()) syncPlanEstimates();
   $('lockScreen').classList.add('opening');
-  setTimeout(() => { $('lockScreen').hidden = true; $('lockScreen').classList.remove('opening'); document.body.classList.remove('is-locked'); }, 350);
+  setTimeout(() => { $('lockScreen').hidden = true; $('lockScreen').classList.remove('opening', 'on-splash'); document.body.classList.remove('is-locked'); }, 350);
   lastLv = null; levelsKey = '';
   render();
+  const sp = $('splash');   // 開機時解鎖：卡片收起後，字標從開機畫面飛到首頁
+  if (sp && sp.dataset.lockwait) { sp.classList.remove('sp-locked'); setTimeout(() => requestAnimationFrame(() => splashExit(sp)), 380); }
   renderBkNag();
   scheduleBackup(3000);
   afterUnlock.splice(0).forEach(f => f());
@@ -3964,7 +3970,7 @@ function lockNow() {
   showLock(false);
 }
 $('lockFace').addEventListener('click', () => tryFaceID(false));
-$('lockUsePin').addEventListener('click', () => { $('lockPinWrap').hidden = false; });
+$('lockUsePin').addEventListener('click', () => { $('lockPinWrap').hidden = false; $('lockScreen').classList.add('pin-mode'); $('lockMsg').textContent = '輸入密碼（PIN）解鎖'; });
 
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
@@ -4059,7 +4065,7 @@ $('clList').innerHTML = changelogHTML(CHANGELOG.slice(0, 3));
     else try { localStorage.setItem('balanza.seenVersion', APP_VERSION); } catch (e) { /* ignore */ }
   }
 })();
-if (locked) { showLock(true); splashOut(); } else afterUnlock.splice(0).forEach(f => f());
+if (locked) splashOut(); else afterUnlock.splice(0).forEach(f => f());   // 上鎖：開機動畫跑完後在開機畫面上問 Face ID 或密碼
 // ---- 設定：先列項目，點進去再看內容 ----
 const SET_GROUPS = [
   ['安全與隱私', [
@@ -4148,6 +4154,7 @@ function splashOut() {
   setTimeout(() => requestAnimationFrame(() => splashExit(sp)), wait);
 }
 function splashExit(sp) {
+  if (locked) { sp.dataset.lockwait = '1'; sp.classList.add('sp-locked'); showLock(false, true); return; }   // 先解鎖，再從開機畫面進主頁
   const finish = () => { sp.remove(); document.body.classList.remove('sp-flying'); setTimeout(() => document.body.classList.remove('enter'), 900); splashDoneR(); };
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const wSrc = sp.querySelector('.sp-wm'), h1 = document.querySelector('.top h1');

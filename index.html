@@ -195,6 +195,18 @@
       <div id="debtCurve"></div>
     </section>
 
+    <!-- 每月固定扣繳 -->
+    <section class="view" id="view-fixed">
+      <div class="listhead"><h2><i data-ic="calendar" data-size="26"></i> 每月固定扣繳</h2></div>
+      <div id="fixedBody"></div>
+    </section>
+
+    <!-- 收入（底部第二頁） -->
+    <section class="view" id="view-income">
+      <div class="listhead"><h2><i data-ic="wallet" data-size="26"></i> 收入</h2></div>
+      <div id="incomeBody"></div>
+    </section>
+
     <!-- 還款計畫 -->
     <section class="view" id="view-repay">
       <div class="listhead"><h2><i data-ic="repay" data-size="26"></i> 還款計畫</h2></div>
@@ -275,13 +287,21 @@
 
   <button class="fab" id="fab" data-add="" aria-label="新增" hidden><svg viewBox="0 0 24 24" width="28" height="28"><path d="M12 5v14M5 12h14" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg></button>
 
-  <nav class="tabs">
-    <button data-view="home" class="active"><i data-ic="chart" data-size="26"></i>總覽</button>
-    <button data-view="assets"><i data-ic="piggy" data-size="26"></i>資產</button>
-    <button data-view="debts"><i data-ic="card" data-size="26"></i>負債</button>
-    <button data-view="repay"><i data-ic="repay" data-size="26"></i>還款</button>
-    <button data-view="invest"><i data-ic="invest" data-size="26"></i>投資</button>
-  </nav>
+  <nav class="tabs"><div class="tabs-track">
+    <div class="tabs-pg">
+      <button data-view="home" class="active"><i data-ic="chart" data-size="26"></i>總覽</button>
+      <button data-view="assets"><i data-ic="piggy" data-size="26"></i>資產</button>
+      <button data-view="debts"><i data-ic="card" data-size="26"></i>負債</button>
+      <button data-view="fixed"><i data-ic="calendar" data-size="26"></i>扣繳</button>
+      <button data-view="repay"><i data-ic="repay" data-size="26"></i>還款</button>
+      <button data-view="invest"><i data-ic="invest" data-size="26"></i>投資</button>
+      <button type="button" class="tab-more" id="tabNext" aria-label="更多分頁">›</button>
+    </div>
+    <div class="tabs-pg pg-2">
+      <button type="button" class="tab-more" id="tabPrev" aria-label="回到主要分頁">‹</button>
+      <button data-view="income"><i data-ic="wallet" data-size="26"></i>收入</button>
+    </div>
+  </div></nav>
 
   <dialog id="editor">
     <form method="dialog" id="editForm">

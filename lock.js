@@ -148,9 +148,20 @@ const Vault = (() => {
     write(v);
   }
 
+  // 只驗證身分（進收入頁用），不重新解鎖資料
+  async function verify() {
+    const v = read();
+    if (!v || !v.cred) throw new Error('沒有設定 Face ID');
+    await assert(unb64(v.cred), v.mode === 'prf' ? unb64(v.prfSalt) : null);
+    return true;
+  }
+  async function checkPIN(pin) {
+    const v = read();
+    try { await open(await pinKey(pin, unb64(v.wrap.pin.salt), v.wrap.pin.iter), v.wrap.pin); return true; } catch (e) { throw new Error('PIN 不正確'); }
+  }
   function disable() { localStorage.removeItem(KEY); dataKeyRaw = null; }
   function lock() { dataKeyRaw = null; }
   const info = () => { const v = read(); return v ? { mode: v.mode, created: v.created, faceID: !!v.cred } : null; };
 
-  return { enabled, unlocked, enable, unlockFaceID, unlockPIN, store, changePIN, disable, lock, info, platformAvailable, supported };
+  return { enabled, unlocked, enable, unlockFaceID, unlockPIN, verify, checkPIN, store, changePIN, disable, lock, info, platformAvailable, supported };
 })();

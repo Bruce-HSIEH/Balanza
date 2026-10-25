@@ -86,7 +86,7 @@ const CALC_MODES = [
 // 定期扣款（不算資產負債，只顯示在扣款月曆）
 const BILL_KINDS = [
   { v: 'card', label: '信用卡帳單', ic: 'card', d: '結帳日、繳款截止日' },
-  { v: 'sub', label: '訂閱／定期扣款', ic: 'calendar', d: 'Netflix、Claude、電信費、房租…' },
+  { v: 'sub', label: '固定扣繳', ic: 'calendar', d: '訂閱、保險費、房租、水電、教育基金…' },
 ];
 const BILL_CATS = [
   { v: '串流影音', ic: 'play', c: '#8e5bc2' }, { v: 'AI／軟體', ic: 'star', c: '#6b5bd6' }, { v: '電信網路', ic: 'mic', c: '#2f80c9' }, { v: '保險', ic: 'insurance', c: '#2e9e6b' },
@@ -145,7 +145,7 @@ const BILL_SVCS = {
     ['讀墨 Readmoo', 'readmoo 電子書'], ['Kobo Plus', 'kobo 樂天'], ['Kindle Unlimited', 'kindle 亞馬遜', { c: 'USD' }], ['Audible', '有聲書', { c: 'USD' }], ['The New York Times', '紐約時報 nyt', { c: 'USD' }],
     ['The Economist', '經濟學人', { c: 'USD' }], ['Wall Street Journal', '華爾街日報 wsj', { c: 'USD' }], ['Bloomberg', '彭博', { c: 'USD' }], ['Medium', '', { c: 'USD' }], ['Substack', '電子報', { c: 'USD' }],
   ],
-  '學習': [['Duolingo Super', '多鄰國 duolingo'], ['Hahow 好學校', 'hahow'], ['Coursera Plus', 'coursera'], ['LinkedIn Premium', 'linkedin'], ['Udemy', ''], ['Skillshare', ''], ['補習班', '補習'], ['才藝課', '鋼琴 美術 舞蹈'], ['安親班', ''], ['托嬰／幼兒園', '幼兒園 托育']],
+  '學習': [['小孩教育基金', '教育基金 儲蓄 小孩 子女'], ['學費', '註冊費 學雜費', { y: '6' }], ['Duolingo Super', '多鄰國 duolingo'], ['Hahow 好學校', 'hahow'], ['Coursera Plus', 'coursera'], ['LinkedIn Premium', 'linkedin'], ['Udemy', ''], ['Skillshare', ''], ['補習班', '補習'], ['才藝課', '鋼琴 美術 舞蹈'], ['安親班', ''], ['托嬰／幼兒園', '幼兒園 托育']],
   '交通': [['TPASS 通勤月票', 'tpass 1200 基北北桃 都會通'], ['高鐵定期票', '高鐵'], ['台鐵定期票', '台鐵 火車'], ['停車月租', '停車'], ['YouBike', 'ubike'], ['GoShare／WeMo', '共享機車 gogoro'], ['Gogoro 電池資費', 'gogoro 電池'], ['iRent', '共享汽車'], ['eTag 儲值', 'etag 國道']],
   '其他': [['捐款', '慈善 公益'], ['社團會費', '會費 公會'], ['父母孝親費', '孝親'], ['零用錢', ''], ['寵物保險', ''], ['保全／監視器', '保全'], ['信用卡年費', '年費', { y: '12' }]],
 };

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.29.1';
+const APP_VERSION = '6.0.0';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -17,6 +17,9 @@ function migrate(d) {
   d.bills = Array.isArray(d.bills) ? d.bills : [];
   d.backup = { on: false, token: '', gistId: '', login: '', key: '', salt: '', ...(d.backup || {}) };
   d.plans = d.plans || [];
+  d.incomes = Array.isArray(d.incomes) ? d.incomes : [];
+  d.raises = Array.isArray(d.raises) ? d.raises : [];
+  d.bonuses = Array.isArray(d.bonuses) ? d.bonuses : [];
   d.assets = d.assets.map(a => {
     let category = CAT_MIGRATE[a.category] || a.category;
     if (a.category === 'ETF/基金' && /^00\d{2,4}[A-Z]?$/.test(String(a.name).trim())) category = '台股';
@@ -343,6 +346,8 @@ function render() {
   renderDebts(s);
   renderLevels(s, L);
   renderRepay();
+  renderFixed();
+  renderIncome();
   renderInvest();
 
   if (!document.activeElement || document.activeElement.id !== 'aiKey') renderAISettings();
@@ -869,9 +874,12 @@ function showView(name) {
     if (on) { v.style.animation = 'none'; void v.offsetWidth; v.style.animation = ''; }
   });
   const fab = $('fab');
-  const kind = { assets: 'asset', debts: 'debt', invest: 'plan', repay: 'bill' }[name] || '';
+  const kind = { assets: 'asset', debts: 'debt', invest: 'plan', fixed: 'bill', income: 'income' }[name] || '';
+  if (name !== 'income') { incOK = false; incShow = false; }
+  if (!['levels', 'settings'].includes(name)) tabPage(name === 'income' ? 2 : 1);
   document.querySelectorAll('.top-btn').forEach(x => x.classList.toggle('active', x.dataset.view === name));
-  fab.hidden = !kind;
+  fab.hidden = !kind || (name === 'income' && !incOK);
+  if (name === 'income') renderIncome();
   fab.dataset.add = kind;
   fab.setAttribute('aria-label', '新增' + KIND_NAME[kind]);
   if (kind) { fab.classList.remove('pop'); void fab.offsetWidth; fab.classList.add('pop'); }
@@ -883,7 +891,17 @@ function showView(name) {
 }
 // 下方分頁直接切換；右上角（等級、設定）再點一次就關掉，回到原本停留的分頁
 let lastTab = 'home';
-document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+document.querySelectorAll('.tabs button[data-view]').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+// 底部分頁第二頁（收入）：按 › ‹ 或在底部列左右滑
+function tabPage(n) { const t = document.querySelector('.tabs'); if (t) t.classList.toggle('pg2', n === 2); }
+$('tabNext').addEventListener('click', () => tabPage(2));
+$('tabPrev').addEventListener('click', () => { tabPage(1); if (currentView === 'income') showView('home'); });
+(() => { let x0 = null; const t = document.querySelector('.tabs');
+  t.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+  t.addEventListener('touchend', e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (dx < -40) tabPage(2); else if (dx > 40) { tabPage(1); if (currentView === 'income') showView('home'); } }, { passive: true });
+})();
+// 離開 App 再回來：回到第一頁、收入要重新驗證
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { incOK = false; incShow = false; if (currentView === 'income') showView('home'); else tabPage(1); } });
 document.querySelectorAll('.top-btn[data-view]').forEach(b => b.addEventListener('click', () => showView(currentView === b.dataset.view ? lastTab : b.dataset.view)));
 $('toLevels').addEventListener('click', () => showView('levels'));
 document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) showView(g.dataset.goto); });
@@ -925,6 +943,7 @@ const OPTS = {
   planType: () => ['股票', '基金', '債券', '加密貨幣', '儲蓄／定存', '其他'].map(v => opt(v, v, Icon({ '股票': 'chart', '基金': 'fund', '債券': 'bond', '加密貨幣': 'crypto', '儲蓄／定存': 'cash', '其他': 'other' }[v]), v === '股票' ? '可以選台股、美股標的，看即時收盤價與走勢' : v === '基金' ? '可以選境內、境外基金，看最新淨值與走勢' : '')),
   planMode: () => [opt('total', '投資總額', Icon('invest'), '一筆總額分幾個月投入，例如 1460 萬分 15 個月'), opt('monthly', '每月投入', Icon('calendar'), '每月固定投入多少，例如定期定額每月 1 萬')],
   billKind: () => BILL_KINDS.map(c => opt(c.v, c.label, Icon(c.ic), c.d)),
+  incomeList: () => state.incomes.map(i => opt(i.id, i.name, Icon('wallet'))),
   billCat: () => BILL_CATS.map(c => opt(c.v, c.v, Icon(c.ic), (BILL_SVCS[c.v] || []).slice(0, 4).map(x => x[0]).join('、'))),
   billSvc: vals => [...(BILL_SVCS[vals.cat || '其他'] || []).map(([n, k, o = {}]) => opt(n, n, svcIcon(n, vals.cat), [o.c && o.c !== 'TWD' ? `${o.c} 計價` : '', o.y === '12' ? '通常每年扣款' : ''].filter(Boolean).join('・'), { key: `${n} ${k}` })), opt('', '都不是（自己輸入名稱）', Icon('pencil'))],
   billCcy: () => CURRENCIES.map(c => opt(c.v, c.label, Icon(c.ic))),
@@ -959,6 +978,7 @@ const PICK_LABEL = {
   planMode: v => v === 'monthly' ? '每月投入' : '投資總額',
   planType: v => v || '股票',
   billKind: v => (BILL_KINDS.find(c => c.v === v) || {}).label || '',
+  incomeList: v => (state.incomes.find(i => i.id === v) || state.incomes[0] || {}).name || '',
   billSvc: v => v || '',
   billCcy: v => (CURRENCIES.find(c => c.v === v) || {}).label || v,
   billCycle: v => (BILL_CYCLES.find(c => c.v === v) || {}).label || '',
@@ -1113,9 +1133,9 @@ FIELDS.plan = [
   { panel: 'planPanel', show: () => true },
   { k: 'note', label: '備註', type: 'text' },
 ];
-const KEY = { asset: 'assets', debt: 'debts', plan: 'plans', bill: 'bills' };
-const KIND_NAME = { asset: '資產', debt: '負債', plan: '投資計畫', bill: '定期扣款', '': '' };
-const KIND_ICON = { asset: 'piggy', debt: 'card', plan: 'invest', bill: 'calendar' };
+const KEY = { asset: 'assets', debt: 'debts', plan: 'plans', bill: 'bills', income: 'incomes', raise: 'raises', bonus: 'bonuses' };
+const KIND_NAME = { asset: '資產', debt: '負債', plan: '投資計畫', bill: '固定扣繳', income: '收入', raise: '調薪紀錄', bonus: '獎金', '': '' };
+const KIND_ICON = { asset: 'piggy', debt: 'card', plan: 'invest', bill: 'calendar', income: 'wallet', raise: 'up', bonus: 'star' };
 const isNewLine = v => String(v.source || '').startsWith('__new');
 const isCardBill = v => v.bkind === 'card', isSub = v => v.bkind !== 'card';
 FIELDS.bill = [
@@ -1133,6 +1153,34 @@ FIELDS.bill = [
   { k: 'payWith', label: '扣款方式', type: 'pick', opts: 'payWith', def: '', show: isSub },
   { k: 'autopay', label: '繳款方式', type: 'pick', opts: 'autopay', def: 'auto', show: isCardBill },
   { k: 'endDate', label: '結束日期（選填，到期或已取消）', type: 'date', show: isSub },
+  { k: 'note', label: '備註', type: 'text' },
+];
+// ---- 收入（只記自己；勞健保、預扣稅先估算，填了就用填的）----
+const estHint = k => v => { const e = incEst(v, num(v.gross)); return `空白＝自動估算 ${fmt(e[k])}`; };
+FIELDS.income = [
+  { k: 'name', label: '名稱', type: 'text', req: true, def: '本薪', ph: '例：本薪、兼職、租金收入' },
+  { k: 'gross', label: '每月應發（稅前）', type: 'number', req: true, half: true, ph: '例：60000' },
+  { k: 'payDay', label: '發薪日（每月幾號）', type: 'number', min: 1, max: 31, half: true },
+  { k: 'dep', label: '健保眷屬人數', type: 'number', min: 0, max: 3, half: true, def: '0', hintFn: () => '跟著你投保的家人，最多算 3 人' },
+  { k: 'penPct', label: '勞退自提 %', type: 'number', min: 0, max: 6, half: true, def: '0', hintFn: () => '0～6%，可以節稅' },
+  { sec: ['calc', '每月扣款（空白＝自動估算，填了就用你填的）'] },
+  { k: 'labor', label: '勞保自付', type: 'number', half: true, ph: v => String(incEst(v, num(v.gross)).labor), hintFn: estHint('labor') },
+  { k: 'health', label: '健保自付', type: 'number', half: true, ph: v => String(incEst(v, num(v.gross)).health), hintFn: estHint('health') },
+  { k: 'tax', label: '預扣所得稅', type: 'number', half: true, ph: v => String(incEst(v, num(v.gross)).tax), hintFn: estHint('tax') },
+  { k: 'welfare', label: '福委會', type: 'number', half: true, ph: '例：100' },
+  { k: 'otherDed', label: '其他扣款', type: 'number', half: true, ph: '例：伙食費、團保' },
+  { k: 'note', label: '備註', type: 'text' },
+];
+FIELDS.raise = [
+  { k: 'inc', label: '哪一筆收入', type: 'pick', opts: 'incomeList', show: () => state.incomes.length > 1 },
+  { k: 'ym', label: '從哪個月開始', type: 'month', req: true, half: true, def: thisYM },
+  { k: 'gross', label: '新的每月應發', type: 'number', req: true, half: true, ph: '例：65000' },
+  { k: 'note', label: '備註', type: 'text', ph: '例：年度調薪、升職' },
+];
+FIELDS.bonus = [
+  { k: 'name', label: '名稱', type: 'text', req: true, def: '年終獎金', ph: '例：年終、三節、績效、分紅' },
+  { k: 'ym', label: '哪個月發', type: 'month', req: true, half: true, def: thisYM },
+  { k: 'amount', label: '金額（稅前）', type: 'number', req: true, half: true, ph: '例：120000' },
   { k: 'note', label: '備註', type: 'text' },
 ];
 // ---- 各情境的範例文字 ----
@@ -1162,7 +1210,7 @@ FIELDS.bill.find(f => f.k === 'name').ph = v => isCardBill(v) ? EX.billName.card
 FIELDS.bill.find(f => f.k === 'amount').ph = v => isCardBill(v) ? EX.billAmount.card : EX.billAmount[v.cat] || '';
 FIELDS.bill.find(f => f.k === 'amount').labelFn = v => isCardBill(v) ? '每期大約金額（選填）' : '每次扣款金額';
 FIELDS.bill.find(f => f.k === 'note').ph = v => isCardBill(v) ? EX.billNote.card : EX.billNote.sub;
-const NUMERIC = new Set(['doneMonths', 'perMonth', 'buyMonth', 'nlLimit', 'nlRate', 'closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
+const NUMERIC = new Set(['gross', 'dep', 'penPct', 'labor', 'health', 'welfare', 'tax', 'otherDed', 'doneMonths', 'perMonth', 'buyMonth', 'nlLimit', 'nlRate', 'closeDay', 'dueDay', 'amount', 'ping', 'buyYear', 'buyPrice', 'principal', 'rate', 'years', 'payDay', 'balance', 'monthly', 'shares', 'cost', 'manualPrice', 'limit', 'drawn', 'total', 'months', 'day', 'yieldPct']);
 
 // ---------- 編輯器 ----------
 let editing = null;
@@ -1640,7 +1688,9 @@ const ASK_GUIDE = `Balanza 是台灣的個人資產負債 App（PWA），資料�
 - 總覽：淨資產、資產負債比例、等級吉祥物、淨資產走勢（手指可在圖上左右滑看每天數字）。
 - 資產：現金存款、台股、美股（自動收盤價）、基金（境內＋境外，自動淨值，或自己填市值）、債券、加密貨幣、保險、不動產（可用實價登錄估價）、車輛（只算殘值、不計入總資產）。股票基金可記多筆買進賣出、平均成本、損益。右下角 ＋ 可新增一筆、一次輸入股票（可用券商截圖 AI 辨識），或「用說的新增」。
 - 負債：房貸、理財型房貸（額度、只繳息、依投資計畫逐筆動用）、信貸、車貸、學貸、信用卡、親友借款。自動試算本息平均／本金平均／只繳息，支援寬限期、利率調整、延長年限、提前還本、本金校正等歷程，可連結抵押的房子。
-- 還款：扣款月曆（可左右滑、看過去已繳月份）、貸款與訂閱定期扣款、信用卡結帳日、未來每月要繳多少、貸款逐月明細、已經繳出去的利息本金。
+- 扣繳：每月固定扣繳（訂閱、保險、房租、水電、教育基金…可選服務／公司）、信用卡繳款日；最上面是「每月固定支出」＝貸款月付＋固定扣繳月均＋自有資金定期投入。
+- 還款：扣款月曆（可左右滑、看過去已繳月份）、信用卡結帳日、未來每月要繳多少、貸款逐月明細、已經繳出去的利息本金。
+- 收入：在底部分頁按 › 切到第二頁，進來要 Face ID；記應發薪資，勞保、健保、預扣稅先估算可自行修改，有調薪紀錄、獎金（不攤進每月），算出實拿與可自由運用。
 - 投資：投資計畫（總額或每月投入、已投入月數、資金來源可選理財型房貸並自動建立額度與負債），標的可選台股、美股、基金，金額可填台幣或美金；每期確認實際成交後會加進持股。
 - 設定：Face ID 加密鎖、隱私（隱藏金額、縮小顯示倍率）、AI 金鑰（Claude 或 Gemini）、文字大小、幣別、加密自動備份與還原、模擬人生展示。
 點已加入的資產或負債會先顯示詳細內容，按「編輯」才修改。`;
@@ -1799,6 +1849,10 @@ document.addEventListener('click', e => {
   const add = e.target.closest('[data-add]');
   if (add && add.id === 'fab' && add.dataset.add === 'asset') return assetAddMenu();
   if (add && add.id === 'fab' && add.dataset.add === 'debt') return debtAddMenu();
+  if (add && add.id === 'fab' && add.dataset.add === 'bill') return fixedAddMenu();
+  if (add && add.id === 'fab' && add.dataset.add === 'income') return incomeAddMenu();
+  const ab = e.target.closest('[data-addbill]');
+  if (ab) return openEditor('bill', null, { bkind: ab.dataset.addbill });
   const vw = e.target.closest('[data-view-item]');
   if (vw) { const [k, id] = vw.dataset.viewItem.split('|'); return openDetail(k, id); }
   const dt = e.target.closest('[data-draws]');
@@ -2115,21 +2169,149 @@ document.addEventListener('click', e => {
   if (box && box.dataset.f === k) box.classList.toggle('open', fold.has(k)); else renderRepay();
 });
 const foldHead = (k, icon, title, sub, right, extra = '') => `<button type="button" class="fold-head" data-fold="${k}">${icon}<span class="grow"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</span>${right ? `<span class="fold-r">${right}</span>` : ''}${extra}<i class="chev">›</i></button>`;
-function billsCardHTML() {
-  const subs = state.bills.filter(isSub);
+// 每月固定扣繳（扣繳分頁）：訂閱、保險、房租、水電、教育基金…＋信用卡繳款日
+function fixedHTML() {
+  const subs = state.bills.filter(isSub), cards = state.bills.filter(isCardBill);
   const live = subs.filter(b => !b.endDate || new Date(b.endDate) >= new Date());
   const mon = live.reduce((t, b) => t + perMonth(b), 0);
   const subRow = b => { const n = chargesBetween(b, new Date(), new Date(Date.now() + 400 * 864e5))[0];
-    return `<div class="bill-row" data-edit="bill" data-id="${b.id}"><span class="mk mk-sub" style="--c:${billColor(b)}"></span>${billIcon(b)}<span class="grow">${esc(b.name)}<small>${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${n ? `・下次 ${mdTxt(n)}` : b.endDate ? '・已結束' : ''}${cardOf(b.payWith) ? `・刷 ${esc(cardOf(b.payWith).name)}` : ''}</small></span><span class="due-amt">${(b.ccy || 'TWD') === state.currency ? fmt(+b.amount || 0) : `${b.ccy} ${(+b.amount || 0).toLocaleString()}<small class="muted">≈ ${fmt((+b.amount || 0) * billFx(b))}</small>`}</span></div>`; };
-  const open = fold.has('bills');
-  return `<div class="card fold bills-card ${open ? 'open' : ''}" data-f="bills">
-    ${foldHead('bills', Icon('repay'), '訂閱與定期扣款', subs.length ? `${live.length} 項・每月約 ${fmt(mon)}・一年約 ${fmt(mon * 12)}` : '還沒有加入', '')}
-    <div class="fold-body">
-      ${subs.length ? subs.map(subRow).join('') : `<div class="hint-row">${Icon('calendar')}<span>加入 Netflix、Claude、電信費、房租這類定期扣款，會一起出現在上面的月曆</span></div>`}
-      <p class="small muted fold-note">只顯示在扣款月曆，不會算進資產或負債。信用卡的結帳日和繳款日也在月曆上，點那一天的項目就能修改。</p>
+    return `<div class="bill-row" data-edit="bill" data-id="${b.id}"><span class="mk mk-sub" style="--c:${billColor(b)}"></span>${billIcon(b)}<span class="grow">${esc(b.name)}<small>${esc(b.cat || '其他')}・${(BILL_CYCLES.find(c => c.v === (b.cycle || '1')) || {}).label}${n ? `・下次 ${mdTxt(n)}` : b.endDate ? '・已結束' : ''}${cardOf(b.payWith) ? `・刷 ${esc(cardOf(b.payWith).name)}` : ''}</small></span><span class="due-amt">${(b.ccy || 'TWD') === state.currency ? fmt(+b.amount || 0) : `${b.ccy} ${(+b.amount || 0).toLocaleString()}<small class="muted">≈ ${fmt((+b.amount || 0) * billFx(b))}</small>`}${(b.cycle || '1') !== '1' ? `<small class="muted">月均 ${fmt(perMonth(b))}</small>` : ''}</span></div>`; };
+  const cardRow = c => `<div class="bill-row" data-edit="bill" data-id="${c.id}">${UI.bankIcon(bankOf(c.bank))}<span class="grow">${esc(c.name)}<small>結帳 ${c.closeDay || '—'} 日・繳款 ${c.dueDay || '—'} 日・${c.autopay === 'manual' ? '要自己繳' : '自動扣繳'}</small></span><span class="due-amt muted small">${state.bills.some(b => isSub(b) && b.payWith === c.id) ? '刷卡訂閱併入' : '只標繳款日'}</span></div>`;
+  return `<div class="card bills-card fixed-list">
+    <h2>${Icon.svg('calendar', 24)} 固定扣繳 <small class="muted">${subs.length ? `${live.length} 項・月均 ${fmt(mon)}` : ''}</small></h2>
+    <div>
+      ${subs.length ? subs.map(subRow).join('') : `<div class="hint-row">${Icon('calendar')}<span>每個月（或每年）固定要付的錢都放這裡：Netflix、電信費、保險費、房租、水電瓦斯、小孩教育基金。隨手花的不用記。</span></div>`}
+      ${cards.length ? `<div class="fx-sub">信用卡繳款日</div>${cards.map(cardRow).join('')}` : ''}
+      <div class="fx-add"><button type="button" class="btn mini" data-addbill="sub">${Icon.svg('plus', 16)} 新增固定扣繳</button><button type="button" class="btn mini" data-addbill="card">${Icon.svg('card', 16)} 信用卡繳款日</button></div>
+      <p class="small muted fold-note">不會算進淨資產。年繳、季繳的會換算成月均；信用卡只標繳款日，卡費裡隨手花的不算，只算刷在卡上的固定扣繳。月曆在「還款」分頁。</p>
     </div>
   </div>`;
 }
+// 每月固定支出：貸款月付＋固定扣繳（月均）＋定期投入（自有資金的投資計畫）
+function planSaveAt(ym) {
+  return state.plans.filter(p => (!p.source || p.source === 'self') && p.startYM).reduce((t, p) => { const k = Loan.ymDiff(p.startYM, ym), am = Plan.amounts(p); return t + (k >= 0 && k < am.length ? am[k] : 0); }, 0);
+}
+function baseOf(P) {
+  const ym = P ? P.cur : Loan.nowYM();
+  const debt = P ? P.months[0].total : 0;
+  const live = state.bills.filter(b => isSub(b) && (!b.endDate || new Date(b.endDate) >= new Date()));
+  const fixed = live.reduce((t, b) => t + perMonth(b), 0);
+  const fixedNow = billEvents(ym).filter(e => e.kind === 'charge').reduce((t, e) => t + e.amount, 0);
+  const save = planSaveAt(ym);
+  return { debt, fixed, fixedNow, save, base: debt + fixed + save, now: debt + fixedNow + save };
+}
+function baseCardHTML() {
+  const P = state.debts.length ? projection(2) : null, B = baseOf(P);
+  const seg = [['貸款月付', B.debt, 'var(--viz-1)'], ['固定扣繳', B.fixed, 'var(--viz-5)'], ['定期投入', B.save, 'var(--viz-3)']].filter(x => x[1] > 0);
+  const tot = Math.max(1, B.base);
+  return `<div class="card base-card">
+    <div class="base-top"><span>每月固定支出</span><b>${fmt(B.base)}</b></div>
+    <div class="base-bar">${seg.map(([t, v, c]) => `<i style="width:${(v / tot * 100).toFixed(2)}%;--c:${c}"></i>`).join('')}</div>
+    <div class="base-legend">${seg.map(([t, v, c]) => `<span><span class="dot" style="--c:${c}"></span>${t} <b>${fmt(v)}</b></span>`).join('') || '<span class="muted">新增貸款或固定扣繳後，這裡會算出每個月固定要付多少</span>'}</div>
+    ${Math.round(B.now) !== Math.round(B.base) ? `<div class="base-now">這個月實際要付 <b>${fmt(B.now)}</b><small>${B.now > B.base ? '有年繳、季繳的項目落在這個月' : '年繳、季繳的項目這個月沒有扣'}</small></div>` : ''}
+    <p class="small muted base-note">貸款月付來自「負債」，定期投入來自「投資」（自有資金的計畫），固定扣繳在下面新增。</p>
+  </div>`;
+}
+function renderFixed() { const el = $('fixedBody'); if (el) el.innerHTML = baseCardHTML() + fixedHTML(); }
+async function fixedAddMenu() {
+  if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
+  const o = await UI.openPicker({ title: '新增固定扣繳', options: [
+    opt('sub', '新增固定扣繳', Icon('calendar'), '訂閱、保險費、房租、水電瓦斯、教育基金…每月或每年固定要付的'),
+    opt('card', '信用卡繳款日', Icon('card'), '結帳日、繳款截止日；刷這張卡的固定扣繳會併入'),
+  ] });
+  if (o) openEditor('bill', null, { bkind: o.value });
+}
+
+// ================= 收入（底部第二頁；進來要 Face ID）=================
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+// 依 2026 年費率估算：勞保 12.5%（普通 11.5%＋就保 1%）自付 20%、投保上限 45,800；健保 5.17% 自付 30%、上限 313,000；月薪 90,501 以上預扣 5%
+function incEst(v, gross) {
+  const g = +gross || 0, dep = clampN(Math.round(num(v.dep)), 0, 3), pen = Math.round(Math.min(g, 150000) * clampN(num(v.penPct), 0, 6) / 100);
+  if (!g) return { labor: 0, health: 0, tax: 0, pension: 0 };
+  return { labor: Math.round(clampN(g, 29500, 45800) * .125 * .2), health: Math.round(clampN(g, 29500, 313000) * .0517 * .3) * (1 + dep), tax: g >= 90501 ? Math.round((g - pen) * .05) : 0, pension: pen };
+}
+const isNum = x => x !== '' && x != null && isFinite(+x);
+function grossAt(inc, ym = Loan.nowYM()) {
+  const first = (state.incomes[0] || {}).id;
+  const r = state.raises.filter(x => (x.inc || first) === inc.id && x.ym && x.ym <= ym).sort((a, b) => a.ym < b.ym ? -1 : 1).at(-1);
+  return r ? +r.gross : +inc.gross || 0;
+}
+function incCalc(inc, ym) {
+  const g = grossAt(inc, ym), e = incEst(inc, g);
+  const rows = [
+    ['勞保自付', isNum(inc.labor) ? +inc.labor : e.labor, !isNum(inc.labor)],
+    ['健保自付' + (+inc.dep ? `（含 ${clampN(Math.round(num(inc.dep)), 0, 3)} 位眷屬）` : ''), isNum(inc.health) ? +inc.health : e.health, !isNum(inc.health)],
+    ['勞退自提' + (num(inc.penPct) ? ` ${num(inc.penPct)}%` : ''), e.pension, false],
+    ['福委會', +inc.welfare || 0, false],
+    ['預扣所得稅', isNum(inc.tax) ? +inc.tax : e.tax, !isNum(inc.tax)],
+    ['其他扣款', +inc.otherDed || 0, false],
+  ].filter(r => r[1] > 0);
+  const ded = rows.reduce((t, r) => t + r[1], 0);
+  return { gross: g, rows, ded, net: g - ded };
+}
+let incOK = false, incShow = false;
+const incAmt = n => incShow ? fmt(n) : '$••••••';
+function renderIncome() {
+  const el = $('incomeBody'); if (!el) return;
+  const v = Vault.info();
+  if (!incOK) {
+    if (v && v.faceID) el.innerHTML = `<div class="card inc-gate">${Icon('lock', 'ico-xl')}<p>收入是比較私密的資料，看之前先用 Face ID 驗證</p><button type="button" class="btn primary" id="incFace">用 Face ID 解鎖</button><button type="button" class="link-btn" id="incPinGo">改用 PIN</button><div id="incPinBox" class="inrow" hidden><input id="incPin" type="password" inputmode="numeric" placeholder="輸入 PIN"><button type="button" class="btn" id="incPinOk">確定</button></div></div>`;
+    else if (v) el.innerHTML = `<div class="card inc-gate">${Icon('lock', 'ico-xl')}<p>收入是比較私密的資料，看之前先輸入 PIN</p><div id="incPinBox" class="inrow"><input id="incPin" type="password" inputmode="numeric" placeholder="輸入 PIN"><button type="button" class="btn primary" id="incPinOk">確定</button></div></div>`;
+    else if (!prefs.incNoLock) el.innerHTML = `<div class="card inc-gate">${Icon('lock', 'ico-xl')}<p>收入是比較私密的資料。建議開啟 Face ID 加密鎖，之後每次進收入頁都要驗證。</p><button type="button" class="btn primary" data-incset>開啟 Face ID 加密鎖</button><button type="button" class="link-btn" id="incSkip">先不要，直接看</button></div>`;
+    else incOK = true;
+    if (!incOK) { if (currentView === 'income') $('fab').hidden = true; return; }
+  }
+  if (currentView === 'income') $('fab').hidden = false;
+  const ym = Loan.nowYM(), y = ym.slice(0, 4);
+  const cs = state.incomes.map(i => ({ i, c: incCalc(i, ym) }));
+  const net = cs.reduce((t, x) => t + x.c.net, 0);
+  const B = baseOf(state.debts.length ? projection(2) : null);
+  const first = (state.incomes[0] || {}).id;
+  const upcoming = r => r.ym > ym;
+  const card = ({ i, c }) => { const nx = state.raises.filter(r => (r.inc || first) === i.id && upcoming(r)).sort((a, b) => a.ym < b.ym ? -1 : 1)[0];
+    return `<div class="card inc-card" data-edit="income" data-id="${i.id}">
+      <div class="inc-row inc-gross"><span><b>${esc(i.name)}</b><small>每月應發${i.payDay ? `・${i.payDay} 日發薪` : ''}${nx ? `・${nx.ym.replace('-', '/')} 起調整為 ${incAmt(+nx.gross)}` : ''}</small></span><b>${incAmt(c.gross)}</b></div>
+      ${c.rows.map(r => `<div class="inc-row"><span>− ${r[0]}${r[2] ? ' <span class="chip gray">估算</span>' : ''}</span><span>${incAmt(r[1])}</span></div>`).join('')}
+      <div class="inc-row inc-net"><span>實拿</span><b>${incAmt(c.net)}</b></div></div>`; };
+  const raises = [...state.raises].sort((a, b) => a.ym < b.ym ? 1 : -1);
+  const bon = [...state.bonuses].sort((a, b) => a.ym < b.ym ? 1 : -1);
+  const yb = bon.filter(b => (b.ym || '').startsWith(y)).reduce((t, b) => t + (+b.amount || 0), 0);
+  el.innerHTML = `
+    <div class="card inc-sum">
+      <div class="inc-sum-top"><span>每月實拿</span><button type="button" class="eye-btn" id="incEye">${incShow ? EYE_ON : EYE_OFF}</button></div>
+      <b class="inc-big">${incAmt(net)}</b>
+      ${cs.length ? `<div class="inc-free"><span>實拿 − 每月固定支出 ${incAmt(B.base)}</span><b class="${net - B.base >= 0 ? 'pos' : 'neg'}">可自由運用 ${incAmt(net - B.base)}</b></div>` : ''}
+    </div>
+    ${cs.length ? cs.map(card).join('') : `<div class="card empty big-empty">${Icon('wallet', 'ico-xl')}<p>點右下角 ＋ 新增你的薪水：填每月應發，勞健保和預扣稅會先幫你估算</p></div>`}
+    <div class="card"><h2>${Icon.svg('up', 22)} 調薪紀錄</h2>
+      ${raises.length ? raises.map(r => `<div class="bill-row" data-edit="raise" data-id="${r.id}"><span class="grow">${(r.ym || '').replace('-', '/')} 起${state.incomes.length > 1 ? `・${esc((state.incomes.find(i => i.id === (r.inc || first)) || {}).name || '')}` : ''}<small>${esc(r.note || '')}${upcoming(r) ? ' 還沒生效' : ''}</small></span><span class="due-amt">${incAmt(+r.gross)}</span></div>`).join('') : '<p class="small muted">加薪時新增一筆「從哪個月開始、新的每月應發」，之前的月份照舊，看得到薪水怎麼長上來</p>'}
+      <button type="button" class="btn mini" data-add="raise">${Icon.svg('plus', 16)} 新增調薪</button></div>
+    <div class="card"><h2>${Icon.svg('star', 22)} 獎金 <small class="muted">${y} 年合計 ${incAmt(yb)}</small></h2>
+      ${bon.length ? bon.map(b => `<div class="bill-row" data-edit="bonus" data-id="${b.id}"><span class="grow">${esc(b.name)}<small>${(b.ym || '').replace('-', '/')}${upcoming(b) ? '・還沒發' : ''}</small></span><span class="due-amt">${incAmt(+b.amount || 0)}</span></div>`).join('') : '<p class="small muted">年終、三節、績效獎金記在這裡，不會攤進每月</p>'}
+      <button type="button" class="btn mini" data-add="bonus">${Icon.svg('plus', 16)} 新增獎金</button></div>
+    <p class="small muted inc-note">勞保、健保、預扣稅依 2026 年費率估算（勞保 12.5% 自付 20%、健保 5.17% 自付 30%、月薪 90,501 以上預扣 5%），實際以薪資單為準；在編輯裡填了數字就用你填的。</p>`;
+}
+async function incomeAddMenu() {
+  if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
+  const o = await UI.openPicker({ title: '新增', options: [opt('income', '新增收入', Icon('wallet'), '薪水、兼職、租金收入'), opt('raise', '新增調薪', Icon('up'), '從哪個月開始、新的每月應發'), opt('bonus', '新增獎金', Icon('star'), '年終、三節、績效')] });
+  if (o) openEditor(o.value);
+}
+// 編輯收入時：應發、眷屬、自提一改，估算的勞健保、預扣稅馬上跟著變
+$('editFields').addEventListener('input', e => {
+  if (!editing || editing.kind !== 'income' || !['gross', 'dep', 'penPct'].includes(e.target.name)) return;
+  vals[e.target.name] = e.target.value;
+  const est = incEst(vals, num(vals.gross));
+  ['labor', 'health', 'tax'].forEach(k => { const box = $('editFields').querySelector(`[data-k="${k}"]`); if (!box) return; box.querySelector('input').placeholder = String(est[k]); const h = box.querySelector('.hint'); if (h) h.textContent = `空白＝自動估算 ${fmt(est[k])}`; });
+});
+document.addEventListener('click', async e => {
+  if (!e.target.closest('#incomeBody')) return;
+  if (e.target.closest('#incEye')) { incShow = !incShow; return renderIncome(); }
+  if (e.target.closest('#incSkip')) { prefs.incNoLock = true; savePrefs(); incOK = true; return renderIncome(); }
+  if (e.target.closest('[data-incset]')) { showView('settings'); return openSetPage('lock'); }
+  if (e.target.closest('#incPinGo')) { $('incPinBox').hidden = false; return $('incPin').focus(); }
+  if (e.target.closest('#incFace')) { try { await Vault.verify(); incOK = true; renderIncome(); } catch (err) { toast('沒有通過驗證'); } return; }
+  if (e.target.closest('#incPinOk')) { try { await Vault.checkPIN($('incPin').value); incOK = true; renderIncome(); } catch (err) { toast(err.message || 'PIN 不正確'); } }
+});
 // 貸款：一筆一列，點了才展開細項
 function loansCardHTML(P) {
   const m0 = P.months[0];
@@ -2218,7 +2400,7 @@ document.addEventListener('click', e => { if (e.target.closest('#paidMore')) { p
 function renderRepay() {
   const el = $('repayBody');
   if (!state.debts.length) {
-    el.innerHTML = (state.bills.length ? dueCalHTML(projection(2)) : '') + billsCardHTML() + `<div class="card empty big-empty">${Icon('repay', 'ico-xl')}<p>到「負債」新增貸款，這裡就會推算你未來每個月要繳多少</p></div>`;
+    el.innerHTML = (state.bills.length ? dueCalHTML(projection(2)) : '') + `<div class="card empty big-empty">${Icon('repay', 'ico-xl')}<p>到「負債」新增貸款，這裡就會推算你未來每個月要繳多少</p></div>`;
     return;
   }
   const all = Plan.horizonAll(state.debts);
@@ -2290,7 +2472,6 @@ function renderRepay() {
     </div>
     ${dueCalHTML(P)}
     ${loansCardHTML(P)}
-    ${billsCardHTML()}
     ${paidCardHTML()}
     <div class="card">
       <h2>${Icon.svg('warn', 24)} 重要時間點</h2>
@@ -3409,7 +3590,7 @@ async function exportBackup() {
 }
 function applyRestore(d) {
   if (!Array.isArray(d.assets) || !Array.isArray(d.debts)) throw new Error('格式不正確');
-  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], bills: d.bills || [], ai: state.ai, backup: state.backup });
+  state = migrate({ currency: d.currency, assets: d.assets, debts: d.debts, plans: d.plans || [], history: d.history || [], bills: d.bills || [], incomes: d.incomes || [], raises: d.raises || [], bonuses: d.bonuses || [], ai: state.ai, backup: state.backup });
   lastLv = null; levelsKey = '';
   save();
 }

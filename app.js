@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.1.1';
+const APP_VERSION = '6.1.2';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -421,10 +421,10 @@ const CAT_SLOT = { '不動產': 1, '台股': 2, '現金/存款': 3, '美股': 4,
 const catColor = c => CAT_SLOT[c] ? `var(--viz-${CAT_SLOT[c]})` : Charts.OTHER;
 const donutSel = {};
 // slices: [{key, label, icon, value, color, sub}]
-function donutHTML(id, slices, centerTop) {
+function donutHTML(id, slices, centerTop, opt = {}) {
   const total = slices.reduce((t, x) => t + x.value, 0);
   const sel = slices.find(x => x.key === donutSel[id]);
-  const c = sel ? { t: sel.label, b: short(sel.value), s: total ? `${(sel.value / total * 100).toFixed(1)}%` : '' } : { t: centerTop, b: short(total), s: `${slices.length} 項` };
+  const c = sel ? { t: sel.label, b: short(sel.value), s: total ? `${(sel.value / total * 100).toFixed(1)}%` : '' } : opt.noTotal ? { t: '', b: `${slices.length} 項`, s: '點一塊看金額' } : { t: centerTop, b: short(total), s: `${slices.length} 項` };
   return `<div class="donut-wrap" data-donut="${id}">
     <div class="donut-box">${Charts.donut(slices, { selected: sel ? sel.key : null })}
       <div class="donut-center"><small>${esc(c.t)}</small><b>${c.b}</b><small>${c.s}</small></div></div>
@@ -2255,16 +2255,19 @@ function baseOf(P) {
   const save = planSaveAt(ym);
   return { debt, fixed, fixedNow, save, base: debt + fixed + save, now: debt + fixedNow + save };
 }
+// 每月固定支出：一個總數＋圓餅拆解（固定扣繳每一項，有自有資金的定期投入也算一塊）
 function baseCardHTML() {
-  const B = baseOf(null), base = B.fixed + B.save;
-  const seg = [['固定扣繳', B.fixed, 'var(--viz-5)'], ['定期投入', B.save, 'var(--viz-3)']].filter(x => x[1] > 0);
-  const tot = Math.max(1, base), now = B.fixedNow + B.save;
+  const B = baseOf(null), base = B.fixed + B.save, now = B.fixedNow + B.save;
+  const live = state.bills.filter(b => isSub(b) && (!b.endDate || new Date(b.endDate) >= new Date())).map(b => ({ b, v: perMonth(b) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  const top = live.slice(0, 8), rest = live.slice(8).reduce((t, x) => t + x.v, 0);
+  const slices = top.map((x, i) => ({ key: x.b.id, label: x.b.name, icon: billIcon(x.b), value: x.v, color: Charts.PALETTE[i % Charts.PALETTE.length], sub: x.b.cat || '' }));
+  if (rest > 0) slices.push({ key: '__rest', label: `其他 ${live.length - 8} 項`, value: rest, color: Charts.OTHER });
+  if (B.save > 0) slices.push({ key: '__save', label: '定期投入', icon: Icon('invest'), value: B.save, color: 'var(--accent)', sub: '投資計畫（自有資金）' });
   return `<div class="card base-card">
     <div class="base-top"><span>每月固定支出</span><b>${fmt(base)}</b></div>
-    <div class="base-bar">${seg.map(([t, v, c]) => `<i style="width:${(v / tot * 100).toFixed(2)}%;--c:${c}"></i>`).join('')}</div>
-    <div class="base-legend">${seg.map(([t, v, c]) => `<span><span class="dot" style="--c:${c}"></span>${t} <b>${fmt(v)}</b></span>`).join('') || '<span class="muted">新增固定扣繳後，這裡會算出每個月固定要付多少</span>'}</div>
     ${Math.round(now) !== Math.round(base) ? `<div class="base-now">這個月實際要付 <b>${fmt(now)}</b><small>${now > base ? '有年繳、季繳的項目落在這個月' : '年繳、季繳的項目這個月沒有扣'}</small></div>` : ''}
-    <p class="small muted base-note">不含貸款（貸款在「還款」分頁）。定期投入來自「投資」裡自有資金的計畫。</p>
+    ${slices.length ? donutHTML('fx', slices, '', { noTotal: true }) : '<p class="muted small">新增固定扣繳後，這裡會算出每個月固定要付多少</p>'}
+    <p class="small muted base-note">年繳、季繳換算成月均；不含貸款（貸款在「還款」分頁）。點圓餅或項目看占多少。</p>
   </div>`;
 }
 // 手動調整順序（負債、固定扣繳）：▲▼ 移動，完成就存
@@ -2284,16 +2287,7 @@ document.addEventListener('click', e => {
   else { const subs = state.bills.filter(isSub), i = subs.findIndex(x => x.id === id), j = i + +dir; if (i < 0 || j < 0 || j >= subs.length) return; const ia = state.bills.indexOf(subs[i]), ja = state.bills.indexOf(subs[j]); [state.bills[ia], state.bills[ja]] = [state.bills[ja], state.bills[ia]]; }
   render();
 });
-// 固定扣繳占比（甜甜圈）：每一項的月均
-function fixedDonutHTML() {
-  const live = state.bills.filter(b => isSub(b) && (!b.endDate || new Date(b.endDate) >= new Date())).map(b => ({ b, v: perMonth(b) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
-  if (live.length < 2) return '';
-  const top = live.slice(0, 8), rest = live.slice(8).reduce((t, x) => t + x.v, 0);
-  const slices = top.map((x, i) => ({ key: x.b.id, label: x.b.name, icon: billIcon(x.b), value: x.v, color: Charts.PALETTE[i % Charts.PALETTE.length], sub: x.b.cat || '' }));
-  if (rest > 0) slices.push({ key: '__rest', label: `其他 ${live.length - 8} 項`, value: rest, color: Charts.OTHER });
-  return `<div class="card"><h2>${Icon.svg('chart', 22)} 每月固定扣繳占比</h2>${donutHTML('fx', slices, '每月')}<p class="small muted">年繳、季繳的換算成月均；點圓餅或下面的項目看占多少。</p></div>`;
-}
-function renderFixed() { const el = $('fixedBody'); if (el) el.innerHTML = baseCardHTML() + fixedDonutHTML() + fixedHTML(); }
+function renderFixed() { const el = $('fixedBody'); if (el) el.innerHTML = baseCardHTML() + fixedHTML(); }
 async function fixedAddMenu() {
   if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
   const o = await UI.openPicker({ title: '新增固定扣繳', options: [

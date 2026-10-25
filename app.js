@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '5.29.0';
+const APP_VERSION = '5.29.1';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -469,7 +469,7 @@ function renderNwTrend() {
   scrubData.nw = { pts, tip: p => [p.label.replace(/-/g, '/'), fmt(p.v)], on: k => { nwSel = k; const b = el.querySelector('.sel-box'); if (b) b.innerHTML = nwSelHTML(pts[k]); } };
   el.innerHTML = `<div class="chips">${[[30, '1 月'], [90, '3 月'], [365, '1 年'], [0, '全部']].map(([v, t]) => `<button type="button" class="chip-btn ${nwRange === v ? 'on' : ''}" data-nwr="${v}">${t}</button>`).join('')}</div>
     <div class="nw-delta">${first.label.slice(5).replace('-', '/')} 起 <b class="${diff >= 0 ? 'pos' : 'neg'}">${diff >= 0 ? '+' : '−'}${fmt(Math.abs(diff))}</b></div>
-    <div class="chart-wrap" id="nwChart">${Charts.line(pts, { selected: nwSel, color: diff >= 0 ? 'var(--viz-3)' : 'var(--viz-2)', hideAxis: hidden, fmtX: l => l.slice(5).replace('-', '/'), sid: 'nw' })}</div>
+    <div class="chart-wrap" id="nwChart">${Charts.line(pts, { selected: nwSel, color: diff >= 0 ? '#e53935' : '#2e9e4f', hideAxis: hidden, fmtX: l => l.slice(5).replace('-', '/'), sid: 'nw' })}</div>
     <div class="sel-box">${nwSelHTML(s)}</div>`;
 }
 const nwSelHTML = s => `<div class="sel-head"><b>${s.label.replace(/-/g, '/')}</b><b>${fmt(s.v)}</b></div>

@@ -73,7 +73,7 @@ const Vault = (() => {
   async function assert(credId, prfSalt) {
     const a = await navigator.credentials.get({ publicKey: {
       challenge: rand(32), rpId: location.hostname, userVerification: 'required', timeout: 60000,
-      allowCredentials: [{ type: 'public-key', id: credId, transports: ['internal', 'hybrid'] }],
+      allowCredentials: [{ type: 'public-key', id: credId, transports: ['internal'] }],   // 只用這台手機的 Face ID（不跳「用其他裝置」選項）
       extensions: prfSalt ? { prf: { eval: { first: prfSalt } } } : undefined,
     } });
     const ext = a.getClientExtensionResults ? a.getClientExtensionResults() : {};

@@ -28,14 +28,15 @@ const Plan = (() => {
   const actual = (p, i, planned) => (p.done && p.done[i] != null ? n0(p.done[i]) : planned);
 
   // 到 ym 月「月初」為止已投入的金額（當月投入要下個月才開始算利息；已確認的當月投入立即算）
-  function investedBefore(p, ym, cur = nowYM()) {
+  // strict：只算前幾個月投入的（算當月要繳的利息用；當月投入的錢下個月的扣款才會有利息）
+  function investedBefore(p, ym, cur = nowYM(), strict = false) {
     if (!p.startYM) return 0;
     const am = amounts(p);
     let sum = 0;
     am.forEach((a, i) => {
       const m = ymAdd(p.startYM, i);
       const d = ymDiff(m, ym);
-      if (d > 0 || (d === 0 && p.done && p.done[i] != null)) sum += actual(p, i, a);
+      if (d > 0 || (!strict && d === 0 && p.done && p.done[i] != null)) sum += actual(p, i, a);
     });
     return sum;
   }
@@ -60,16 +61,16 @@ const Plan = (() => {
   const limitAt = (d, ym) => latest(d, 'limit', ym, 'limit', n0(d.limit));
   // 動用、還本：當月發生，下個月起才影響利息（跟計畫投入一樣）
   const adjBefore = (d, ym) => chg(d, 'draw').filter(c => ymDiff(c.ym, ym) > 0).reduce((t, c) => t + n0(c.amount), 0) - chg(d, 'repay').filter(c => ymDiff(c.ym, ym) > 0).reduce((t, c) => t + n0(c.amount), 0);
-  function drawnAt(d, plans, ym, cur = nowYM()) {
+  function drawnAt(d, plans, ym, cur = nowYM(), strict = false) {
     let drawn = n0(d.drawn) + adjBefore(d, ym);
-    for (const p of plans) if (p.source === d.id) drawn += investedBefore(p, ym, cur);
+    for (const p of plans) if (p.source === d.id) drawn += investedBefore(p, ym, cur, strict);
     drawn = Math.max(0, drawn);
     const limit = limitAt(d, ym);
     return limit ? Math.min(drawn, limit) : drawn;
   }
   function revolvingStatus(d, plans, cur = nowYM()) {
     const r = rateAt(d, cur) / 100 / 12;
-    const now = drawnAt(d, plans, cur, cur);
+    const now = drawnAt(d, plans, cur, cur), payBal = drawnAt(d, plans, cur, cur, true);
     const linked = plans.filter(p => p.source === d.id);
     let full = now, fullYM = null;
     for (const p of linked) {
@@ -78,7 +79,7 @@ const Plan = (() => {
     }
     if (fullYM) full = drawnAt(d, plans, fullYM, cur);
     return {
-      balance: now, monthly: now * r, monthlyInterest: now * r, revolving: true,
+      balance: now, monthly: payBal * r, monthlyInterest: payBal * r, revolving: true,
       limit: limitAt(d, cur), rate: rateAt(d, cur), fullDrawn: full, fullInterest: full * r, fullYM: fullYM ? ymSlash(fullYM) : null,
       inGrace: false, graceLeft: 0, monthsLeft: Infinity, interestLeft: Infinity, payoffYM: d.endYM ? ymSlash(d.endYM) : null,
     };
@@ -128,7 +129,7 @@ const Plan = (() => {
       } else if (d.mode === 'revolving') {
         const r = n0(d.rate) / 100 / 12;
         months.forEach(m => {
-          const bal = drawnAt(d, plans, m.ym, cur), rm = rateAt(d, m.ym) / 100 / 12;
+          const bal = drawnAt(d, plans, m.ym, cur, true), rm = rateAt(d, m.ym) / 100 / 12;
           if (bal > 0) m.items[d.id] = { pay: bal * rm, interest: bal * rm, principal: 0, balance: bal, revolving: true };
         });
         for (const c of chg(d, 'rate')) if (ymDiff(cur, c.ym) > 0) { const b = drawnAt(d, plans, c.ym, cur); ev(d, c.ym, 'rateChange', { from: b * rateAt(d, ymAdd(c.ym, -1)) / 1200, to: b * n0(c.rate) / 1200, rate: n0(c.rate) }); }
@@ -205,7 +206,7 @@ const Plan = (() => {
       ym = ymAdd(ym, 1);                                   // 動用後的下個月開始付息
       for (let g = 0; ymDiff(ym, last) >= 0 && g < 600; g++, ym = ymAdd(ym, 1)) {
         let bal = (d.drawnYM && ymDiff(d.drawnYM, ym) > 0 ? n0(d.drawn) : 0) + adjBefore(d, ym);
-        for (const p of linked) bal += investedBefore(p, ym, cur);
+        for (const p of linked) bal += investedBefore(p, ym, cur, true);
         bal = Math.max(0, bal);
         if (limitAt(d, ym)) bal = Math.min(bal, limitAt(d, ym));
         if (bal > 0) addM(ym, bal * rateAt(d, ym) / 1200, 0);

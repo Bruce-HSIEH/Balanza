@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.1.2';
+const APP_VERSION = '6.1.3';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -2522,7 +2522,7 @@ function renderRepay() {
     return `<li class="mrow ${evs.length ? 'has-ev' : ''} ${open ? 'open' : ''}" data-ym="${m.ym}">
       <div class="mrow-head"><span class="mym">${m.ym.replace('-', '/')}</span>
         <span class="grow">${evs.map(e => `<span class="chip ${e.type === 'graceEnd' || e.type === 'balloon' ? 'red' : e.type === 'payoff' ? 'green' : 'blue'}">${esc(e.debt.name)}${e.type === 'graceEnd' ? '寬限期結束' : e.type === 'graceStart' ? '寬限期開始' : e.type === 'payoff' ? '還清' : e.type === 'balloon' ? '到期還本' : e.type === 'rateChange' ? '利率調整' : '投入完成'}</span>`).join('')}</span>
-        <span class="mtot">${fmt(m.total)}${k && Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'neg' : 'pos'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
+        <span class="mtot">${fmt(m.total)}${Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'pos' : 'neg'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
       <div class="mrow-detail">${series.map(s => { const it = m.items[s.id]; if (!it || it.pay <= 0) return ''; const dd = Loan.dueDay(s.d); return `<div class="kv"><span>${dd ? `<span class="dday">${Math.min(dd, Loan.daysIn(m.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}<small class="muted"> 本 ${fmt(it.principal)} / 息 ${fmt(it.interest)}</small></span></div>`; }).join('')}</div></li>`;
   }).join('');
   // 貸款逐月明細：一年一頁，左右滑 30 年
@@ -2546,13 +2546,13 @@ function renderRepay() {
       const m = PY.months[k];
       if (!m) return '';
       yt += m.total;
-      const prev = k ? PY.months[k - 1].total : m.total, diff = m.total - prev;
+      const prev = k ? PY.months[k - 1].total : (PAST[Loan.ymAdd(m.ym, -1)] || {}).total ?? m.total, diff = m.total - prev;
       const evs = PY.events.filter(e => e.ym === m.ym && e.type !== 'lineEnd');
       const open = repayOpen.has(m.ym);
       return `<li class="mrow ${evs.length ? 'has-ev' : ''} ${open ? 'open' : ''}" data-ym="${m.ym}">
       <div class="mrow-head"><span class="mym">${mi + 1} 月</span>
         <span class="grow">${evs.map(e => `<span class="chip ${e.type === 'graceEnd' || e.type === 'balloon' ? 'red' : e.type === 'payoff' ? 'green' : 'blue'}">${esc(e.debt.name)}${e.type === 'graceEnd' ? '寬限期結束' : e.type === 'graceStart' ? '寬限期開始' : e.type === 'payoff' ? '還清' : e.type === 'balloon' ? '到期還本' : e.type === 'rateChange' ? '利率調整' : '投入完成'}</span>`).join('')}</span>
-        <span class="mtot">${fmt(m.total)}${k && Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'neg' : 'pos'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
+        <span class="mtot">${fmt(m.total)}${Math.abs(diff) >= 1 ? `<small class="${diff > 0 ? 'pos' : 'neg'}">${diff > 0 ? '▲' : '▼'}${fmt(Math.abs(diff))}</small>` : ''}</span></div>
       <div class="mrow-detail">${series.map(s => { const it = m.items[s.id]; if (!it || it.pay <= 0) return ''; const dd = Loan.dueDay(s.d); return `<div class="kv"><span>${dd ? `<span class="dday">${Math.min(dd, Loan.daysIn(m.ym))} 日</span>` : ''}<span class="dot" style="--c:${s.color}"></span>${esc(s.d.name)}${it.grace ? ' · 寬限期' : ''}${it.revolving ? ' · 只繳息' : ''}</span><span>${fmt(it.pay)}<small class="muted"> 本 ${fmt(it.principal)} / 息 ${fmt(it.interest)}</small></span></div>`; }).join('') || '<div class="muted small">這個月沒有要繳的</div>'}</div></li>`;
     }).join('');
     const head = yi < 0 ? `全年已繳 <b class="muted">${fmt(yp)}</b>` : yi === 0 ? `全年 <b>${fmt(yt + yp)}</b><small class="muted">已繳 ${fmt(yp)}・還要繳 ${fmt(yt)}</small>` : `全年 <b>${fmt(yt)}</b>`;

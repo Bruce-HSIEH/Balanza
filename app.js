@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.3.0';
+const APP_VERSION = '6.3.1';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -2275,6 +2275,7 @@ function baseCardHTML() {
   const slices = top.map((x, i) => ({ key: x.b.id, label: x.b.name, icon: billIcon(x.b), value: x.v, color: Charts.PALETTE[i % Charts.PALETTE.length], sub: x.b.cat || '' }));
   if (rest > 0) slices.push({ key: '__rest', label: `其他 ${live.length - 8} 項`, value: rest, color: Charts.OTHER });
   B.plans.forEach((x, i) => slices.push({ key: '__save' + i, label: x.p.name, icon: Icon('invest'), value: x.amt, color: i % 2 ? 'var(--viz-3)' : 'var(--accent)', sub: x.from ? `定期投入・${+x.from.slice(5)} 月起` : '定期投入' }));
+  slices.sort((a, b) => (a.key === '__rest') - (b.key === '__rest') || b.value - a.value);   // 由大到小（「其他」放最後）
   return `<div class="card base-card">
     <div class="base-top"><span>每月固定支出</span><b>${fmt(base)}</b></div>
     ${Math.round(now) !== Math.round(base) ? `<div class="base-now">這個月實際要付 <b>${fmt(now)}</b><small>${[B.fixedNow > B.fixed ? '有年繳、季繳的項目落在這個月' : B.fixedNow < B.fixed ? '年繳、季繳的項目這個月沒有扣' : '', B.plans.some(x => x.from) ? '還沒開始的定期投入這個月不用付' : ''].filter(Boolean).join('；')}</small></div>` : ''}

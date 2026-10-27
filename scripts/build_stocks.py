@@ -420,10 +420,13 @@ def main():
     try:
         if a.only in (None, 'tw'):
             meta['tw'] = build_tw(a.budget)
+            meta['tw']['updated'] = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')   # 各市場最後更新股價的時間
         if a.only in (None, 'us'):
             meta['us'] = build_us(a.budget)
+            meta['us']['updated'] = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
         if a.only in (None, 'usall'):
             meta['usall'] = build_us_all(a.budget)
+            meta['usall']['updated'] = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
         if a.only != 'usall':
             meta['fx'] = build_fx(meta.get('fx', {}))
     finally:

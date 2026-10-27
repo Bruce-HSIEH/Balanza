@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.3.1';
+const APP_VERSION = '6.3.2';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -360,12 +360,14 @@ function render() {
 // --- 資料日期 ---
 const md = iso => { if (!iso) return '—'; const d = new Date(iso.length <= 10 ? iso + 'T00:00:00+08:00' : iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
 const ago = iso => { if (!iso) return Infinity; return Math.floor((Date.now() - new Date(iso.length <= 10 ? iso + 'T14:00:00+08:00' : iso)) / 86400000); };
+// 最後更新股價的時間（台灣時間，例如 10/23 14:25）
+const updTxt = iso => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 function stockDataLine() {
   const m = Stocks.info();
   if (!m) return '股價資料讀取中…';
   const tw = m.tw?.date, us = m.us?.date;
   const stale = Math.min(ago(tw), ago(us)) > 4;
-  return `股價：台股 ${md(tw)} 收盤、美股 ${md(us)} 收盤 · 每個交易日收盤後自動更新${stale ? '（資料超過 4 天沒更新，可能排程暫停了）' : ''}`;
+  return `股價：台股 ${md(tw)} 收盤（${updTxt(m.tw?.updated || m.updated)} 更新）、美股 ${md(us)} 收盤（${updTxt(m.us?.updated || m.updated)} 更新）· 每個交易日收盤後自動更新${stale ? '（資料超過 4 天沒更新，可能排程暫停了）' : ''}`;
 }
 
 // --- 資產：依大項分組 ---
@@ -4325,7 +4327,7 @@ Stocks.load().then(() => {
   const m = Stocks.info();
   const upd = m && m.updated ? new Date(m.updated).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '—';
   $('stockStatus').dataset.ok = '1';
-  $('stockStatus').innerHTML = (m ? `<b>台股 ${esc(m.tw?.date || '—')} 收盤</b>（${m.tw?.n || 0} 檔）、<b>美股 ${esc(m.us?.date || '—')} 收盤</b>（${m.us?.n || 0} 檔）<br>最後更新：${upd}<br>自動更新：週一～五 14:23（台股收盤後）、05:41（美股收盤後）` : '股價資料：尚未產生（GitHub Action 每天收盤後自動更新）') + fundStatus;
+  $('stockStatus').innerHTML = (m ? `<b>台股 ${esc(m.tw?.date || '—')} 收盤</b>（${m.tw?.n || 0} 檔，${updTxt(m.tw?.updated || m.updated)} 更新）、<b>美股 ${esc(m.us?.date || '—')} 收盤</b>（${m.us?.n || 0} 檔，${updTxt(m.us?.updated || m.updated)} 更新）<br>最後更新：${upd}<br>自動更新：週一～五 14:23（台股收盤後）、05:41（美股收盤後）` : '股價資料：尚未產生（GitHub Action 每天收盤後自動更新）') + fundStatus;
   if ($('view-assets').classList.contains('active')) renderAssets(summary());
 });
 LVR.loadIndex().then(ix => { lvrSummary = `更新到 ${ix.updated.slice(0, 10)}`; if (currentView === 'settings' && !setPage) renderSetMenu(); $('lvrStatus').innerHTML = `<b>成交資料：${esc(ix.seasons[0])}～${esc(ix.seasons.at(-1))}</b><br>最後更新：${esc(ix.updated.slice(0, 10))}<br>自動更新：每週一 03:17（內政部約每 10 天發布一批新成交）`; })

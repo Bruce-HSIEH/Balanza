@@ -104,11 +104,13 @@ def parse_spark(j):
         pairs = [(t, c) for t, c in zip(ts, cl) if c is not None]
         if not pairs:
             continue
-        closes = [c for _, c in pairs][-30:]
+        pairs = pairs[-30:]
+        closes = [c for _, c in pairs]
         if last and abs(closes[-1] - last) / last > 1e-6 and time.time() - pairs[-1][0] < 86400:
             closes[-1] = last
-        d = dt.datetime.fromtimestamp(pairs[-1][0], dt.timezone.utc).astimezone(TZ_TW if sym.endswith(('.TW', '.TWO')) else dt.timezone(dt.timedelta(hours=-5))).date().isoformat()
-        res[sym] = (name, [round(c, 4 if c < 1 else 2) for c in closes], d)
+        tz = TZ_TW if sym.endswith(('.TW', '.TWO')) else dt.timezone(dt.timedelta(hours=-5))
+        days = [dt.datetime.fromtimestamp(t, dt.timezone.utc).astimezone(tz).date().isoformat() for t, _ in pairs]
+        res[sym] = (name, [round(c, 4 if c < 1 else 2) for c in closes], days[-1], days)
     return res
 
 
@@ -136,7 +138,36 @@ def yahoo_spark(symbols, deadline, batch=20, rng='1mo'):
                 log('  spark 連續失敗，放棄')
                 break
         time.sleep(0.25)
+    if rng == '1mo' and res and time.time() < deadline:
+        merge_recent(res, deadline)
     return res
+
+
+def merge_recent(res, deadline):
+    """Yahoo 的 1 個月走勢常常慢一兩天才補上最新收盤；再用 5 天的資料把最新幾天接上去。"""
+    syms, added = list(res), 0
+    for i in range(0, len(syms), 20):
+        if time.time() > deadline:
+            break
+        q = urllib.parse.quote(','.join(syms[i:i + 20]), safe=',')
+        got = {}
+        for host in ('query1', 'query2'):
+            try:
+                got = parse_spark(get(f'https://{host}.finance.yahoo.com/v7/finance/spark?symbols={q}&range=5d&interval=1d', timeout=20))
+                break
+            except Exception:  # noqa
+                pass
+        for sym, r in got.items():
+            o = res.get(sym)
+            if not o or len(r) < 4 or len(o) < 4 or not r[2] or r[2] <= o[2]:
+                continue
+            new = [(d, c) for d, c in zip(r[3], r[1]) if d > o[2]]
+            if new:
+                res[sym] = (o[0] or r[0], (o[1] + [c for _, c in new])[-30:], new[-1][0], (o[3] + [d for d, _ in new])[-30:])
+                added += 1
+        time.sleep(0.25)
+    if added:
+        log(f'  用 5 天資料補上最新收盤：{added} 檔')
 
 
 def yahoo_chart(sym, rng='1mo'):

@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.3.2';
+const APP_VERSION = '6.3.3';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -1744,7 +1744,7 @@ const ASK_GUIDE = `Balanza 是台灣的個人資產負債 App（PWA），資料�
 - 總覽：淨資產、資產負債比例、等級吉祥物、淨資產走勢（手指可在圖上左右滑看每天數字）。
 - 資產：現金存款、台股、美股（自動收盤價）、基金（境內＋境外，自動淨值，或自己填市值）、債券、加密貨幣、保險、不動產（可用實價登錄估價）、車輛（只算殘值、不計入總資產）。股票基金可記多筆買進賣出、平均成本、損益。右下角 ＋ 可新增一筆、一次輸入股票（可用券商截圖 AI 辨識），或「用說的新增」。
 - 負債：房貸、理財型房貸（額度、只繳息、依投資計畫逐筆動用）、信貸、車貸、學貸、信用卡、親友借款。自動試算本息平均／本金平均／只繳息，支援寬限期、利率調整、延長年限、提前還本、本金校正等歷程，可連結抵押的房子。
-- 扣繳：每月固定扣繳（訂閱、保險、房租、水電、教育基金…可選服務／公司）、信用卡繳款日；最上面是「每月固定支出」＝貸款月付＋固定扣繳月均＋自有資金定期投入。
+- 扣繳：每月固定扣繳（訂閱、保險、房租、水電、教育基金…可選服務／公司）、信用卡繳款日；最上面是「每月固定支出」＝固定扣繳月均＋自有資金定期投入（不含貸款）。
 - 還款：扣款月曆（可左右滑、看過去已繳月份）、信用卡結帳日、未來每月要繳多少、貸款逐月明細、已經繳出去的利息本金。
 - 收入：在底部分頁按 › 切到第二頁，進來要 Face ID；記應發薪資，勞保、健保、預扣稅先估算可自行修改，有調薪紀錄、獎金（不攤進每月），算出實拿與可自由運用。
 - 投資：投資計畫（總額或每月投入、已投入月數、資金來源可選理財型房貸並自動建立額度與負債），標的可選台股、美股、基金，金額可填台幣或美金；每期確認實際成交後會加進持股。
@@ -2247,7 +2247,7 @@ function fixedHTML() {
     </div>
   </div>`;
 }
-// 每月固定支出：貸款月付＋固定扣繳（月均）＋定期投入（自有資金的投資計畫）
+// base＝貸款月付＋每月固定支出（固定扣繳月均＋自有資金定期投入），給可自由運用、AI 現金流用；扣繳頁的「每月固定支出」不含貸款
 function planSaveAt(ym) {
   return state.plans.filter(p => (!p.source || p.source === 'self') && p.startYM).reduce((t, p) => { const k = Loan.ymDiff(p.startYM, ym), am = Plan.amounts(p); return t + (k >= 0 && k < am.length ? am[k] : 0); }, 0);
 }
@@ -2370,7 +2370,7 @@ function renderIncome() {
     <div class="card inc-sum">
       <div class="inc-sum-top"><span>每月實拿</span><button type="button" class="eye-btn" id="incEye">${incShow ? EYE_ON : EYE_OFF}</button></div>
       <b class="inc-big">${incAmt(net)}</b>
-      ${cs.length ? `<div class="inc-free"><span>實拿 − 貸款與固定扣繳 ${incAmt(B.base)}</span><b class="${net - B.base >= 0 ? 'pos' : 'neg'}">可自由運用 ${incAmt(net - B.base)}</b></div>` : ''}
+      ${cs.length ? `<div class="inc-free"><span>實拿 − 貸款月付與每月固定支出 ${incAmt(B.base)}</span><b class="${net - B.base >= 0 ? 'pos' : 'neg'}">可自由運用 ${incAmt(net - B.base)}</b></div>` : ''}
     </div>
     ${cs.length ? cs.map(card).join('') : `<div class="card empty big-empty">${Icon('wallet', 'ico-xl')}<p>點右下角 ＋ 新增你的薪水：填每月應發，勞健保和預扣稅會先幫你估算</p></div>`}
     <div class="card"><h2>${Icon.svg('up', 22)} 調薪紀錄</h2>

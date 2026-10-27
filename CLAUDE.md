@@ -32,15 +32,9 @@
 - 用 `enterSim('rich' | 'normal' | 'debt')` 灌模擬資料；先在 localStorage 設 `balanza.seenVersion` 為目前版號，才不會每次跳更新紀錄
 - Face ID、iPhone 開機畫面、主畫面圖示在沙箱測不到，要請我用手機實測
 
-## 發版檢查清單（每次改功能都要做）
+## 發版（每次改程式都要做）
 
-- [ ] `app.js` 的 `APP_VERSION` 加版號：大版＝架構或分頁結構改變、中版＝新功能、小版＝修正與微調；同時有就取大的
-- [ ] `sw.js` 的 `CACHE` 名稱跟著改（否則手機不會更新）
-- [ ] `changelog.js` 與 `CHANGELOG.md` 都加一筆，內容一致（新的放最上面）
-- [ ] 新增的 .js 有加進 `index.html` 和 `sw.js` 的 `ASSETS`
-- [ ] 手機寬度（約 390px）和深色模式下看過一次
-- [ ] 有改 iPhone 開機圖（`splash/`）或主畫面圖示時：**換新檔名**（例如 `splash/v7-…`、`icon-v3-180.png`），並提醒我刪掉主畫面捷徑重新加入（刪之前先備份，AI 金鑰要重貼）
-- [ ] 推送用 `git fetch origin main && git rebase FETCH_HEAD && git push origin HEAD:main`（Actions 每天會自動提交資料，不先 rebase 會被拒）
+一律用 `release` skill（`.claude/skills/release/SKILL.md`），照它的步驟走。發版的規則只寫在那裡，這裡不重複，要改就改 skill。只改文件或 `data/` 時不用發版。
 
 ## 我的背景
 

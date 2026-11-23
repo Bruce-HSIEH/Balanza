@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-15T23:23:36+00:00",
+ "updated": "2026-11-23T00:18:32+00:00",
  "seasons": [
   "113S4",
   "114S1",
@@ -15,52 +15,52 @@
   "A": {
    "name": "臺北市",
    "districts": 12,
-   "tx": 31406
+   "tx": 31283
   },
   "B": {
    "name": "臺中市",
    "districts": 29,
-   "tx": 74829
+   "tx": 74861
   },
   "C": {
    "name": "基隆市",
    "districts": 7,
-   "tx": 6260
+   "tx": 6234
   },
   "D": {
    "name": "臺南市",
    "districts": 36,
-   "tx": 34028
+   "tx": 34079
   },
   "E": {
    "name": "高雄市",
    "districts": 36,
-   "tx": 55105
+   "tx": 55071
   },
   "F": {
    "name": "新北市",
    "districts": 28,
-   "tx": 76126
+   "tx": 76128
   },
   "G": {
    "name": "宜蘭縣",
    "districts": 12,
-   "tx": 10425
+   "tx": 10355
   },
   "H": {
    "name": "桃園市",
    "districts": 13,
-   "tx": 69371
+   "tx": 69328
   },
   "I": {
    "name": "嘉義市",
    "districts": 1,
-   "tx": 4423
+   "tx": 4443
   },
   "J": {
    "name": "新竹縣",
    "districts": 11,
-   "tx": 15183
+   "tx": 15004
   },
   "K": {
    "name": "苗栗縣",
@@ -70,52 +70,52 @@
   "M": {
    "name": "南投縣",
    "districts": 13,
-   "tx": 4880
+   "tx": 4891
   },
   "N": {
    "name": "彰化縣",
    "districts": 26,
-   "tx": 12241
+   "tx": 12279
   },
   "O": {
    "name": "新竹市",
    "districts": 1,
-   "tx": 7408
+   "tx": 7428
   },
   "P": {
    "name": "雲林縣",
    "districts": 20,
-   "tx": 7687
+   "tx": 7678
   },
   "Q": {
    "name": "嘉義縣",
    "districts": 17,
-   "tx": 4829
+   "tx": 4828
   },
   "T": {
    "name": "屏東縣",
    "districts": 28,
-   "tx": 8708
+   "tx": 8700
   },
   "U": {
    "name": "花蓮縣",
    "districts": 12,
-   "tx": 4027
+   "tx": 4025
   },
   "V": {
    "name": "臺東縣",
    "districts": 12,
-   "tx": 1876
+   "tx": 1870
   },
   "W": {
    "name": "金門縣",
    "districts": 5,
-   "tx": 946
+   "tx": 948
   },
   "X": {
    "name": "澎湖縣",
    "districts": 6,
-   "tx": 507
+   "tx": 498
   },
   "Z": {
    "name": "連江縣",

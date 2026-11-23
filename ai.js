@@ -172,33 +172,59 @@ const AI = (() => {
               cost_total: { type: 'number', description: '總成本／持有成本／付出成本' },
               pl_amount: { type: 'number', description: '未實現損益金額（虧損為負數）' },
               pl_pct: { type: 'number', description: '報酬率 %（虧損為負數，例 -3.25）' },
+              buy_date: { type: 'string', description: '這一筆的成交日期／買進日期，YYYY-MM-DD；只有月/日時用畫面上的年份分隔列補年份；總覽畫面沒有日期就省略' },
             },
             required: ['name'],
           },
         },
+        row_count: { type: 'number', description: '畫面標頭寫的總筆數（例如「筆數:44」），沒寫就省略' },
       },
       required: ['holdings'],
     },
   };
-  const VISION_PROMPT = `這些是券商 App 的庫存／持股截圖（可能多張、可能有重複的列）。請把每一檔持股整理出來：
-- 同一檔股票在不同截圖重複出現只列一次；同一檔在同一張圖有分「現股」「零股」「融資」就分開列。
-- 數字照畫面抄，千分位逗號去掉；紅綠色或 +/- 決定正負，虧損用負數。
-- 「張」要換成股（×1000）。美股可能有小數股。
-- 欄位對照：庫存股數/持有股數/庫存→shares；成交均價/持有均價/平均成本/成本均價→avg_cost；現價/市價/參考價→price；市值/參考市值/現值→market_value；總成本/持有成本/付出成本→cost_total；損益/未實現損益/參考損益→pl_amount；報酬率/損益率→pl_pct。
-- 不是持股的東西（帳戶總覽、交割款、廣告）不要列。
-- 「整股」「碎股」「定額」這類標籤是同一檔的交易方式，不要拆成多筆；用「總股數」那一行。
-- 欄位對照補充：總股數→shares（保留小數，例如 53.72618）；成交均價 (USD)／平均成本→avg_cost；成交均價後面標 (USD) 代表美股。
-- symbol 只放代號本身（例如 NVDA、QQQ、2330），不要加市場、逗號或交易所。英文代號一律 market=us，數字代號 market=tw。
-- 「總預估損益」如果幣別跟股價不同（例如美股但損益是台幣），pl_amount 填 null，只填 pl_pct。
-- 每一檔都一定要盡量填 shares 和 avg_cost，畫面上看得到就一定要填數字。
-範例：畫面寫「QQQ／總股數 53.72618／成交均價 (USD) 660.016402／總預估損益 +110,927 (+9.94%)」→ {"market":"us","symbol":"QQQ","name":"Invesco QQQ Trust","shares":53.72618,"avg_cost":660.016402,"price":null,"market_value":null,"cost_total":null,"pl_amount":null,"pl_pct":9.94}`;
+  // 改這段說明時，HOLD_TOOL 的欄位要一起改：Gemini 有 responseSchema，說明裡要它填、schema 沒有的欄位會被直接丟掉
+  const VISION_PROMPT = `這些是券商 App 的庫存／持股截圖（可能多張、依序往下滑、彼此可能有重疊的列）。先判斷是哪一種畫面：
 
+【A. 庫存明細】每一列或每一張卡片是「一次買進」，有成交日期（例如表格的「成交日期」欄、卡片右上角的 06/05）。
+- 每一列／每一張卡片各輸出一筆，**同一檔不要合併**，也不要因為股數相同就略過。「整股」「零股」標籤照樣一張卡一筆。
+- 每一筆都要填 buy_date（YYYY-MM-DD）。卡片只寫月/日時，年份取上方最近的「2026 年」這種分隔列；這張截圖看不到分隔列就沿用前一張的年份。
+- 卡片沒寫代號時（往下滑之後看不到最上面的商品名稱），沿用前面截圖最上方的代號，例如「(QLD) Proshares…」→ QLD。
+- 表格往下滑後看不到標頭：欄位順序照有標頭的那張截圖讀。每一列都一樣的價格是「市價」（price），不是成本。
+- 被截圖邊緣切掉、只看到一半的列也照樣輸出看得到的欄位，App 會自己去重。
+- 畫面標頭有總筆數（例如「筆數:44」）就填 row_count。
+
+【B. 持股總覽】每一檔只有一列（有總股數、均價，沒有每筆的成交日期）。
+- 同一檔股票在不同截圖重複出現只列一次；同一檔在同一張圖有分「現股」「零股」「融資」就分開列。
+- 「整股」「碎股」「定額」這類標籤是同一檔的交易方式，不要拆成多筆；用「總股數」那一行。
+
+共通規則：
+- 數字照畫面抄，千分位逗號去掉；紅綠色或 +/- 決定正負，虧損用負數。小數位數照抄，不要四捨五入。
+- 欄位對照：
+  shares ← 庫存股數／持有股數／總股數／本日餘額／股數／庫存。這些欄位的單位已經是「股」，不要再乘 1000；只有畫面明寫「張」才 ×1000。美股可能有小數股。
+  avg_cost ← 成交價／成交價 (USD)／成交均價／成交均價 (USD)／持有均價／平均成本／成本均價（每股）。
+  price ← 市價／現價／參考價。
+  market_value ← 股票市值／市值／參考市值／現值。
+  cost_total ← 付出成本／總成本／持有成本（含手續費的總金額）。
+  pl_amount ← 損益／未實現損益／參考損益／預估損益／總預估損益。
+  pl_pct ← 報酬率／損益率，或損益後面括號裡的 %。
+  buy_date ← 成交日期／買進日期／交易日期，或明細卡片上的日期。
+- 欄位名稱不在上面的對照裡時，依意思判斷要放哪一欄，不要因為名稱不同就留空。
+- 損益的幣別跟股價不同時（例如成交價標 USD，但損益是台幣、或畫面寫「幣別：TWD」），pl_amount 填 null，只填 pl_pct。
+- symbol 只放代號本身（例如 NVDA、QQQ、2330、00631L），不要加市場、逗號或交易所。數字開頭的代號（含 00631L、00981A 這種結尾有字母的）是台股 market=tw；英文字母開頭的是美股 market=us。
+- 不是持股的東西（帳戶總覽、交割款、廣告、按鈕文字如「下單」「調整」）不要列。
+- 畫面上看得到的 shares、avg_cost、buy_date、cost_total 一定要填數字，不要省略。
+
+範例 1（台股明細表格一列）：「00631L 元大台灣50正2｜損益 -2,105｜-1.31%｜現股｜本日餘額 7,000｜市價 22.66｜成交價 22.92｜付出成本 160,504｜股票市值 158,399｜成交日期 2026/11/20｜台幣」→ {"market":"tw","symbol":"00631L","name":"元大台灣50正2","shares":7000,"avg_cost":22.92,"price":22.66,"market_value":158399,"cost_total":160504,"pl_amount":-2105,"pl_pct":-1.31,"buy_date":"2026-11-20"}
+範例 2（美股明細卡片，上方分隔列「2026 年」，商品「(QLD) Proshares Trust Pshs Ultra QQQ」、幣別 TWD）：卡片「06/05｜股數 422｜成交價 (USD) 70.864834｜預估損益 -65,560 (-6.93%)」→ {"market":"us","symbol":"QLD","name":"Proshares Trust Pshs Ultra QQQ","shares":422,"avg_cost":70.864834,"pl_amount":null,"pl_pct":-6.93,"buy_date":"2026-06-05"}
+範例 3（持股總覽）：「QQQ／總股數 53.72618／成交均價 (USD) 660.016402／總預估損益 +110,927 (+9.94%)」→ {"market":"us","symbol":"QQQ","name":"Invesco QQQ Trust","shares":53.72618,"avg_cost":660.016402,"pl_amount":null,"pl_pct":9.94}`;
+
+  const TRUNC = 'AI 回應太長被截斷了，請一次少選幾張截圖再試';
   async function visionClaude(key, model, images, signal) {
     const content = [...images.map(im => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } })), { type: 'text', text: VISION_PROMPT }];
     const res = await fetch(URL, {
       method: 'POST', signal,
       headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model, max_tokens: 4000, tools: [HOLD_TOOL], tool_choice: { type: 'tool', name: 'record_holdings' }, messages: [{ role: 'user', content }] }),
+      body: JSON.stringify({ model, max_tokens: 16000, tools: [HOLD_TOOL], tool_choice: { type: 'tool', name: 'record_holdings' }, messages: [{ role: 'user', content }] }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -208,8 +234,10 @@ const AI = (() => {
       if (res.status === 429) throw new Error('使用次數太頻繁或額度不足，稍後再試');
       throw new Error(`AI 回應錯誤（${res.status}）：${msg}`);
     }
+    if (j.stop_reason === 'max_tokens') throw new Error(TRUNC);
     const tool = (j.content || []).find(c => c.type === 'tool_use');
-    return (tool && tool.input && tool.input.holdings) || [];
+    const inp = (tool && tool.input) || {};
+    return { holdings: clean(inp.holdings), rowCount: +inp.row_count || 0 };
   }
   async function visionGemini(key, model, images, signal) {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
@@ -217,7 +245,7 @@ const AI = (() => {
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [...images.map(im => ({ inlineData: { mimeType: im.mime, data: im.data } })), { text: VISION_PROMPT + '\n只輸出 JSON：{"holdings":[...]}' }] }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: toGemini(HOLD_TOOL.input_schema), temperature: 0 },
+        generationConfig: { responseMimeType: 'application/json', responseSchema: toGemini(HOLD_TOOL.input_schema), temperature: 0, maxOutputTokens: 32768 },
       }),
     });
     const j = await res.json().catch(() => ({}));
@@ -227,8 +255,13 @@ const AI = (() => {
       if (res.status === 429) throw new Error('Gemini 使用次數已達上限，稍後再試');
       throw new Error(`Gemini 回應錯誤（${res.status}）：${msg}`);
     }
-    const txt = (((j.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';
-    try { const o = JSON.parse(txt); return clean(o.holdings); } catch (e) { return []; }
+    const cand = (j.candidates || [])[0] || {};
+    if (cand.finishReason === 'MAX_TOKENS') throw new Error(TRUNC);
+    const txt = (cand.content || {}).parts?.map(p => p.text || '').join('') || '';
+    let o;
+    try { o = JSON.parse(txt); } catch (e) { const m = txt.match(/\{[\s\S]*\}/); try { o = m && JSON.parse(m[0]); } catch (e2) { o = null; } }
+    if (!o) throw new Error('AI 回傳的格式讀不懂（' + (cand.finishReason || '沒有內容') + '），請再試一次');
+    return { holdings: clean(o.holdings), rowCount: +o.row_count || 0 };
   }
   // 一次最多送 5 張，多的分批
   async function readHoldings(cfg, images, signal, onProgress) {
@@ -237,9 +270,10 @@ const AI = (() => {
       const batch = images.slice(i, i + 5);
       onProgress && onProgress(i, images.length);
       const r = cfg.provider === 'gemini' ? await visionGemini(cfg.gkey, cfg.gmodel, batch, signal) : await visionClaude(cfg.key, cfg.model, batch, signal);
-      out.push(...r);
+      out.push(...r.holdings);
+      out.rowCount = Math.max(out.rowCount || 0, r.rowCount);
     }
-    return out;
+    return out; // 陣列照截圖順序；out.rowCount＝畫面標頭的總筆數（沒有就 0）
   }
 
   function call(cfg, text, signal) {

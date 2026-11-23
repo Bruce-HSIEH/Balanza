@@ -230,6 +230,9 @@ dialog::backdrop { background: rgba(10, 20, 15, .45); backdrop-filter: blur(2px)
   display: block; width: 100%; padding: 11px 12px; font-size: 16px; border-radius: 12px;
   border: 1.5px solid var(--line); background: var(--soft); color: var(--text); transition: border-color .2s, box-shadow .2s;
 }
+/* iPhone 的日期／月份欄有系統自帶的最小寬度，半欄會撐爆蓋到隔壁 → 取消系統外觀、允許縮小、文字靠左 */
+input[type="date"], input[type="month"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
+input[type="date"]::-webkit-date-and-time-value, input[type="month"]::-webkit-date-and-time-value { text-align: left; min-height: 1.2em; }
 .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .field input.flash { animation: flash .8s ease; }
 @keyframes flash { 30% { background: var(--accent-soft); transform: scale(1.02); } }
@@ -659,7 +662,11 @@ body.privacy .big { color: var(--muted); }
 #tradeDialog .ticker { font-size: 14px; vertical-align: 2px; }
 .bulk-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 12px; }
 .bulk-dialog { width: min(96vw, 520px); }
-.bk-head, .bk-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 28px; gap: 6px; align-items: center; }
+.bk-head, .bk-row { display: grid; grid-template-columns: 1.2fr 1fr 28px; gap: 6px; align-items: center; }
+.bk-head span:nth-child(4), .bk-head span:nth-child(5) { margin-top: -2px; }
+.bk-row { padding-bottom: 8px; border-bottom: 1px dashed var(--line); }
+.bk-row .bk-date { grid-column: 1; }
+.bk-row .bk-cost { grid-column: 2; }
 .bk-head { font-size: 12px; color: var(--muted); padding: 0 2px 4px; }
 .bk-row { margin-bottom: 8px; }
 .bk-name { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); margin-top: -3px; min-height: 0; }
@@ -1066,7 +1073,7 @@ button.cd { border: 0; background: none; font: inherit; color: inherit; padding:
 .loan-row .grow { font-weight: 600; }
 .loan-row .grow small { font-weight: 400; }
 button.bk-tag { border: 0; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; }
-.bk-sh.need { box-shadow: inset 0 0 0 2px #e53935; }
+.bk-sh.need, .bk-cost.need, .bk-date.need { box-shadow: inset 0 0 0 2px #e53935; }
 
 /* ===== v5.20 月曆：貸款日整格上色 ===== */
 .cal .cd.loan { background: var(--lbg); color: #fff; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,.25); }

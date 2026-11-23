@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.3.3';
+const APP_VERSION = '6.4.0';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -166,7 +166,7 @@ function assetIcon(a) {
 // ---------- 價值計算 ----------
 const debtStatus = d => Plan.status(d, state.plans);
 const debtColor = d => Charts.PALETTE[Math.max(0, state.debts.indexOf(d)) % Charts.PALETTE.length];
-// 平均成本法：依日期處理買進／賣出，得到目前股數、總成本、均價、已實現損益
+// 平均成本法：依日期處理買進／賣出，得到目前股數、總成本、均價、已實現損益（買進成本含 lots[].fee 手續費，舊資料沒有就是 0）
 function lotsSummary(lots) {
   const list = [...(lots || [])].map((l, i) => ({ ...l, _i: i })).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || a._i - b._i);
   let shares = 0, cost = 0, realized = 0, unknown = false;
@@ -181,7 +181,7 @@ function lotsSummary(lots) {
       rows.push({ ...l, avg, realized: r });
     } else {
       if (!p) unknown = true;
-      shares += q; cost += q * p;
+      shares += q; cost += q * p + num(l.fee);
       rows.push({ ...l });
     }
   }
@@ -402,12 +402,12 @@ function stockRow(a, i) {
       <div class="lot-title">交易紀錄（${lots.length} 筆${lots.some(l => String(l.src || '').startsWith('plan:')) ? `，其中 ${lots.filter(l => String(l.src || '').startsWith('plan:')).length} 筆來自投資計畫` : ''}）</div>
       <ul class="lots">${lots.map(l => {
         const isSell = l.type === 'sell';
-        const lp = !isSell && num(l.price) && si.px ? (si.px - num(l.price)) * num(l.shares) * Stocks.fx(si.ccy, state.currency) : null;
+        const lc = num(l.price) * num(l.shares) + num(l.fee), lp = !isSell && num(l.price) && si.px ? (si.px * num(l.shares) - lc) * Stocks.fx(si.ccy, state.currency) : null;
         const fromPlan = String(l.src || '').startsWith('plan:');
         const pp = fromPlan ? l.src.split(':') : null;
         return `<li ${fromPlan ? `data-goplan="${pp[1]}|${pp[2]}" class="${l.est ? 'est' : ''}"` : `data-lot="${a.id}|${l.id}"`}><span class="lot-tag ${isSell ? 'sell' : 'buy'}">${fd ? (isSell ? '贖' : '申') : isSell ? '賣' : '買'}</span>
-          <span class="grow">${l.date ? esc(l.date.replace(/-/g, '/')) : '原有持股'} ${fromPlan ? `<span class="chip ${l.est ? 'gray' : 'blue'}">投資計畫・${l.est ? '預估' : '已確認'}</span>` : '<span class="chip">自己輸入</span>'}<small>${unitTxt(si.mkt, num(l.shares))}${num(l.price) ? ` @ ${price(num(l.price), si.ccy)}` : ' · 未填價格'}${fromPlan && l.note ? ` · ${esc(l.note)}` : ''}${l.est ? ' · 點一下去確認實際成交' : ''}</small></span>
-          <span class="lot-pl">${isSell ? (l.realized != null ? `<span class="chg ${plCls(l.realized)}">實現 ${plTxt(l.realized * Stocks.fx(si.ccy, state.currency))}</span>` : '') : lp != null ? `<span class="chg ${plCls(lp)}">${plTxt(lp, (si.px / num(l.price) - 1) * 100)}</span>` : ''}</span></li>`;
+          <span class="grow">${l.date ? esc(l.date.replace(/-/g, '/')) : '原有持股'} ${fromPlan ? `<span class="chip ${l.est ? 'gray' : 'blue'}">投資計畫・${l.est ? '預估' : '已確認'}</span>` : '<span class="chip">自己輸入</span>'}<small>${unitTxt(si.mkt, num(l.shares))}${num(l.price) ? ` @ ${price(num(l.price), si.ccy)}` : ' · 未填價格'}${num(l.fee) ? ` · 手續費 ${price(num(l.fee), si.ccy)}` : ''}${fromPlan && l.note ? ` · ${esc(l.note)}` : ''}${l.est ? ' · 點一下去確認實際成交' : ''}</small></span>
+          <span class="lot-pl">${isSell ? (l.realized != null ? `<span class="chg ${plCls(l.realized)}">實現 ${plTxt(l.realized * Stocks.fx(si.ccy, state.currency))}</span>` : '') : lp != null ? `<span class="chg ${plCls(lp)}">${plTxt(lp, lc ? (si.px * num(l.shares) / lc - 1) * 100 : 0)}</span>` : ''}</span></li>`;
       }).join('')}</ul>
       <div class="btnrow">
         <button type="button" class="btn mini primary" data-trade="buy" data-id="${a.id}">${Icon.svg('plus', 16)} ${W.buy}</button>
@@ -3117,7 +3117,7 @@ $('tdSave').addEventListener('click', () => {
   const sh = num($('tdShares').value);
   if (!sh) return toast(mktOf(a) === 'fund' ? '請填單位數' : '請填股數');
   const lot = { id: lotId || uid(), type, date: $('tdDate').value, shares: sh, price: $('tdPrice').value === '' ? '' : num($('tdPrice').value) };
-  a.lots = lotId ? a.lots.map(l => l.id === lotId ? lot : l) : [...(a.lots || []), lot];
+  a.lots = lotId ? a.lots.map(l => l.id === lotId ? { ...l, ...lot } : l) : [...(a.lots || []), lot];
   a.updatedAt = new Date().toISOString();
   openStocks.add(a.id);
   $('tradeDialog').close();
@@ -3140,8 +3140,10 @@ let bulkMkt = '台股';
 function bulkRow(v = {}) {
   return `<div class="bk-row${v.mkt ? ' fixed' : ''}"${v.mkt ? ` data-mkt="${v.mkt}"` : ''}${v.note ? ` data-note="${esc(v.note)}"` : ''}><input class="bk-sym" list="bkList" placeholder="${bulkMkt === '美股' ? 'AAPL' : '2330'}" value="${esc(v.sym || '')}" autocapitalize="characters">
     <input class="bk-sh" type="number" inputmode="decimal" step="any" placeholder="${bulkMkt === '美股' ? '10' : '1000'}" value="${esc(v.shares || '')}">
-    <input class="bk-cost" type="number" inputmode="decimal" step="any" placeholder="選填" value="${esc(v.cost || '')}">
-    <button type="button" class="bk-del" aria-label="刪除這列">×</button><small class="bk-name"></small></div>`;
+    <button type="button" class="bk-del" aria-label="刪除這列">×</button>
+    <input class="bk-date" type="date" value="${esc(v.date || '')}" aria-label="買進日期">
+    <input class="bk-cost" type="number" inputmode="decimal" step="any" placeholder="選填" value="${esc(v.cost === 0 ? '' : v.cost || '')}"${v.fee ? ` data-fee="${v.fee}"` : ''}>
+    <small class="bk-name"></small></div>`;
 }
 async function openBulk() {
   if (scaled) return toast('目前是縮小顯示，切回正常顯示才能新增或修改');
@@ -3166,10 +3168,11 @@ function bulkName(row) {
   const q = Stocks.quote(mkt, sym);
   const ex = findHolding(cat, sym);
   const have = ex ? lotsSummary(ex.lots).shares : 0;
-  const note = row.dataset.note ? ' · ' + row.dataset.note : '';
+  const fee = num(row.querySelector('.bk-cost').dataset.fee);
+  const note = (fee ? ` · 手續費 ${fee}` : '') + (row.dataset.note ? ' · ' + row.dataset.note : '');
   el.className = 'bk-name ' + (q ? '' : 'neg');
   const tag = row.dataset.mkt ? `<button type="button" class="bk-tag ${cat === '美股' ? 'us' : ''}" data-flip="1" title="點一下切換台股／美股">${cat} ⇄</button>` : '';
-  el.innerHTML = tag + (q ? `${esc(q.name)} · 收盤 ${price(q.price, q.ccy)}${esc(note)}${ex ? ` · <span class="neg">已持有 ${have.toLocaleString()} 股，會再加上這列</span>` : ''}` : '找不到報價（仍可加入，之後手動填股價）' + esc(note));
+  el.innerHTML = tag + (q ? `${esc(q.name)} · 收盤 ${price(q.price, q.ccy)}${esc(note)}${ex ? ` · <span class="neg">已持有 ${have.toLocaleString()} 股，${row.querySelector('.bk-date').value ? '同一天同股數記過的會跳過' : '會再加上這列'}</span>` : ''}` : '找不到報價（仍可加入，之後手動填股價）' + esc(note));
 }
 // 資產頁的 ＋：新增一筆資產，或一次輸入股票持股（含截圖）
 async function assetAddMenu() {
@@ -3193,7 +3196,7 @@ async function debtAddMenu() {
 }
 $('bkMkt').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (b) setBulkMkt(b.dataset.m); });
 $('bkAdd').addEventListener('click', () => { $('bkRows').insertAdjacentHTML('beforeend', bulkRow()); $('bkRows').lastElementChild.querySelector('input').focus(); });
-$('bkRows').addEventListener('input', e => { if (e.target.classList.contains('bk-sym')) bulkName(e.target.closest('.bk-row')); });
+$('bkRows').addEventListener('input', e => { if (e.target.classList.contains('bk-sym') || e.target.classList.contains('bk-date')) bulkName(e.target.closest('.bk-row')); });
 $('bkRows').addEventListener('click', e => {
   if (e.target.closest('.bk-del')) return e.target.closest('.bk-row').remove();
   const f = e.target.closest('[data-flip]');
@@ -3256,8 +3259,56 @@ function holdingToRow(h) {
     if (!total && px && pct != null && pct > -100) total = px / (1 + pct / 100) * shares;
     if (total) { cost = total / shares; notes.push('成本由損益推算'); }
   }
-  if (cost) cost = Math.round(cost * (m === 'tw' ? 100 : 1e4)) / (m === 'tw' ? 100 : 1e4);
-  return { mkt: m === 'us' ? '美股' : '台股', sym: q ? q.sym : (sym || h.name || ''), shares: shares || '', cost: cost || '', note: notes.join('、'), name: h.name };
+  if (cost) cost = Math.round(cost * (m === 'tw' ? 100 : 1e6)) / (m === 'tw' ? 100 : 1e6);
+  // 手續費＝付出成本 − 股數 × 成交價（App 自己算，不讓 AI 算）
+  let fee = 0;
+  const tot = n1(h.cost_total);
+  if (tot && shares && n1(h.avg_cost)) {
+    const f = tot - shares * cost;
+    if (f > -1 && f <= shares * cost * 0.0025 + 1) fee = Math.max(0, m === 'tw' ? Math.round(f) : Math.round(f * 100) / 100);
+    else notes.push('付出成本跟股數×成交價對不起來，手續費沒算');
+  }
+  return { mkt: m === 'us' ? '美股' : '台股', sym: q ? q.sym : (sym || h.name || ''), noSym: !q && !String(h.symbol || '').trim(), shares: shares || '', cost: cost || '', fee, date: h.buy_date || pickS(h, 'date', 'trade_date', 'purchase_date'), note: notes.join('、'), name: h.name };
+}
+const pickS = (h, ...ks) => { for (const k of ks) if (h[k]) return String(h[k]); return ''; };
+// 日期統一成 YYYY-MM-DD：接受 2026/11/20、2026-11-20、115/11/20（民國）、06/05（沒有年份 → 用 year）
+function normDate(v, year) {
+  const t = String(v || '').trim().replace(/[年月.]/g, '/').replace(/日/g, '').replace(/-/g, '/');
+  let m = t.match(/^(\d{2,4})\/(\d{1,2})\/(\d{1,2})$/), y, mo, d;
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; if (y < 200) y += 1911; }
+  else if ((m = t.match(/^(\d{1,2})\/(\d{1,2})$/)) && year) { y = year; mo = +m[1]; d = +m[2]; }
+  else return '';
+  if (y < 1990 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return '';
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+// 截圖讀到的列：補代號、補年份、去掉重複（AI 一次只看 5 張，代號、年份要靠 App 往下傳）
+function shotRows(hs) {
+  const rows = [];
+  let prev = null, year = 0;
+  for (const h of hs) {
+    let r = holdingToRow(h);
+    // 沒代號：帶上一筆的代號重算一次（市場決定股數、成本的小數位數）
+    if (r.noSym && prev) { r = holdingToRow({ ...h, symbol: prev.sym, market: prev.mkt === '美股' ? 'us' : 'tw' }); r.note = [r.note, '代號沿用上一筆'].filter(Boolean).join('、'); }
+    const yy = String(r.date).match(/^(\d{4})|^(\d{3})\//);
+    const raw = r.date;
+    r.date = normDate(raw, year);
+    if (!r.date && raw && /^\d{1,2}\/\d{1,2}$/.test(String(raw).trim())) { r.date = normDate(raw, new Date().getFullYear()); r.note = [r.note, '年份用今年，請確認'].filter(Boolean).join('、'); }
+    if (r.date) year = +r.date.slice(0, 4); else if (yy) year = +(yy[1] || +yy[2] + 1911);
+    if (r.sym) prev = r;
+    rows.push(r);
+  }
+  // 明細：代號＋日期＋股數＋成本；被切掉、缺成本的列，跟同代號同日同股數的完整列算同一筆
+  const kp = r => `${r.mkt}|${r.sym}|${r.date}|${r.shares}`;
+  const full = new Set(rows.filter(r => r.date && r.cost).map(kp));
+  const seen = new Set(), out = [];
+  for (const r of rows) {
+    if (!r.sym) continue;
+    const k = r.date ? (r.cost ? kp(r) + '|' + r.cost : kp(r)) : `${r.mkt}|${r.sym}|${r.shares}`;
+    if (r.date && !r.cost && full.has(kp(r))) continue;
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(r);
+  }
+  return out;
 }
 let shotCtl = null, lastShotRaw = null;
 document.addEventListener('click', e => { if (e.target.id === 'bkRaw' && lastShotRaw) alert(JSON.stringify(lastShotRaw, null, 1).slice(0, 3000)); });
@@ -3276,22 +3327,22 @@ $('bkShot').addEventListener('change', async e => {
     await Stocks.load(); await Stocks.tail();
     const hs = await AI.readHoldings(state.ai, imgs, shotCtl.signal, (i, n) => msg(`AI 辨識中…（${Math.min(n, i + 5)}/${n} 張）`));
     lastShotRaw = hs;
-    // 去掉跨截圖重複的同一列
-    const seen = new Set(), rows = [];
-    for (const h of hs) {
-      const r = holdingToRow(h);
-      const k = `${r.mkt}|${r.sym}|${r.shares}`;
-      if (!r.sym || seen.has(k)) continue;
-      seen.add(k); rows.push(r);
-    }
-    if (!rows.length) { msg('<span class="neg">沒有在圖片裡找到持股，換一張庫存畫面試試</span>'); return; }
+    const rows = shotRows(hs);
+    if (!rows.length) { msg(`<span class="neg">沒有在圖片裡找到持股，換一張庫存畫面試試</span>${hs.length ? '<br><button type="button" class="link-btn" id="bkRaw">看 AI 讀到的原始內容</button>' : ''}`); return; }
     // 移除空白列，放進結果
     $('bkRows').querySelectorAll('.bk-row').forEach(r => { if (!r.querySelector('.bk-sym').value.trim()) r.remove(); });
     $('bkRows').insertAdjacentHTML('beforeend', rows.map(bulkRow).join(''));
     $('bkRows').querySelectorAll('.bk-row').forEach(bulkName);
     const miss = rows.filter(r => !r.shares).length;
-    msg(`讀到 <b>${rows.length}</b> 檔，請核對後按「全部加入」${miss ? `<span class="neg">（${miss} 檔沒讀到股數，紅框請補上）</span>` : ''}${files.length > 20 ? '（只讀前 20 張）' : ''}<br><button type="button" class="link-btn" id="bkRaw">看 AI 讀到的原始內容</button>`);
-    $('bkRows').querySelectorAll('.bk-row.fixed .bk-sh').forEach(i => i.classList.toggle('need', !i.value));
+    const dated = rows.filter(r => r.date).length, detail = dated > rows.length / 2;
+    const nc = detail ? rows.filter(r => !r.cost).length : 0, nd = detail ? rows.length - dated : 0;
+    const rc = hs.rowCount, cnt = detail ? (rc ? (rc === rows.length ? `，跟截圖寫的 ${rc} 筆一致 ✓` : `<span class="neg">，但截圖寫 ${rc} 筆，可能漏截或讀錯，請核對</span>`) : '，截圖上沒有總筆數，請自己對一下') : '';
+    const warn = [miss && `${miss} 筆沒讀到股數`, nc && `${nc} 筆沒讀到成本`, nd && `${nd} 筆沒讀到日期`].filter(Boolean);
+    msg(`讀到 <b>${rows.length}</b> ${detail ? '筆買進明細' : '檔'}${cnt}${warn.length ? `<br><span class="neg">${warn.join('、')}，紅框請補上</span>` : ''}${files.length > 20 ? '（只讀前 20 張）' : ''}<br>請核對後按「全部加入」<button type="button" class="link-btn" id="bkRaw">看 AI 讀到的原始內容</button>`);
+    $('bkRows').querySelectorAll('.bk-row.fixed').forEach(r => {
+      r.querySelector('.bk-sh').classList.toggle('need', !r.querySelector('.bk-sh').value);
+      if (detail) { r.querySelector('.bk-cost').classList.toggle('need', !r.querySelector('.bk-cost').value); r.querySelector('.bk-date').classList.toggle('need', !r.querySelector('.bk-date').value); }
+    });
   } catch (err) {
     if (err.name !== 'AbortError') msg(`<span class="neg">${esc(err.message)}</span>`);
   } finally {
@@ -3299,17 +3350,35 @@ $('bkShot').addEventListener('change', async e => {
   }
 });
 $('bkSave').addEventListener('click', () => {
-  const rows = [...$('bkRows').querySelectorAll('.bk-row')].map(r => ({ cat: r.dataset.mkt || bulkMkt, sym: r.querySelector('.bk-sym').value.trim(), shares: num(r.querySelector('.bk-sh').value), cost: r.querySelector('.bk-cost').value })).filter(r => r.sym && r.shares);
+  const rows = [...$('bkRows').querySelectorAll('.bk-row')].map(r => { const c = r.querySelector('.bk-cost'); return { cat: r.dataset.mkt || bulkMkt, sym: r.querySelector('.bk-sym').value.trim(), shares: num(r.querySelector('.bk-sh').value), cost: c.value, fee: num(c.dataset.fee), date: r.querySelector('.bk-date').value }; }).filter(r => r.sym && r.shares);
   if (!rows.length) return toast('至少填一列代號與股數');
-  let added = 0, merged = 0;
+  // 有日期的明細：原本那檔若有沒日期的「原有持股」，先問要不要用明細取代（不然股數會算兩次）
+  const keyOf = (cat, sym) => cat + '|' + Stocks.norm(mktOf({ category: cat }), sym);
+  const asked = new Set();
   for (const r of rows) {
-    const res = addLot(r.cat, r.sym, { id: uid(), type: 'buy', date: '', shares: r.shares, price: r.cost === '' ? '' : num(r.cost) });
+    if (!r.date || asked.has(keyOf(r.cat, r.sym))) continue;
+    asked.add(keyOf(r.cat, r.sym));
+    const h = findHolding(r.cat, Stocks.norm(mktOf({ category: r.cat }), r.sym));
+    const old = h ? (h.lots || []).filter(l => !l.date && !String(l.src || '').startsWith('plan:')) : [];
+    if (!old.length) continue;
+    const sh = old.reduce((t, l) => t + (l.type === 'sell' ? -1 : 1) * num(l.shares), 0);
+    if (confirm(`${h.sym} 原本有一筆沒有日期的「原有持股」${sh.toLocaleString()} 股。\n\n要用截圖的買進明細取代它嗎？\n・確定：刪掉原有持股，換成明細（建議）\n・取消：保留原有持股，明細再加上去（股數可能重複）`)) h.lots = h.lots.filter(l => !old.includes(l));
+  }
+  // App 裡已經記過的（同日、同股數、成本相近）跳過
+  const same = (l, r) => l.type !== 'sell' && l.date === r.date && Math.abs(num(l.shares) - r.shares) < 1e-6 && (r.cost === '' || !num(l.price) || Math.abs(num(l.price) - num(r.cost)) < 0.005 + num(r.cost) * 1e-4);
+  let added = 0, merged = 0, skipped = 0;
+  for (const r of rows) {
+    const h = r.date && findHolding(r.cat, Stocks.norm(mktOf({ category: r.cat }), r.sym));
+    if (h && (h.lots || []).some(l => same(l, r))) { skipped++; continue; }
+    const lot = { id: uid(), type: 'buy', date: r.date || '', shares: r.shares, price: r.cost === '' ? '' : num(r.cost) };
+    if (r.fee) lot.fee = r.fee;
+    const res = addLot(r.cat, r.sym, lot);
     res.merged ? merged++ : added++;
   }
   $('bulkDialog').close();
   UI.burst('coin');
   save();
-  toast(`新增 ${added} 檔${merged ? `、${merged} 筆歸到原有股票` : ''}`);
+  toast([added && `新增 ${added} 檔`, merged && `${merged} 筆歸到原有股票`, skipped && `跳過 ${skipped} 筆已記過`].filter(Boolean).join('、') || '沒有新增');
 });
 
 

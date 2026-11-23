@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '6.4.0';
+const APP_VERSION = '6.4.1';
 const splashT0 = performance.now();
 let splashDoneR; const splashDone = new Promise(r => { splashDoneR = r; });   // 開機畫面淡出後才跳其他視窗
 const STORE_KEY = 'balanza.v1';
@@ -406,7 +406,7 @@ function stockRow(a, i) {
         const fromPlan = String(l.src || '').startsWith('plan:');
         const pp = fromPlan ? l.src.split(':') : null;
         return `<li ${fromPlan ? `data-goplan="${pp[1]}|${pp[2]}" class="${l.est ? 'est' : ''}"` : `data-lot="${a.id}|${l.id}"`}><span class="lot-tag ${isSell ? 'sell' : 'buy'}">${fd ? (isSell ? '贖' : '申') : isSell ? '賣' : '買'}</span>
-          <span class="grow">${l.date ? esc(l.date.replace(/-/g, '/')) : '原有持股'} ${fromPlan ? `<span class="chip ${l.est ? 'gray' : 'blue'}">投資計畫・${l.est ? '預估' : '已確認'}</span>` : '<span class="chip">自己輸入</span>'}<small>${unitTxt(si.mkt, num(l.shares))}${num(l.price) ? ` @ ${price(num(l.price), si.ccy)}` : ' · 未填價格'}${num(l.fee) ? ` · 手續費 ${price(num(l.fee), si.ccy)}` : ''}${fromPlan && l.note ? ` · ${esc(l.note)}` : ''}${l.est ? ' · 點一下去確認實際成交' : ''}</small></span>
+          <span class="grow">${l.date ? esc(l.date.replace(/-/g, '/')) : '原有持股'} ${fromPlan ? `<span class="chip ${l.est ? 'gray' : 'blue'}">投資計畫・${l.est ? '預估' : '已確認'}</span>` : '<span class="chip">自己輸入</span>'}<small>${unitTxt(si.mkt, num(l.shares))}${num(l.price) ? ` @ ${price(num(l.price), si.ccy)}` : ' · 未填價格'}${num(l.fee) ? ` · 手續費 ${si.ccy === 'USD' ? price(num(l.fee), si.ccy) : Math.round(num(l.fee)).toLocaleString()}` : ''}${fromPlan && l.note ? ` · ${esc(l.note)}` : ''}${l.est ? ' · 點一下去確認實際成交' : ''}</small></span>
           <span class="lot-pl">${isSell ? (l.realized != null ? `<span class="chg ${plCls(l.realized)}">實現 ${plTxt(l.realized * Stocks.fx(si.ccy, state.currency))}</span>` : '') : lp != null ? `<span class="chg ${plCls(lp)}">${plTxt(lp, lc ? (si.px * num(l.shares) / lc - 1) * 100 : 0)}</span>` : ''}</span></li>`;
       }).join('')}</ul>
       <div class="btnrow">
@@ -3117,7 +3117,8 @@ $('tdSave').addEventListener('click', () => {
   const sh = num($('tdShares').value);
   if (!sh) return toast(mktOf(a) === 'fund' ? '請填單位數' : '請填股數');
   const lot = { id: lotId || uid(), type, date: $('tdDate').value, shares: sh, price: $('tdPrice').value === '' ? '' : num($('tdPrice').value) };
-  a.lots = lotId ? a.lots.map(l => l.id === lotId ? { ...l, ...lot } : l) : [...(a.lots || []), lot];
+  // 改了股數或成交價：原本的手續費已經不準，清掉
+  a.lots = lotId ? a.lots.map(l => { if (l.id !== lotId) return l; const n = { ...l, ...lot }; if (num(l.shares) !== num(lot.shares) || num(l.price) !== num(lot.price)) delete n.fee; return n; }) : [...(a.lots || []), lot];
   a.updatedAt = new Date().toISOString();
   openStocks.add(a.id);
   $('tradeDialog').close();
@@ -3196,7 +3197,12 @@ async function debtAddMenu() {
 }
 $('bkMkt').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (b) setBulkMkt(b.dataset.m); });
 $('bkAdd').addEventListener('click', () => { $('bkRows').insertAdjacentHTML('beforeend', bulkRow()); $('bkRows').lastElementChild.querySelector('input').focus(); });
-$('bkRows').addEventListener('input', e => { if (e.target.classList.contains('bk-sym') || e.target.classList.contains('bk-date')) bulkName(e.target.closest('.bk-row')); });
+$('bkRows').addEventListener('input', e => {
+  const t = e.target, row = t.closest('.bk-row'); if (!row) return;
+  // AI 讀的列被改了代號／股數／成本 → 那列記著的手續費已經不準，清掉（不然會被帶到別的交易）
+  if (['bk-sym', 'bk-sh', 'bk-cost'].some(c => t.classList.contains(c))) { const c = row.querySelector('.bk-cost'); if (c.dataset.fee) { delete c.dataset.fee; bulkName(row); } }
+  if (t.classList.contains('bk-sym') || t.classList.contains('bk-date')) bulkName(row);
+});
 $('bkRows').addEventListener('click', e => {
   if (e.target.closest('.bk-del')) return e.target.closest('.bk-row').remove();
   const f = e.target.closest('[data-flip]');
@@ -3265,8 +3271,11 @@ function holdingToRow(h) {
   const tot = n1(h.cost_total);
   if (tot && shares && n1(h.avg_cost)) {
     const f = tot - shares * cost;
-    if (f > -1 && f <= shares * cost * 0.0025 + 1) fee = Math.max(0, m === 'tw' ? Math.round(f) : Math.round(f * 100) / 100);
-    else notes.push('付出成本跟股數×成交價對不起來，手續費沒算');
+    if (f > -1 && f <= shares * cost * 0.0025 + 1) {
+      fee = Math.max(0, m === 'tw' ? Math.round(f) : Math.round(f * 100) / 100);
+      // 低於成交金額 0.01%（約 1 折以下）而且金額超過 1 萬 → 多半是付出成本讀錯
+      if (fee < shares * cost * 0.0001 && shares * cost > 10000) notes.push('手續費偏低，請核對付出成本');
+    } else notes.push('付出成本跟股數×成交價對不起來，手續費沒算');
   }
   return { mkt: m === 'us' ? '美股' : '台股', sym: q ? q.sym : (sym || h.name || ''), noSym: !q && !String(h.symbol || '').trim(), shares: shares || '', cost: cost || '', fee, date: h.buy_date || pickS(h, 'date', 'trade_date', 'purchase_date'), note: notes.join('、'), name: h.name };
 }
@@ -3342,6 +3351,7 @@ $('bkShot').addEventListener('change', async e => {
     $('bkRows').querySelectorAll('.bk-row.fixed').forEach(r => {
       r.querySelector('.bk-sh').classList.toggle('need', !r.querySelector('.bk-sh').value);
       if (detail) { r.querySelector('.bk-cost').classList.toggle('need', !r.querySelector('.bk-cost').value); r.querySelector('.bk-date').classList.toggle('need', !r.querySelector('.bk-date').value); }
+      if ((r.dataset.note || '').includes('請核對')) r.querySelector('.bk-cost').classList.add('need');
     });
   } catch (err) {
     if (err.name !== 'AbortError') msg(`<span class="neg">${esc(err.message)}</span>`);
